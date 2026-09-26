@@ -25,6 +25,7 @@ final class Daemon: @unchecked Sendable {
     private var calibration: CalibrationSession?
     private var negativesTimer: DispatchSourceTimer?
     private var housekeeping: DispatchSourceTimer?
+    private var lightPoll: DispatchSourceTimer?
 
     // paused is read by the action queue too.
     private let pausedLock = NSLock()
@@ -51,7 +52,7 @@ final class Daemon: @unchecked Sendable {
         config = store.loadConfig()
         engine = TapEngine(settings: config.settings.detection)
         engine.model = store.loadModel()
-        applyConfigToEngine()
+        applyConfigToEngine()   // also sets the model's zone centres
         actions.isPaused = { [weak self] in self?.paused ?? true }
     }
 
@@ -75,6 +76,16 @@ final class Daemon: @unchecked Sendable {
         timer.setEventHandler { [weak self] in self?.tick() }
         timer.resume()
         housekeeping = timer
+
+        // cover_hold must fire on time even when the light sensor only reports on change.
+        let poll = DispatchSource.makeTimerSource(queue: core)
+        poll.schedule(deadline: .now() + 0.1, repeating: 0.1, leeway: .milliseconds(10))
+        poll.setEventHandler { [weak self] in
+            guard let self, self.hub.present.contains(.light) else { return }
+            if let g = self.lightDetector.poll(t: Clock.now()) { self.onGesture(g, fillModifiers: true) }
+        }
+        poll.resume()
+        lightPoll = poll
 
         Log.info("ghostkeysd \(Self.version) on \(device.model) (\(device.chip), \(device.family))"
                  + (options.dryRun ? " [dry-run]" : "") + "; config in \(store.directory.path)")
@@ -241,6 +252,7 @@ final class Daemon: @unchecked Sendable {
             }
             self.core.async {
                 self.engine.model = model
+                self.applyZoneCenters()
                 self.server.broadcast(["type": "calibration", "phase": "done", "accuracy": report.accuracy,
                                        "overall": report.overall, "confusion": report.confusion, "labels": report.labels])
                 self.server.broadcast(self.status())
@@ -360,7 +372,10 @@ final class Daemon: @unchecked Sendable {
     private func status() -> [String: Any] {
         let labels = (engine.model?.labels ?? []).filter { $0 != "none" }
         return ["type": "status", "paused": paused, "calibrated": !labels.isEmpty, "zones": labels,
-                "imuHz": Int(imuHz.rounded())]
+                "imuHz": Int(imuHz.rounded()),
+                // Addition to PROTOCOL.md: live onset detector state, all in milli-g.
+                "detector": ["noiseFloorMg": Self.r4(engine.noiseFloor * 1000), "thresholdMg": Self.r4(engine.onsetThreshold * 1000),
+                             "level": Self.r4(engine.level * 1000)]]
     }
 
     private func configMessage() -> [String: Any] {
@@ -370,9 +385,18 @@ final class Daemon: @unchecked Sendable {
     }
 
     private func applyConfigToEngine() {
+        // The engine reads settings (sensitivity, gates, windows) on every sample, so this takes effect immediately.
         engine.settings = config.settings.detection
+        applyZoneCenters()
         engine.zonesNeedingMultiTap = config.zonesNeedingMultiTap
         Log.debug("zones needing multi-tap: \(config.zonesNeedingMultiTap.sorted())")
+    }
+
+    /// Tap x,y comes from the zone centres, so custom zone rectangles must reach the model.
+    private func applyZoneCenters() {
+        let centers = Dictionary(config.zones.map { ($0.id, [$0.rect.x + $0.rect.w / 2, $0.rect.y + $0.rect.h / 2]) },
+                                 uniquingKeysWith: { a, _ in a })
+        engine.model?.setZoneCenters(centers)
     }
 
     private static func r4(_ v: Double) -> Double { (v * 10000).rounded() / 10000 }
