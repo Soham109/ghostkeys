@@ -1,0 +1,35 @@
+{
+  "name": "@ghostkeys/promo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "studio": "remotion studio src/index.ts",
+    "audio": "node scripts/make-audio.ts",
+    "render": "remotion render src/index.ts GhostkeysPromo out/ghostkeys-promo.mp4 --gl=angle",
+    "render:teaser": "remotion render src/index.ts GhostkeysTeaser out/ghostkeys-teaser-vertical.mp4 --gl=angle",
+    "render:all": "pnpm audio && pnpm render && pnpm render:teaser",
+    "stills": "node scripts/stills.mjs",
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@react-three/fiber": "8",
+    "@react-three/postprocessing": "2",
+    "@remotion/bundler": "4.0.529",
+    "@remotion/cli": "4",
+    "@remotion/fonts": "4",
+    "@remotion/renderer": "4.0.529",
+    "@remotion/shapes": "4",
+    "@remotion/three": "4",
+    "postprocessing": "6.36",
+    "react": "18",
+    "react-dom": "18",
+    "remotion": "4",
+    "three": "0.169"
+  },
+  "devDependencies": {
+    "@types/react": "18",
+    "@types/three": "0.169",
+    "typescript": "^7.0.2"
+  }
+}
