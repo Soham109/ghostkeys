@@ -17,9 +17,9 @@ class ProtocolTimeout(TimeoutError):
 
 class Client:
     """`token`, when given, is sent as the `X-Ghostkeys-Token` handshake header
-    Server/WebSocketServer.swift now requires (see FINDINGS.md #2/#5 and
-    docs/PROTOCOL.md "Authentication"). `extra_headers` lets auth tests add e.g.
-    an `Origin` header, which the server rejects unconditionally."""
+    Server/WebSocketServer.swift requires (see docs/PROTOCOL.md
+    "Authentication"). `extra_headers` lets auth tests add e.g. an `Origin`
+    header, which the server rejects unconditionally."""
 
     def __init__(self, uri: str, token: Optional[str] = None, extra_headers: Optional[dict] = None):
         self.uri = uri

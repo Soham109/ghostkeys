@@ -28,8 +28,8 @@ async def test_pause_then_resume_broadcast_status(connected):
     assert resumed["pausedReason"] is None
 
 
-async def _assert_clean_shutdown(daemon_binary, port, sig: int, sig_num_expected: int):
-    d = DaemonProcess(daemon_binary, port=port, dry_run=True, verbose=True)
+async def _assert_clean_shutdown(daemon_binary, port, tmp_path, sig: int, sig_num_expected: int):
+    d = DaemonProcess(daemon_binary, config_dir=tmp_path / "ghostkeys-config", port=port, dry_run=True, verbose=True)
     try:
         harness.start_resilient(d)
     except TimeoutError as e:
@@ -60,16 +60,21 @@ async def _assert_clean_shutdown(daemon_binary, port, sig: int, sig_num_expected
     assert harness.wait_port_free(port, timeout=5)
 
 
-async def test_sigterm_clean_shutdown_restores_sensors(daemon_binary, port):
-    await _assert_clean_shutdown(daemon_binary, port, signal.SIGTERM, 15)
+async def test_sigterm_clean_shutdown_restores_sensors(daemon_binary, port, tmp_path):
+    await _assert_clean_shutdown(daemon_binary, port, tmp_path, signal.SIGTERM, 15)
 
 
-async def test_sigint_clean_shutdown_restores_sensors(daemon_binary, port):
-    await _assert_clean_shutdown(daemon_binary, port, signal.SIGINT, 2)
+async def test_sigint_clean_shutdown_restores_sensors(daemon_binary, port, tmp_path):
+    await _assert_clean_shutdown(daemon_binary, port, tmp_path, signal.SIGINT, 2)
 
 
 async def test_single_instance_second_daemon_refuses_to_start(daemon, daemon_binary):
-    second = DaemonProcess(daemon_binary, port=daemon.port, dry_run=True, verbose=True)
+    # Same --config-dir as the `daemon` fixture on purpose: the single-instance
+    # lock (App/Lifetime.swift InstanceLock) is now scoped per config-dir, so two
+    # daemons pointed at *different* dirs would happily coexist (each getting its
+    # own daemon.lock) -- this test is specifically about two instances sharing
+    # one config dir, which is what "single instance" means now.
+    second = DaemonProcess(daemon_binary, config_dir=daemon.config_dir, port=daemon.port, dry_run=True, verbose=True)
     with pytest.raises(RuntimeError):
         second.start(wait_ready=3)
     assert second.proc is not None
@@ -79,7 +84,7 @@ async def test_single_instance_second_daemon_refuses_to_start(daemon, daemon_bin
     assert daemon.is_alive()
 
 
-async def test_sigkill_then_restore_sensors_recovers(daemon_binary, port):
+async def test_sigkill_then_restore_sensors_recovers(daemon_binary, port, tmp_path):
     """Sensors/SPUDriverControl.swift now survives a hard kill: originals are
     persisted to spu-originals.json *before* the first write, so a SIGKILL (no
     chance to run its normal restore()) leaves that file behind, and the next
@@ -87,9 +92,10 @@ async def test_sigkill_then_restore_sensors_recovers(daemon_binary, port):
     SIGKILL our own daemon on purpose here -- that's exactly the scenario this
     mechanism exists for, and --restore-sensors is the safe, explicit way to
     prove it recovered rather than leaving the motion sensor altered."""
-    originals_path = harness.CONFIG_DIR / "spu-originals.json"
+    config_dir = tmp_path / "ghostkeys-config"
+    originals_path = config_dir / "spu-originals.json"
 
-    d = DaemonProcess(daemon_binary, port=port, dry_run=True, verbose=True)
+    d = DaemonProcess(daemon_binary, config_dir=config_dir, port=port, dry_run=True, verbose=True)
     try:
         harness.start_resilient(d)
     except TimeoutError as e:
@@ -111,7 +117,7 @@ async def test_sigkill_then_restore_sensors_recovers(daemon_binary, port):
         "(SPUDriverControl.wakeMotion persists originals up front) and left behind by a SIGKILL"
     )
 
-    result = harness.run_restore_sensors(daemon_binary)
+    result = harness.run_restore_sensors(daemon_binary, config_dir)
     assert result.returncode == 0, f"--restore-sensors exited {result.returncode}\nstderr:\n{result.stderr}"
     assert "restored sensor settings left by a previous run" in result.stdout, result.stdout
     assert not originals_path.exists(), "spu-originals.json should be removed after a clean recovery"

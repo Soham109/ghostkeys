@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import sys
 import time
 from pathlib import Path
@@ -14,41 +13,16 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import harness
 import results
-from harness import ConfigSandbox, DaemonProcess, DEFAULT_PORT
+from harness import DaemonProcess, DEFAULT_PORT
 from ws_client import Client
-
-_sandbox = ConfigSandbox()
-
-
-# ---------------------------------------------------------------------------
-# Session-wide config safety net (see harness.ConfigSandbox docstring).
-# ---------------------------------------------------------------------------
-
-@pytest.fixture(scope="session", autouse=True)
-def _sandbox_session():
-    _sandbox.snapshot_and_clear()
-    atexit.register(_safe_restore)  # backstop if the session is killed instead of finishing normally
-    yield
-    _safe_restore()
-
-
-def _safe_restore() -> None:
-    try:
-        _sandbox.restore()
-    except Exception as e:  # pragma: no cover - best effort only
-        sys.stderr.write(f"[conftest] WARNING: failed to restore {harness.CONFIG_DIR}: {e}\n")
-
-
-@pytest.fixture(autouse=True)
-def _reset_config_between_tests():
-    """Every test starts from Config.defaults: the daemon recreates config.json
-    (and re-derives an empty model) the first time it loads a missing file."""
-    _sandbox.reset_between_tests()
-    yield
 
 
 # ---------------------------------------------------------------------------
 # Building and running the daemon.
+#
+# Every daemon instance gets its own --config-dir (a pytest tmp_path), so this
+# suite never reads, writes or restores anything under the real
+# ~/Library/Application Support/Ghostkeys/ -- see FINDINGS.md #2 and #7.
 # ---------------------------------------------------------------------------
 
 @pytest.fixture(scope="session")
@@ -57,14 +31,15 @@ def daemon_binary():
 
 
 @pytest.fixture(scope="session", autouse=True)
-def _capture_environment(daemon_binary, _sandbox_session):
+def _capture_environment(daemon_binary, tmp_path_factory):
     """One throwaway connection at session start, purely to record device/sensor
     info (from `hello`) into the REPORT.md header."""
     port = DEFAULT_PORT
     if not harness.wait_port_free(port, timeout=10):
         results.note(f"port {port} was already in use at session start; skipped the environment probe")
         return
-    d = DaemonProcess(daemon_binary, port=port, dry_run=True, verbose=True)
+    config_dir = tmp_path_factory.mktemp("ghostkeysd-env-probe")
+    d = DaemonProcess(daemon_binary, config_dir=config_dir, port=port, dry_run=True, verbose=True)
     try:
         harness.start_resilient(d)
 
@@ -94,8 +69,8 @@ def port():
 
 
 @pytest.fixture
-def daemon(daemon_binary, port, _reset_config_between_tests):
-    d = DaemonProcess(daemon_binary, port=port, dry_run=True, verbose=True)
+def daemon(daemon_binary, port, tmp_path):
+    d = DaemonProcess(daemon_binary, config_dir=tmp_path / "ghostkeys-config", port=port, dry_run=True, verbose=True)
     try:
         harness.start_resilient(d)
     except TimeoutError as e:
@@ -125,8 +100,8 @@ async def connected(client):
 
 
 @pytest.fixture
-def config_path():
-    return harness.CONFIG_DIR / "config.json"
+def config_path(daemon):
+    return daemon.config_dir / "config.json"
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +137,8 @@ def _write_report(session, exitstatus) -> None:
     lines.append("")
     lines.append(f"Daemon binary: `{harness.BINARY_PATH}`")
     lines.append("Run with `--dry-run` for every test in this suite; no action a test triggers actually executes.")
+    lines.append("Every daemon instance gets its own `--config-dir` (a pytest `tmp_path`); this suite never touches "
+                 "the real `~/Library/Application Support/Ghostkeys/`.")
     lines.append("")
 
     hello = results.DATA.get("hello")
@@ -222,29 +199,36 @@ def _write_report(session, exitstatus) -> None:
             lines.append(f"- {n}")
         lines.append("")
 
-    lines.append("## Known gaps (see FINDINGS.md for repro steps and file/line)")
+    lines.append("## Fixed since earlier runs (see FINDINGS.md for detail)")
     lines.append("")
-    lines.append("- `--dry-run` skips `execute()` entirely, so the Finder/self quit guards in "
-                 "`WindowActions.app(_:)` are never exercised by this suite (FINDINGS.md #1).")
-    lines.append("- No `--config-dir` flag exists; this suite backs up and restores ghostkeysd's own files "
-                 "inside `~/Library/Application Support/Ghostkeys` around the whole session instead, and uses "
-                 "the `GHOSTKEYS_TOKEN` env var so it never has to read the shared token file (FINDINGS.md #2).")
+    lines.append("- FINDINGS.md #1 (Finder/self quit guard unreachable in dry-run): fixed. "
+                 "`WindowActions.checkApp(_:)` now does the frontmost-app refusal checks and is called from "
+                 "`ActionRunner.validate(\"app\", ...)`, so dry-run and a real run agree. "
+                 "`test_actions.py::test_action_app_quit_finder_refused_when_frontmost` covers it, skipping when "
+                 "Finder is not actually the frontmost app (this suite never changes focus to force it).")
+    lines.append("- FINDINGS.md #2 (no --config-dir): fixed. `Options.swift` gained `--config-dir PATH` / "
+                 "`GHOSTKEYS_CONFIG_DIR`; the default moved to "
+                 "`~/Library/Application Support/Ghostkeys/daemon/` so the Electron app keeps the parent folder. "
+                 "This suite now gives every daemon instance its own throwaway `--config-dir` and never touches "
+                 "the real directory at all (superseding the earlier surgical-backup workaround).")
+    lines.append("- FINDINGS.md #5 (simultaneous handshakes could all be refused): fixed. "
+                 "`WebSocketServer` now serializes handshakes (`admissions` queue + `admitNext()`), so two "
+                 "connections opened at the same instant both succeed instead of racing. "
+                 "`test_handshake.py::test_concurrent_handshakes_both_succeed` covers it.")
+    lines.append("")
+
+    lines.append("## Remaining known gaps (see FINDINGS.md for repro steps and file/line)")
+    lines.append("")
     lines.append("- The `integration` action kind was an unimplemented stub when this suite was started and a "
                  "full implementation landed mid-session; the suite tracks the current, working behavior "
                  "(FINDINGS.md #3).")
     lines.append("- Calibration sample capture (`calibration_zone` actually accumulating counts) needs a real "
                  "physical tap on the case; this suite can only exercise the control-flow messages, not capture "
                  "itself (FINDINGS.md #4).")
-    lines.append("- Two WebSocket connections opened at the same instant can both be refused even with a valid "
-                 "token (Network.framework cannot tell simultaneous handshakes apart); a sequential retry always "
-                 "works (FINDINGS.md #5).")
     lines.append("- This daemon was under active, concurrent development while this suite was written (auth, "
-                 "approvals, integrations, and a sessions/air/sound subsystem all landed mid-session); the "
-                 "sessions/air/sound/catalog/knob surface is intentionally out of scope for this suite "
-                 "(FINDINGS.md #6).")
-    lines.append("- The config directory is shared with the real app's Electron userData profile (Cache, "
-                 "GPUCache, Session Storage, etc. were found there); this suite's ConfigSandbox now touches only "
-                 "the specific files/dirs ghostkeysd itself owns, never the directory as a whole (FINDINGS.md #7).")
+                 "approvals, integrations, config-dir isolation, and a sessions/air/sound subsystem all landed "
+                 "mid-session); the sessions/air/sound/catalog/knob surface is intentionally out of scope for this "
+                 "suite (FINDINGS.md #6).")
     lines.append("")
 
     report_path = Path(__file__).resolve().parent / "REPORT.md"

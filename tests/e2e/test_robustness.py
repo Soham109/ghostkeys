@@ -86,7 +86,7 @@ async def test_message_rate_limit_over_200_per_second_disconnects_client(daemon)
     """Server/WebSocketServer.swift: more than maxMessagesPerSecond (200)
     messages/s from one client gets an error reply and a disconnect, not a
     crash (docs/PROTOCOL.md "Authentication" limits, discovered while writing
-    this suite -- see FINDINGS.md #2 for the timeline)."""
+    this suite -- see FINDINGS.md #6 for the timeline)."""
     uri = f"ws://127.0.0.1:{daemon.port}/"
     c = Client(uri, token=daemon.token)
     await c.connect()

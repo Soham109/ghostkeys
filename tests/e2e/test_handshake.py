@@ -2,8 +2,8 @@
 authentication PROTOCOL.md now documents (Server/WebSocketServer.swift
 `authorize()`, Security/SessionToken.swift). This daemon build added a
 handshake token requirement partway through writing this suite -- see
-FINDINGS.md #2/#5 for what that means for a test harness with no
---config-dir."""
+FINDINGS.md #2 for the timeline (now fixed: every daemon instance here gets
+its own `--config-dir` and its token is read straight from that directory)."""
 from __future__ import annotations
 
 import asyncio
@@ -11,7 +11,6 @@ import asyncio
 import pytest
 import websockets
 
-import results
 from ws_client import Client
 
 
@@ -53,8 +52,9 @@ async def test_handshake_order_and_shape(daemon):
 
 
 async def test_multiple_clients_each_get_their_own_handshake(daemon):
-    # Connected one at a time on purpose: see
-    # test_concurrent_handshakes_can_all_be_refused_KNOWN_GAP below for why.
+    # Connected one at a time here just to keep this test's assertions simple;
+    # test_concurrent_handshakes_both_succeed below covers the case where both
+    # connect at the same instant.
     async with Client(f"ws://127.0.0.1:{daemon.port}/", token=daemon.token) as a:
         hs_a = await a.handshake()
     async with Client(f"ws://127.0.0.1:{daemon.port}/", token=daemon.token) as b:
@@ -117,34 +117,28 @@ async def test_reconnect_with_correct_token_after_a_rejection_still_works(daemon
     await good.close()
 
 
-async def test_concurrent_handshakes_can_all_be_refused_KNOWN_GAP(daemon):
-    """See FINDINGS.md #5. Network.framework's setClientRequestHandler callback
-    does not say which pending connection it is authorizing
-    (Server/WebSocketServer.swift, `start()`'s comment: "Network.framework does
-    not say which connection a handshake belongs to"). The server's workaround:
-    if more than one connection is simultaneously mid-handshake when a verdict
-    comes in, it cannot tell them apart, so it refuses *all* of them -- even
-    ones presenting a perfectly valid token. This test opens two connections at
-    the same instant (both with the correct token) and shows both can be
-    rejected. A well-behaved client is expected to just retry (the code
-    comment says so), which the next test proves works."""
+async def test_concurrent_handshakes_both_succeed(daemon):
+    """See FINDINGS.md #5 (fixed). Network.framework's setClientRequestHandler
+    callback does not say which pending connection it is authorizing, so two
+    connections mid-handshake at once used to be indistinguishable and the
+    server refused both, even with a valid token. `WebSocketServer` now
+    serializes handshakes through an `admissions` queue and `admitNext()`
+    (Server/WebSocketServer.swift): only one connection is ever mid-handshake,
+    so this always resolves correctly no matter how many arrive at once. This
+    test opens two connections at the same instant (both with the correct
+    token) and asserts both succeed."""
     uri = f"ws://127.0.0.1:{daemon.port}/"
     a = Client(uri, token=daemon.token)
     b = Client(uri, token=daemon.token)
 
     results_ = await asyncio.gather(a.connect(timeout=3), b.connect(timeout=3), return_exceptions=True)
-    rejected = sum(1 for r in results_ if isinstance(r, Exception))
-    results.note(f"concurrent-handshake race: {rejected}/2 valid-token connections rejected due to the "
-                 "'cannot tell simultaneous handshakes apart' ambiguity guard (FINDINGS.md #5)")
-    for c, r in zip((a, b), results_):
-        if not isinstance(r, Exception):
-            await c.close()
+    failures = [r for r in results_ if isinstance(r, Exception)]
+    assert not failures, f"expected both simultaneous connections to succeed, got: {failures}"
 
-    # Not asserting a specific count (0, 1 or 2 rejected is possible depending on
-    # exact scheduling) -- the point is this is a real race, not a crash. Retrying
-    # sequentially afterwards must always succeed:
-    retry = Client(uri, token=daemon.token)
-    await retry.connect(timeout=3)
-    hello = await retry.recv_type("hello", timeout=3)
-    assert hello["type"] == "hello"
-    await retry.close()
+    hello_a = await a.recv_type("hello", timeout=3)
+    hello_b = await b.recv_type("hello", timeout=3)
+    assert hello_a["type"] == "hello"
+    assert hello_b["type"] == "hello"
+
+    await a.close()
+    await b.close()

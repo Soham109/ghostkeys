@@ -2,22 +2,22 @@
 --dry-run, including the documented refusals, plus the approval workflow
 (Security/ApprovalStore.swift) that a concurrent security pass added to
 `shell`, `applescript`, `shortcut` and `open` partway through writing this
-suite (see FINDINGS.md #2/#5/#6 for the timeline).
+suite (see FINDINGS.md #6 for the timeline).
 
-Important dry-run caveat (see FINDINGS.md #1): ActionRunner.perform() calls
+Dry-run refusals (see FINDINGS.md #1, fixed): ActionRunner.perform() calls
 validate(kind, action), then the approval check, and only then -- if not
-dry-run -- execute(). Refusals that live in validate() (CommandFilter's
-dangerous-pattern checks, nested macro, >50 macro steps, unknown kind/op, bad
-fields) and the approval gate fire identically in dry-run and are fully
-covered here. Refusals that only live inside execute() -- the Finder-quit and
-self-quit guards in WindowActions.app(_:) -- are NOT reachable in dry-run and
-are only smoke-tested for "doesn't crash / doesn't false-refuse", with the gap
-called out explicitly, since actually exercising them would require a real
-(non-dry-run) quit action, which the task's safety rules for this Mac forbid.
+dry-run -- execute(). validate()'s "app" case now calls
+WindowActions.checkApp(_:) directly, which does the Finder/self-quit frontmost
+checks with no side effects, so those refusals fire identically in dry-run and
+a real run. CommandFilter's dangerous-pattern checks, nested macro, >50 macro
+steps, unknown kind/op, and bad fields also live in validate() and are fully
+covered here.
 """
 from __future__ import annotations
 
-import results
+import pytest
+
+import harness
 
 
 async def run_action(client, action):
@@ -124,19 +124,31 @@ async def test_action_app_unknown_op(connected):
     assert "unknown app op" in r["error"]
 
 
-async def test_action_app_quit_finder_not_refused_in_dry_run_KNOWN_GAP(connected):
-    """See FINDINGS.md #1. validate("app", ...) only checks that "quit" is a
-    member of WindowActions.appOps; the Finder/self-pid guards live in
-    WindowActions.app(_:), only reached from execute(), which dry-run skips.
-    So today a dry-run test_action to quit Finder always reports ok:true,
-    regardless of which app is actually frontmost."""
+async def test_action_app_quit_finder_refused_when_frontmost(connected):
+    """See FINDINGS.md #1 (fixed). validate("app", ...) now calls
+    WindowActions.checkApp(_:) directly (no side effects), which does the
+    Finder/self-pid frontmost checks, so a dry-run test_action to quit Finder
+    is refused exactly like a real run would be -- but only actually means
+    something when Finder really is the frontmost app. This suite never
+    changes focus to force that, so the test skips rather than asserting
+    anything when something else is frontmost."""
+    front = harness.frontmost_app_name()
+    if front != "Finder":
+        pytest.skip(f"Finder is not the frontmost app (frontmost is {front!r}); cannot exercise the "
+                     "Finder-quit guard without changing focus")
     r = await run_action(connected.client, {"kind": "app", "op": "quit"})
-    assert r["ok"] is True, (
-        "if this is suddenly False, the Finder/self-quit guard has moved into validate() -- "
-        "great, update this test and close FINDINGS.md #1"
-    )
-    results.note("test_action app/quit reported ok=true under --dry-run regardless of frontmost app "
-                 "(FINDINGS.md #1); the real refusal logic is unreachable without a live, non-dry-run run")
+    assert r["ok"] is False
+    assert r["error"] == "refusing to quit Finder"
+
+
+async def test_action_app_quit_self_is_never_frontmost_so_never_reachable(connected):
+    """The self-quit guard (`front.processIdentifier != getpid()`) can only ever
+    fire if ghostkeysd itself were the frontmost app, which cannot happen for a
+    background daemon with no windows -- documenting that this branch is
+    effectively dead code from the WebSocket protocol's perspective, not a gap
+    in this suite."""
+    front = harness.frontmost_app_name()
+    assert front != "ghostkeysd", "if this ever fires, ghostkeysd somehow became the frontmost app"
 
 
 async def test_action_system_lock_valid(connected):

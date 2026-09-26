@@ -6,25 +6,25 @@ isolated SwiftPM scratch dir) and launches/stops it as a subprocess.
 
 Safety notes (see docs/PROTOCOL.md and the task brief):
 - The daemon is only ever started with --dry-run so no action it runs actually
-  executes (see FINDINGS.md #1 for a caveat about what --dry-run does *not* cover).
+  executes (see FINDINGS.md #1 -- resolved: validate() now runs the frontmost-app
+  refusal checks too, so this only matters for the true side effects).
 - We always pass --parent-pid <this pytest process> so a crashed test runner still
   makes the daemon exit and restore its sensor driver settings.
-- There is no --config-dir flag (checked App/Options.swift; see FINDINGS.md #2), so
-  we back up ~/Library/Application Support/Ghostkeys byte-for-byte before the
-  session and restore it byte-for-byte after, regardless of how the session ends.
+- `--config-dir` (added to Options.swift in response to FINDINGS.md #2) points every
+  daemon instance at its own private, throwaway directory (normally a pytest
+  `tmp_path`). This suite never reads, writes, backs up or restores anything under
+  the real `~/Library/Application Support/Ghostkeys/` (or its `daemon/` subdirectory)
+  -- that path, and the Electron profile that also lives there (FINDINGS.md #7), are
+  never touched at all.
 - We only ever signal/kill processes this module started.
 """
 from __future__ import annotations
 
 import collections
 import os
-import secrets
-import shutil
 import signal
 import socket
 import subprocess
-import sys
-import tempfile
 import threading
 import time
 from pathlib import Path
@@ -36,7 +36,6 @@ SCRATCH_PATH = DAEMON_DIR / ".build-e2e"
 BINARY_PATH = SCRATCH_PATH / "debug" / "ghostkeysd"
 
 DEFAULT_PORT = 47823
-CONFIG_DIR = Path.home() / "Library" / "Application Support" / "Ghostkeys"
 
 
 class BuildError(RuntimeError):
@@ -77,12 +76,12 @@ def wait_port_free(port: int, timeout: float = 5.0) -> bool:
 
 
 def start_resilient(d: "DaemonProcess", wait_ready: float = 8.0, total_budget: float = 45.0) -> None:
-    """Starts `d`, retrying if the single-instance lock or the port is
-    transiently held by *someone else's* ghostkeysd. There is no --config-dir
-    flag (FINDINGS.md #2), so the lock file and config dir are shared with
-    anything else on this machine that runs the daemon; a colliding instance
-    started outside this suite is not ours to kill, so we just wait our turn
-    for up to `total_budget` seconds before giving up.
+    """Starts `d`, retrying if the port is transiently held by *someone else's*
+    ghostkeysd (or ghostkeys-lab, or anything else on this machine bound to
+    47823). Each of our own daemon instances gets its own --config-dir, so we
+    never race ourselves on the single-instance lock; this only matters for a
+    colliding process outside this suite, which is not ours to kill, so we just
+    wait our turn for up to `total_budget` seconds before giving up.
     """
     deadline = time.time() + total_budget
     last_err: Optional[Exception] = None
@@ -105,32 +104,50 @@ def start_resilient(d: "DaemonProcess", wait_ready: float = 8.0, total_budget: f
 
 
 class DaemonProcess:
-    """One ghostkeysd subprocess. Always dry-run. Captures stdout/stderr so tests
+    """One ghostkeysd subprocess. Always dry-run, always given its own
+    `--config-dir` (a caller-supplied throwaway directory, normally a pytest
+    `tmp_path`), so it never touches the real, shared
+    ~/Library/Application Support/Ghostkeys/. Captures stdout/stderr so tests
     can assert on log lines (e.g. the sensor-restore message) without risking a
     pipe deadlock."""
 
-    def __init__(self, binary: Path, port: int = DEFAULT_PORT, dry_run: bool = True,
+    def __init__(self, binary: Path, config_dir: Path, port: int = DEFAULT_PORT, dry_run: bool = True,
                  verbose: bool = True, extra_args: Optional[list[str]] = None,
-                 parent_pid: Optional[int] = None, token: Optional[str] = None):
+                 parent_pid: Optional[int] = None):
         self.binary = str(binary)
+        self.config_dir = Path(config_dir)
+        self.config_dir.mkdir(parents=True, exist_ok=True)
         self.port = port
         self.dry_run = dry_run
         self.verbose = verbose
         self.extra_args = extra_args or []
         self.parent_pid = parent_pid or os.getpid()
-        # Server/WebSocketServer.swift now requires a handshake header
-        # X-Ghostkeys-Token matching either the per-launch token file it writes
-        # to the (shared) config dir, or a GHOSTKEYS_TOKEN env var of at least 32
-        # characters (Security/SessionToken.swift). We supply our own via the
-        # environment so tests never need to read the token file (which lives in
-        # the same shared, unisolated config dir as everything else -- see
-        # FINDINGS.md #2) and so each daemon instance gets an independent secret.
-        self.token = token or secrets.token_hex(32)
         self.proc: Optional[subprocess.Popen] = None
         self.stdout_lines: "collections.deque[str]" = collections.deque(maxlen=10000)
         self.stderr_lines: "collections.deque[str]" = collections.deque(maxlen=10000)
         self._threads: list[threading.Thread] = []
         self._killed_hard = False
+        self._token: Optional[str] = None
+
+    @property
+    def token(self) -> str:
+        """The per-launch handshake token (Security/SessionToken.swift), read
+        directly from `<config_dir>/token`. Valid once the daemon has started
+        (the token is written before the WebSocket listener opens)."""
+        if self._token is None:
+            token_path = self.config_dir / "token"
+            deadline = time.time() + 5.0
+            last_err: Optional[Exception] = None
+            while time.time() < deadline:
+                try:
+                    self._token = token_path.read_text().strip()
+                    break
+                except OSError as e:
+                    last_err = e
+                    time.sleep(0.05)
+            if self._token is None:
+                raise RuntimeError(f"could not read token file at {token_path}: {last_err}")
+        return self._token
 
     def _pump(self, stream, sink):
         try:
@@ -147,7 +164,8 @@ class DaemonProcess:
                 pass
 
     def args(self) -> list[str]:
-        a = [self.binary, "--port", str(self.port), "--parent-pid", str(self.parent_pid)]
+        a = [self.binary, "--port", str(self.port), "--parent-pid", str(self.parent_pid),
+             "--config-dir", str(self.config_dir)]
         if self.dry_run:
             a.append("--dry-run")
         if self.verbose:
@@ -156,10 +174,9 @@ class DaemonProcess:
         return a
 
     def start(self, wait_ready: float = 8.0) -> None:
-        env = dict(os.environ)
-        env["GHOSTKEYS_TOKEN"] = self.token
+        self._token = None
         self.proc = subprocess.Popen(
-            self.args(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1, env=env,
+            self.args(), stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, bufsize=1,
         )
         for stream, sink in ((self.proc.stdout, self.stdout_lines), (self.proc.stderr, self.stderr_lines)):
             t = threading.Thread(target=self._pump, args=(stream, sink), daemon=True)
@@ -284,103 +301,36 @@ def motion_sensor_report_intervals() -> str:
     return "\n".join(lines) if lines else "(no AppleSPUHIDDriver ReportInterval lines found)"
 
 
-class ConfigSandbox:
-    """Backs up and restores only the specific files/directories ghostkeysd
-    itself owns inside ~/Library/Application Support/Ghostkeys/, byte-for-byte,
-    however the session ends (normal, exception, or the atexit backstop in
-    conftest.py).
-
-    IMPORTANT: that directory is NOT exclusive to the daemon. Partway through
-    this session it was found to also hold a full Electron userData profile
-    (Cache, GPUCache, Session Storage, Local Storage, Preferences, Cookies,
-    blob_storage, ...) -- almost certainly from the real Ghostkeys.app, whose
-    default Electron userData path collides with the daemon's hardcoded config
-    directory name (see FINDINGS.md #7). An earlier version of this class
-    backed up and wiped the *entire* directory, which would delete that
-    profile's live data (or worse, interfere with a concurrently running
-    Ghostkeys.app) on every single test. This version only ever touches the
-    exact paths ghostkeysd itself reads or writes:
-      - config.json, config.json.bak, config.json.bad (Config/ConfigStore.swift)
-      - daemon.lock (App/Lifetime.swift InstanceLock)
-      - token (Security/SessionToken.swift)
-      - approved.json (Security/ApprovalStore.swift)
-      - spu-originals.json (Sensors/SPUDriverControl.swift)
-      - model/ (Config/ConfigStore.swift modelDirectory: zone-model.json,
-        calibration-report.json, samples.json, and their .bak files)
-    Everything else in that directory, however large, is left completely alone.
-    """
-
-    OWNED_FILES = ("config.json", "config.json.bak", "config.json.bad", "daemon.lock",
-                   "token", "approved.json", "spu-originals.json")
-    OWNED_DIRS = ("model",)
-
-    def __init__(self, real_dir: Path = CONFIG_DIR):
-        self.real_dir = real_dir
-        self.backup_root: Optional[Path] = None
-        self._done = False
-
-    def _owned_paths(self):
-        for name in self.OWNED_FILES:
-            yield self.real_dir / name, False
-        for name in self.OWNED_DIRS:
-            yield self.real_dir / name, True
-
-    def _remove_owned(self) -> None:
-        for path, is_dir in self._owned_paths():
-            if not path.exists():
-                continue
-            if is_dir:
-                shutil.rmtree(path)
-            else:
-                path.unlink()
-
-    def snapshot_and_clear(self) -> None:
-        self.backup_root = Path(tempfile.mkdtemp(prefix="ghostkeys-e2e-backup-"))
-        for path, is_dir in self._owned_paths():
-            if not path.exists():
-                continue
-            dest = self.backup_root / path.name
-            if is_dir:
-                shutil.copytree(path, dest, symlinks=True)
-                shutil.rmtree(path)
-            else:
-                shutil.copy2(path, dest)
-                path.unlink()
-        self._done = True
-
-    def restore(self) -> None:
-        if not self._done:
-            return
-        self._remove_owned()
-        if self.backup_root is not None:
-            for path, is_dir in self._owned_paths():
-                src = self.backup_root / path.name
-                if not src.exists():
-                    continue
-                if is_dir:
-                    shutil.copytree(src, path, symlinks=True)
-                else:
-                    self.real_dir.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(src, path)
-            shutil.rmtree(self.backup_root, ignore_errors=True)
-        self._done = False
-
-    def reset_between_tests(self) -> None:
-        """Removes only ghostkeysd's own files/dirs so the next test starts from
-        Config.defaults again (it recreates config.json on load if missing),
-        without touching anything else that happens to live alongside them."""
-        self._remove_owned()
+def frontmost_app_name() -> Optional[str]:
+    """The current frontmost app's display name, via `lsappinfo` (no
+    Accessibility/Automation permission needed, unlike an AppleScript
+    `System Events` query). Used to gate the Finder-quit dry-run guard test,
+    which only means something when Finder actually is frontmost -- this suite
+    never changes focus to force that."""
+    try:
+        asn = subprocess.run(["lsappinfo", "front"], capture_output=True, text=True, timeout=3).stdout.strip()
+        if not asn:
+            return None
+        out = subprocess.run(["lsappinfo", "info", "-only", "name", asn], capture_output=True, text=True,
+                              timeout=3).stdout
+        if "=" in out:
+            return out.split("=", 1)[1].strip().strip('"')
+    except Exception:
+        return None
+    return None
 
 
-def run_restore_sensors(binary: Path, attempts: int = 5, delay: float = 1.0, timeout: float = 10.0):
-    """Runs `ghostkeysd --restore-sensors` (App/Options.swift), retrying if the
-    shared single-instance lock is transiently held by another instance (ours or
-    someone else's -- see start_resilient). Returns the finished
-    subprocess.CompletedProcess, or raises TimeoutError if the lock never frees
-    up within the retry budget."""
+def run_restore_sensors(binary: Path, config_dir: Path, attempts: int = 5, delay: float = 1.0,
+                         timeout: float = 10.0):
+    """Runs `ghostkeysd --config-dir <config_dir> --restore-sensors`
+    (App/Options.swift), retrying if that config dir's single-instance lock is
+    transiently still held (e.g. the daemon we just SIGKILLed hasn't been fully
+    reaped yet). Returns the finished subprocess.CompletedProcess, or raises
+    TimeoutError if the lock never frees up within the retry budget."""
     last: Optional[subprocess.CompletedProcess] = None
     for _ in range(attempts):
-        last = subprocess.run([str(binary), "--restore-sensors"], capture_output=True, text=True, timeout=timeout)
+        last = subprocess.run([str(binary), "--config-dir", str(config_dir), "--restore-sensors"],
+                               capture_output=True, text=True, timeout=timeout)
         if last.returncode != 4 or "already running" not in last.stderr:
             return last
         time.sleep(delay)

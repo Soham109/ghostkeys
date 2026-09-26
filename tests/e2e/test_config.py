@@ -93,8 +93,12 @@ async def test_config_set_invalid_binding_schema_is_rejected(connected):
     assert err["message"].startswith("invalid config:")
 
 
-async def test_config_persists_across_daemon_restart(daemon_binary, port, config_path):
-    d1 = DaemonProcess(daemon_binary, port=port, dry_run=True, verbose=True)
+async def test_config_persists_across_daemon_restart(daemon_binary, port, tmp_path):
+    # Both instances point at the same --config-dir on purpose: this is what makes
+    # it a persistence test rather than two independent, isolated daemons.
+    config_dir = tmp_path / "ghostkeys-config"
+
+    d1 = DaemonProcess(daemon_binary, config_dir=config_dir, port=port, dry_run=True, verbose=True)
     try:
         harness.start_resilient(d1)
     except TimeoutError as e:
@@ -110,7 +114,10 @@ async def test_config_persists_across_daemon_restart(daemon_binary, port, config
         d1.stop()
     assert harness.wait_port_free(port, timeout=5), "port did not free up after stopping the first daemon instance"
 
-    d2 = DaemonProcess(daemon_binary, port=port, dry_run=True, verbose=True)
+    on_disk = json.loads((config_dir / "config.json").read_text())
+    assert on_disk["settings"]["sensitivity"] == 0.91
+
+    d2 = DaemonProcess(daemon_binary, config_dir=config_dir, port=port, dry_run=True, verbose=True)
     try:
         harness.start_resilient(d2)
         async with Client(f"ws://127.0.0.1:{port}/", token=d2.token) as c:
