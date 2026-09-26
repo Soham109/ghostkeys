@@ -14,7 +14,7 @@ let package = Package(
         // Optional camera add-on (M4/M5 Desk View): hand tracking, pinches, air gestures.
         .target(name: "GhostkeysVision"),
         // Lab tool: record labeled sensor sessions, replay them through detection, report accuracy.
-        .executableTarget(name: "ghostkeys-lab", dependencies: ["GhostkeysDetection"]),
+        .executableTarget(name: "ghostkeys-lab", dependencies: ["GhostkeysDetection"], exclude: ["README.md"]),
         .testTarget(name: "GhostkeysAcousticsTests", dependencies: ["GhostkeysAcoustics"],
                     swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],
                     linkerSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks", "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])]),
