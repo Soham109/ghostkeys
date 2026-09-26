@@ -4,6 +4,9 @@ import {
   CAMERA_GESTURES,
   GESTURE_HINT,
   SOUND_GESTURES,
+  SONAR_GESTURES,
+  SONAR_AIR_GESTURES,
+  SLIDER_GESTURES,
   ZONELESS_GESTURES,
   AIR_ZONE,
   type Action,
@@ -28,7 +31,7 @@ import { findCommand } from './IntegrationFields'
 import { GesturePicker, demoFor } from '../gestures/GesturePicker'
 import { GestureDemo } from '../gestures/GestureDemo'
 
-export const PRO_GESTURES: GestureKind[] = ['sequence', 'rhythm', 'lid_nudge', 'cover', 'cover_hold', 'tilt_left', 'tilt_right', ...SOUND_GESTURES, ...CAMERA_GESTURES]
+export const PRO_GESTURES: GestureKind[] = ['sequence', 'rhythm', 'lid_nudge', 'cover', 'cover_hold', 'tilt_left', 'tilt_right', ...SOUND_GESTURES, ...SONAR_GESTURES, ...CAMERA_GESTURES]
 
 function Row({ label, children, align = 'center' }: { label: string; children: React.ReactNode; align?: 'center' | 'start' }): React.JSX.Element {
   return (
@@ -107,6 +110,12 @@ export function BindingEditor({
     else applyAction(action)
   }
   const setGesture = (g: GestureKind): void => {
+    const slider = SLIDER_GESTURES.includes(g) ? (b.slider ?? { mode: 'relative' as const, stepMm: 15, inverse: null }) : null
+    if (SONAR_AIR_GESTURES.includes(g)) return patch({ gesture: g, zone: AIR_ZONE, zones: null, knob: null, slider })
+    if (g.startsWith('finger_slide')) {
+      const grille = config.zones.find((z) => z.id === 'right-grille')?.id ?? config.zones.find((z) => z.id.includes('grille'))?.id ?? config.zones[0]?.id ?? null
+      return patch({ gesture: g, zone: b.zone && b.zone !== AIR_ZONE ? b.zone : grille, zones: null, knob: null, slider })
+    }
     if (CAMERA_GESTURES.includes(g)) patch({ gesture: g, zone: AIR_ZONE, zones: null, knob: g === 'pinch_hold' ? (b.knob ?? { axis: 'y', stepPx: 24 }) : null })
     else if (ZONELESS_GESTURES.includes(g)) patch({ gesture: g, zone: null, zones: null, knob: null })
     else if (g === 'sequence') patch({ gesture: g, zone: null, zones: [b.zone ?? config.zones[0]?.id ?? '', config.zones[1]?.id ?? ''], knob: null })
@@ -135,7 +144,12 @@ export function BindingEditor({
       inverse = await ensureActionApproved(inverse, `Saving "${label}", the opposite direction.`)
       if (!inverse) return
     }
-    onSave({ ...b, action: approved, label, ...(b.knob ? { knob: { ...b.knob, inverse } } : {}) })
+    let sInverse = b.slider?.inverse ?? null
+    if (sInverse) {
+      sInverse = await ensureActionApproved(sInverse, `Saving "${label}", the opposite direction.`)
+      if (!sInverse) return
+    }
+    onSave({ ...b, action: approved, label, ...(b.knob ? { knob: { ...b.knob, inverse } } : {}), ...(b.slider ? { slider: { ...b.slider, inverse: sInverse } } : {}) })
   }
   const revoke = (): void => {
     for (const p of riskyParts(b.action)) if (p.approvedHash) client.send({ type: 'revoke_action', hash: p.approvedHash })
@@ -200,6 +214,52 @@ export function BindingEditor({
                 <ZoneSelect config={config} label="Zone" value={b.zone} onChange={(id) => patch({ zone: id })} />
               </Row>
             ) : null}
+
+            {SLIDER_GESTURES.includes(b.gesture) && (
+              <>
+                <Row label="Slider">
+                  <div className="flex items-center gap-3">
+                    <Segmented
+                      aria-label="Slider mode"
+                      value={b.slider?.mode ?? 'relative'}
+                      onValueChange={(mode) => patch({ slider: { stepMm: 15, ...b.slider, mode } })}
+                      options={[
+                        { value: 'relative', label: 'Like a knob' },
+                        { value: 'absolute', label: 'Follows my hand' }
+                      ]}
+                    />
+                    <label className="flex h-7 items-center gap-1 rounded-[6px] bg-fill px-2 shadow-[inset_0_0_0_1px_var(--hairline)]">
+                      <span className="tag-mono text-ink-3">Step</span>
+                      <input
+                        type="number"
+                        min={2}
+                        max={80}
+                        value={b.slider?.stepMm ?? 15}
+                        aria-label="Movement per step, millimetres"
+                        onChange={(e) => patch({ slider: { mode: 'relative', ...b.slider, stepMm: Math.max(2, Number(e.target.value) || 15) } })}
+                        className="num w-9 bg-transparent text-right text-[12px] text-ink outline-none"
+                      />
+                      <span className="tag-mono text-ink-3">mm</span>
+                    </label>
+                  </div>
+                  <p className="mt-1.5 text-[12px] text-ink-3">
+                    {b.slider?.mode === 'absolute'
+                      ? 'The output follows your hand from where it started; moving back undoes the steps.'
+                      : 'Each step of movement up runs the action below; each step down runs the opposite.'}
+                  </p>
+                </Row>
+                <Row label="Opposite" align="start">
+                  <div className="flex flex-col gap-3">
+                    <KindSelect
+                      allowMacro={false}
+                      value={b.slider?.inverse?.kind ?? 'volume'}
+                      onChange={(k) => patch({ slider: { mode: 'relative', stepMm: 15, ...b.slider, inverse: defaultAction(k) } })}
+                    />
+                    {b.slider?.inverse && <ActionFields compact action={b.slider.inverse} onChange={(a) => patch({ slider: { mode: 'relative', stepMm: 15, ...b.slider, inverse: a } })} />}
+                  </div>
+                </Row>
+              </>
+            )}
 
             {b.gesture === 'pinch_hold' && (
               <>

@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { TRIGGER_PRESETS } from '@shared/actions'
 import { builtinLibrary, categoriesOf, normalizeLayout, normalizePresets, type Library, type LibraryLayout } from '@shared/library'
 
 /** Reads presets/library.json and presets/layouts/*.json; falls back to the built-in list. */
@@ -31,5 +32,6 @@ export function loadLibrary(dir: string): Library {
       }
     }
   }
+  if (source === 'file') presets = [...TRIGGER_PRESETS.filter((t) => !presets.some((p) => p.id === t.id)), ...presets]
   return { source, presets, layouts, categories: categoriesOf(presets) }
 }

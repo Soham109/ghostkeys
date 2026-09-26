@@ -17,7 +17,21 @@ function appPath(bundleId: string): Promise<string | null> {
   })
 }
 
-export function registerNativeIpc(getMain: () => BrowserWindow | null): void {
+export interface FeedbackHooks {
+  missed: () => void
+  falseTap: () => void
+  shortcuts: () => { missed: string; falseTap: string }
+}
+
+export function registerNativeIpc(getMain: () => BrowserWindow | null, fb: FeedbackHooks): void {
+  buildMenu(getMain, fb)
+  registerIpcOnce(getMain)
+}
+
+let ipcDone = false
+function registerIpcOnce(_getMain: () => BrowserWindow | null): void {
+  if (ipcDone) return
+  ipcDone = true
   ipcMain.handle('app-icon', async (_e, bundleId: string) => {
     if (iconCache.has(bundleId)) return iconCache.get(bundleId)
     let url: string | null = null
@@ -51,7 +65,11 @@ export function registerNativeIpc(getMain: () => BrowserWindow | null): void {
     })
   })
 
-  // ---------------------------------------------------------------- menu bar
+}
+
+/** The native menu bar. Rebuilt when the feedback shortcuts change. */
+export function buildMenu(getMain: () => BrowserWindow | null, fb: FeedbackHooks): void {
+  const sc = fb.shortcuts()
   const send = (cmd: MenuCommand) => () => {
     const w = getMain()
     if (!w) return
@@ -106,6 +124,9 @@ export function registerNativeIpc(getMain: () => BrowserWindow | null): void {
         { type: 'separator' },
         { label: 'Search and Commands', accelerator: 'CommandOrControl+K', click: send('palette') },
         { label: 'Pause or Resume Ghostkeys', accelerator: 'CommandOrControl+Shift+P', click: send('pause-toggle') },
+        { type: 'separator' },
+        { label: 'Missed a Tap', accelerator: sc.missed, registerAccelerator: false, click: () => fb.missed() },
+        { label: 'That Wasn\u2019t Me', accelerator: sc.falseTap, registerAccelerator: false, click: () => fb.falseTap() },
         ...(dev ? ([{ type: 'separator' }, { role: 'reload' }, { role: 'toggleDevTools' }] as Electron.MenuItemConstructorOptions[]) : []),
         { type: 'separator' },
         { role: 'togglefullscreen' }

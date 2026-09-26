@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import WebSocket from 'ws'
-import { parseDaemonMessage, type AppMessage, type Config, type DaemonMessage, type SessionMsg } from '@shared/protocol'
+import { parseDaemonMessage, type AppMessage, type Config, type DaemonMessage, type SessionKind, type SessionMsg } from '@shared/protocol'
 import type { ConnState } from '@shared/ipc'
 
 export const TOKEN_HEADER = 'X-Ghostkeys-Token'
@@ -19,7 +19,9 @@ export class DaemonBridge extends EventEmitter {
   state: ConnState = 'connecting'
   paused = false
   pausedReason: string | null = null
-  sessions: { sound?: SessionMsg; air?: SessionMsg } = {}
+  /** The classifier's guess for the most recent dropped tap, for "Missed a tap". */
+  lastDropped: { zone: string; at: number } | null = null
+  sessions: Partial<Record<SessionKind, SessionMsg>> = {}
   config: Config | null = null
   hello: DaemonMessage | null = null
   status: DaemonMessage | null = null
@@ -107,8 +109,10 @@ export class DaemonBridge extends EventEmitter {
       this.config = msg.config
     } else if (msg.type === 'hello') {
       this.hello = msg
+    } else if (msg.type === 'rejected' && msg.zone) {
+      this.lastDropped = { zone: msg.zone, at: Date.now() }
     } else if (msg.type === 'session') {
-      this.sessions[msg.kind === 'sound' ? 'sound' : 'air'] = msg
+      this.sessions[msg.kind] = msg
       this.emit('change')
     }
     this.emit('message', msg)

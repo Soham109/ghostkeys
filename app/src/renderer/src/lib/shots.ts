@@ -242,7 +242,13 @@ const SHOTS: Record<string, () => Promise<void>> = {
       return cells
     })
     const overall = Object.values(acc).reduce((s, v) => s + v, 0) / Object.keys(acc).length
-    useWizard.setState({ step: 'results', picked: ids, result: { type: 'calibration', phase: 'done', accuracy: acc, overall, confusion, labels } })
+    const recommendation = {
+      keep: ids.filter((id) => id !== 'right-grille' && id !== 'lid'),
+      drop: { lid: 'recognised 56% of the time (needs 80%)' },
+      merge: [['right-grille', 'top-strip']] as [string, string][],
+      expectedAccuracy: Object.fromEntries(ids.filter((id) => id !== 'lid').map((id) => [id, 0.96]))
+    }
+    useWizard.setState({ step: 'results', picked: ids, applied: null, merged: [], result: { type: 'calibration', phase: 'done', accuracy: acc, overall, confusion, labels, recommendation, peaks: Object.fromEntries(ids.map((id) => [id, { p10: 0.05, p50: 0.11, p90: 0.2 }])) } })
     useStore.getState().navigate('calibration')
     await sleep(1500)
   },
@@ -314,6 +320,89 @@ const SHOTS: Record<string, () => Promise<void>> = {
     await sleep(300)
     clickText('nav[aria-label="Gesture groups"] button', 'Sonar')
     await sleep(1400)
+  },
+  'calibration-merged': async () => {
+    await SHOTS['calibration-4-results']!()
+    useWizard.setState({
+      applied: { type: 'calibration', phase: 'recommendation_applied', disabled: ['lid'], keep: [], mergeSuggested: [['right-grille', 'top-strip']], overall: 0.96, accuracy: {}, labels: [] },
+      merged: [
+        {
+          type: 'calibration',
+          phase: 'merge_applied',
+          zone: 'right-grille-and-top-strip',
+          name: 'Right grille and top strip',
+          merged: ['right-grille', 'top-strip'],
+          samples: 40,
+          bindingsChanged: [
+            { id: 'b2', label: 'Volume up', gesture: 'tap', from: 'right-grille', to: 'right-grille-and-top-strip' },
+            { id: 'b8', label: 'Screenshot of an area', gesture: 'triple', from: 'top-strip', to: 'right-grille-and-top-strip' }
+          ],
+          conflicts: [],
+          overall: 0.96,
+          accuracy: {},
+          labels: []
+        }
+      ]
+    })
+    await sleep(500)
+  },
+  'live-feedback': async () => {
+    useStore.getState().navigate('live')
+    await sleep(900)
+    useStore.setState({ missedPickerOpen: true })
+    await sleep(500)
+  },
+  'zones-disabled': async () => {
+    const d = useStore.getState().draft
+    if (d) useStore.setState({ draft: { ...d, zones: d.zones.map((z) => (z.id === 'lid' ? { ...z, enabled: false } : z)) } })
+    useStore.getState().navigate('zones')
+    await sleep(500)
+    clickText('aside button', 'Lid')
+    await sleep(500)
+  },
+  'settings-advanced': async () => {
+    useStore.getState().navigate('settings')
+    await sleep(400)
+    clickText('button', 'Advanced')
+    await sleep(300)
+    document.querySelector('[aria-label="Feedback"]')?.scrollIntoView({ block: 'center' })
+    await sleep(300)
+  },
+  'sensors-log': async () => {
+    useStore.getState().navigate('sensors')
+    await sleep(3500)
+    clickText('aside button', 'Export last 10 s')
+    await sleep(600)
+  },
+  'settings-sonar': async () => {
+    useStore.getState().saveSettings({ sonar: { enabled: true, sessionSeconds: 30, autoApps: [] } })
+    useStore.getState().navigate('settings')
+    await sleep(500)
+    document.querySelector('[aria-label="Sonar (in the air, no camera)"]')?.scrollIntoView({ block: 'start' })
+    await sleep(300)
+    clickText('button', 'Test sonar on this Mac')
+    await sleep(400)
+  },
+  'sensors-sonar': async () => {
+    useStore.getState().saveSettings({ sonar: { enabled: true, sessionSeconds: 30, autoApps: [] } })
+    await sleep(200)
+    client.send({ type: 'sonar_session_start', seconds: 20 })
+    useStore.getState().navigate('sensors')
+    await sleep(2700)
+  },
+  'bindings-hover': async () => {
+    await openSeed({
+      id: 'b-hover',
+      enabled: true,
+      gesture: 'hover_level',
+      zone: 'air',
+      zones: null,
+      modifiers: [],
+      app: '*',
+      label: 'Hover over a speaker for volume',
+      action: { kind: 'volume', step: 6 },
+      slider: { mode: 'relative', stepMm: 15, inverse: { kind: 'volume', step: -6 } }
+    })
   },
   'demo-frames': async () => {
     useStore.setState({ debugFrames: true })

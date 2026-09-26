@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { CAMERA_GESTURES, GESTURES, GESTURE_HINT, GESTURE_LABEL, SOUND_GESTURES, type Binding, type GestureKind } from '@shared/protocol'
+import { CAMERA_GESTURES, GESTURES, GESTURE_HINT, GESTURE_LABEL, SONAR_GESTURES, SOUND_GESTURES, type Binding, type GestureKind } from '@shared/protocol'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/overlays'
 import { ProTag } from '../ui/controls'
@@ -16,6 +16,7 @@ export function demoFor(b: Pick<Binding, 'gesture' | 'zone' | 'zones' | 'modifie
   if (b.modifiers.length && (b.gesture === 'tap' || b.gesture === 'double' || b.gesture === 'triple'))
     return { gesture: 'modifier_tap', zone: b.zone, modifiers: b.modifiers }
   if (b.gesture === 'sequence' && b.zones?.length === 2 && b.zones[0] && b.zones[1]) return { gesture: 'sequence', pair: [b.zones[0], b.zones[1]] }
+  if (b.gesture === 'finger_slide') return { gesture: 'finger_slide_up', zone: b.zone && b.zone !== 'air' ? b.zone : null }
   return { gesture: b.gesture as DemoId, zone: b.zone && b.zone !== 'air' ? b.zone : null }
 }
 
@@ -43,10 +44,11 @@ export function GesturePicker({
   React.useEffect(() => {
     if (open) setHover(value)
   }, [open, value])
-  const touch = GESTURES.filter((g) => !SOUND_GESTURES.includes(g) && !CAMERA_GESTURES.includes(g))
+  const touch = GESTURES.filter((g) => !SOUND_GESTURES.includes(g) && !CAMERA_GESTURES.includes(g) && !SONAR_GESTURES.includes(g))
   const groups: { label: string; items: GestureKind[] }[] = [
     { label: 'Taps and motion', items: touch },
     ...(sound ? [{ label: 'Sound mode', items: SOUND_GESTURES }] : []),
+    ...(sound ? [{ label: 'Sonar', items: SONAR_GESTURES }] : []),
     ...(camera ? [{ label: 'Camera', items: CAMERA_GESTURES }] : [])
   ]
   const flat = groups.flatMap((g) => g.items)

@@ -1,4 +1,4 @@
-import type { Action, ActionKind, AppOp, MediaCommand, Modifier, SimpleAction, SystemOp, WindowOp } from './protocol'
+import type { Action, ActionKind, AppOp, Binding, MediaCommand, Modifier, SimpleAction, SystemOp, WindowOp } from './protocol'
 import { MODIFIER_GLYPH } from './protocol'
 
 export const ACTION_KIND_LABEL: Record<ActionKind, string> = {
@@ -200,11 +200,27 @@ export interface Preset {
   /** Suggested app layer, when the preset only makes sense in one app. */
   app?: string
   keywords?: string
+  /** A preset that also picks its trigger (e.g. a sonar slider). */
+  binding?: Partial<Pick<Binding, 'gesture' | 'zone' | 'slider'>>
 }
+
+/** Presets that come with their own gesture. Added to whichever library is loaded. */
+export const TRIGGER_PRESETS: Preset[] = [
+  {
+    id: 'sonar-hover-volume',
+    name: 'Hover over a speaker for volume',
+    category: 'Media',
+    description: 'Raise your palm above a speaker to turn it up, lower it to turn it down. Needs sonar.',
+    keywords: 'sonar hover slider air volume',
+    action: { kind: 'volume', step: 6 },
+    binding: { gesture: 'hover_level', zone: 'air', slider: { mode: 'relative', stepMm: 15, inverse: { kind: 'volume', step: -6 } } }
+  }
+]
 
 const k = (key: string, ...modifiers: Modifier[]): SimpleAction => ({ kind: 'keystroke', key, modifiers })
 
 export const PRESETS: Preset[] = [
+  ...TRIGGER_PRESETS,
   // Media
   { id: 'media-play', name: 'Play or pause', category: 'Media', action: { kind: 'media', command: 'playpause' } },
   { id: 'media-next', name: 'Next track', category: 'Media', action: { kind: 'media', command: 'next' } },

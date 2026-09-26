@@ -44,7 +44,15 @@ export const SHOTS = [
   'demo-picker',
   'demo-library',
   'onboarding-gestures',
-  'demo-frames'
+  'demo-frames',
+  'calibration-merged',
+  'live-feedback',
+  'zones-disabled',
+  'settings-advanced',
+  'sensors-log',
+  'settings-sonar',
+  'sensors-sonar',
+  'bindings-hover'
 ] as const
 
 /** Shots captured mid-animation: grab the frame right away. */

@@ -2,13 +2,15 @@ import * as React from 'react'
 import { useStore } from '@/lib/store'
 import { client } from '@/lib/client'
 import { COMMON_APPS, appName } from '@/lib/apps'
-import type { SessionSettings, Settings } from '@shared/protocol'
-import type { ThemeMode } from '@shared/ipc'
+import { SESSION_START, SESSION_STOP, type Modifier, type SessionKind, type SessionSettings, type Settings } from '@shared/protocol'
+import { DEFAULT_SHORTCUTS, type ThemeMode } from '@shared/ipc'
+import { KeystrokeRecorder } from '@/components/bindings/KeystrokeRecorder'
+import { Chevron } from '@/components/ui/glyphs'
 import { FAMILY_LABEL } from '@shared/protocol'
 import { PageHeader, ScrollBody } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input, ProTag, Segmented, Slider, Switch } from '@/components/ui/controls'
-import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/overlays'
+import { Menu, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTrigger } from '@/components/ui/overlays'
 import { AppIcon } from '@/components/AppIcon'
 import { previewTapSound } from '@/lib/sound'
 
@@ -73,6 +75,55 @@ function SliderRow({
   )
 }
 
+/** Rarely needed knobs, folded away. */
+function Advanced({ s, set }: { s: Settings; set: (p: Partial<Settings>) => void }): React.JSX.Element {
+  const [open, setOpen] = React.useState(false)
+  const follow = Math.min(s.followUpConfidence ?? 0.5, s.minConfidence)
+  return (
+    <div className="pt-3">
+      <button className="flex items-center gap-1.5 text-[12px] text-ink-2 hover:text-ink" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+        <Chevron className={`size-3 transition-transform duration-200 ${open ? '' : '-rotate-90'}`} />
+        Advanced
+      </button>
+      {open && (
+        <div className="mt-2 shadow-[0_-1px_0_var(--hairline)]">
+          <SliderRow
+            title="Certainty for a second tap"
+            desc="In a zone with a double or triple tap, a weaker tap can complete it. It never fires alone."
+            value={follow}
+            min={0}
+            max={s.minConfidence}
+            step={0.01}
+            format={(v) => `${Math.round(v * 100)} %`}
+            onCommit={(followUpConfidence) => set({ followUpConfidence })}
+          />
+        </div>
+      )}
+    </div>
+  )
+}
+
+function ShortcutRow({ title, desc, value, onChange }: { title: string; desc: string; value: string; onChange: (acc: string) => void }): React.JSX.Element {
+  const toCombo = (acc: string): { key: string; modifiers: Modifier[] } => {
+    const parts = acc.split('+')
+    const key = (parts.pop() ?? 'm').toLowerCase()
+    const map: Record<string, Modifier> = { Control: 'control', Alt: 'option', Option: 'option', Shift: 'shift', Command: 'command', Cmd: 'command', CommandOrControl: 'command' }
+    return { key, modifiers: parts.map((p) => map[p]).filter(Boolean) as Modifier[] }
+  }
+  const toAcc = (c: { key: string; modifiers: Modifier[] }): string => {
+    const map: Record<Modifier, string> = { control: 'Control', option: 'Alt', shift: 'Shift', command: 'Command', fn: '' }
+    const key = c.key.length === 1 ? c.key.toUpperCase() : c.key.charAt(0).toUpperCase() + c.key.slice(1)
+    return [...c.modifiers.map((m) => map[m]).filter(Boolean), key].join('+')
+  }
+  return (
+    <Row title={title} desc={desc}>
+      <div className="w-[200px]">
+        <KeystrokeRecorder value={toCombo(value)} onChange={(c) => c.modifiers.length && onChange(toAcc(c))} />
+      </div>
+    </Row>
+  )
+}
+
 function AutoApps({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }): React.JSX.Element {
   return (
     <div className="flex max-w-[300px] flex-wrap items-center justify-end gap-x-3 gap-y-1">
@@ -107,16 +158,49 @@ function permissionWord(p: string | undefined): string {
   return p === 'authorized' ? 'Allowed' : p === 'denied' ? 'Blocked in System Settings' : 'Not asked yet'
 }
 
-function SessionButton({ kind }: { kind: 'sound' | 'air' }): React.JSX.Element {
+function SessionButton({ kind }: { kind: SessionKind }): React.JSX.Element {
   const s = useStore((st) => st.sessions[kind])
   const active = !!s?.active
   return (
     <Button
       variant="outline"
-      onClick={() => client.send({ type: active ? (kind === 'sound' ? 'sound_session_stop' : 'air_session_stop') : kind === 'sound' ? 'sound_session_start' : 'air_session_start' })}
+      onClick={() => client.send({ type: active ? SESSION_STOP[kind] : SESSION_START[kind] })}
     >
-      {active ? `Stop, ${Math.round(s!.secondsLeft)}s left` : kind === 'sound' ? 'Listen now' : 'Watch now'}
+      {active ? `Stop, ${Math.round(s!.secondsLeft)}s left` : kind === 'air' ? 'Watch now' : kind === 'sonar' ? 'Start sonar' : 'Listen now'}
     </Button>
+  )
+}
+
+/** Start or stop a sonar session, and show (never run) the bench test command. */
+function SonarButtons({ enabled }: { enabled: boolean }): React.JSX.Element {
+  const [open, setOpen] = React.useState(false)
+  const cmd = 'cd ghostkeys/daemon && swift run ghostkeys-lab sonar-bench'
+  return (
+    <div className="flex items-center gap-3">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="text" size="sm">
+            Test sonar on this Mac
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" className="w-[380px] p-4">
+          <p className="text-[13px] text-ink">Run this in Terminal</p>
+          <p className="mt-1 text-[12px] leading-relaxed text-ink-3">
+            It measures how well sonar hears your hand on this Mac, with the two tones playing for about a minute. Quit Ghostkeys first; the bench refuses to run while
+            the helper is using the sensors.
+          </p>
+          <pre className="mt-3 overflow-x-auto rounded-[6px] bg-fill px-3 py-2 font-mono text-[12px] text-ink shadow-[inset_0_0_0_1px_var(--hairline)] select-text">{cmd}</pre>
+          <div className="mt-3 flex justify-end">
+            <Button variant="outline" size="sm" onClick={() => void navigator.clipboard.writeText(cmd)}>
+              Copy command
+            </Button>
+          </div>
+        </PopoverContent>
+      </Popover>
+      <span className={enabled ? '' : 'pointer-events-none opacity-40'}>
+        <SessionButton kind="sonar" />
+      </span>
+    </div>
   )
 }
 
@@ -197,6 +281,7 @@ export function SettingsScreen(): React.JSX.Element {
   const set = (p: Partial<Settings>): void => saveSettings(p)
   const sound = { ...DEFAULT_SESSION, ...s?.sound }
   const camera = { ...DEFAULT_SESSION, deskMode: false, ...s?.camera }
+  const sonar = { ...DEFAULT_SESSION, ...s?.sonar }
 
   return (
     <>
@@ -252,6 +337,8 @@ export function SettingsScreen(): React.JSX.Element {
             )}
           </Section>
 
+          {s && <Advanced s={s} set={set} />}
+
           <Section label="Feedback">
             {s && (
               <>
@@ -304,6 +391,40 @@ export function SettingsScreen(): React.JSX.Element {
               </Row>
               <Row title="Microphone" desc={permissionWord(hello?.permissions.microphone)}>
                 <SessionButton kind="sound" />
+              </Row>
+            </Section>
+          )}
+
+          {s && (
+            <Section
+              label="Sonar (in the air, no camera)"
+              note={
+                <>
+                  Sonar plays two inaudible tones, 19.5 and 20.25 kHz, at a capped low level through the built-in speakers only, never through headphones or
+                  external speakers. The microphone listens for their echo off your hand, so macOS shows its orange dot while sonar runs. Some pets and some young
+                  people can hear these tones. Each session stops by itself after the time you set. Nothing is recorded or saved.
+                  {!hello?.sensors.sound && ' This Mac has no microphone Ghostkeys can use.'}
+                </>
+              }
+            >
+              <Row title="Use sonar" pro desc="Hover over a speaker as a slider, push, pull, sweep across the keys, slide along a grille." htmlFor="sonar">
+                <Switch id="sonar" disabled={!hello?.sensors.sound} checked={sonar.enabled} onCheckedChange={(enabled) => set({ sonar: { ...sonar, enabled } })} />
+              </Row>
+              <SliderRow
+                title="Run for"
+                desc="Each session stops by itself after this long."
+                value={sonar.sessionSeconds}
+                min={10}
+                max={120}
+                step={5}
+                format={(v) => `${v} s`}
+                onCommit={(sessionSeconds) => set({ sonar: { ...sonar, sessionSeconds } })}
+              />
+              <Row title="Start by itself in" desc="A session starts when one of these apps comes to the front.">
+                <AutoApps value={sonar.autoApps} onChange={(autoApps) => set({ sonar: { ...sonar, autoApps } })} />
+              </Row>
+              <Row title="Sonar" desc={sonar.enabled ? 'Starts the tones and the microphone now.' : 'Turn on sonar above first.'}>
+                <SonarButtons enabled={sonar.enabled} />
               </Row>
             </Section>
           )}
@@ -377,6 +498,18 @@ export function SettingsScreen(): React.JSX.Element {
                 </Button>
               )}
             </Row>
+            <ShortcutRow
+              title="Missed a tap"
+              desc="Press right after a tap that did nothing. Works in any app."
+              value={info?.prefs.shortcuts?.missed ?? DEFAULT_SHORTCUTS.missed}
+              onChange={(missed) => void setPrefs({ shortcuts: { ...DEFAULT_SHORTCUTS, ...info?.prefs.shortcuts, missed } })}
+            />
+            <ShortcutRow
+              title="That wasn\u2019t me"
+              desc="Press right after something fired that you didn\u2019t mean."
+              value={info?.prefs.shortcuts?.falseTap ?? DEFAULT_SHORTCUTS.falseTap}
+              onChange={(falseTap) => void setPrefs({ shortcuts: { ...DEFAULT_SHORTCUTS, ...info?.prefs.shortcuts, falseTap } })}
+            />
             <Row title="Welcome tour" desc="The introduction and device check.">
               <Button variant="text" onClick={() => useStore.setState({ onboarding: true, onboardingStep: 0 })}>
                 Show again

@@ -10,6 +10,7 @@ import type {
   HelloMsg,
   IntegrationCatalog,
   RejectReason,
+  SessionKind,
   SessionMsg,
   StatusMsg,
   TapMsg
@@ -45,7 +46,7 @@ interface State {
   rejected: Record<RejectReason, number>
   lastRejected: { reason: RejectReason; at: number } | null
   calibration: CalibrationMsg | null
-  sessions: { sound: SessionMsg | null; air: SessionMsg | null }
+  sessions: Record<SessionKind, SessionMsg | null>
   catalog: IntegrationCatalog | null
   license: LicenseState
   lastError: string | null
@@ -64,6 +65,7 @@ interface State {
   /** Screenshot mode: show the hand drawing sheet. */
   debugHands: boolean
   debugFrames: boolean
+  missedPickerOpen: boolean
 
   navigate: (r: Route) => void
   setDraft: (fn: (c: Config) => Config) => void
@@ -99,7 +101,7 @@ export const useStore = create<State>()((set, get) => ({
   rejected: { typing: 0, trackpad: 0, motion: 0, low_confidence: 0, burst: 0, paused: 0 },
   lastRejected: null,
   calibration: null,
-  sessions: { sound: null, air: null },
+  sessions: { sound: null, sonar: null, air: null },
   catalog: null,
   license: FREE_LICENSE,
   lastError: null,
@@ -116,6 +118,7 @@ export const useStore = create<State>()((set, get) => ({
   windowFocused: true,
   debugHands: false,
   debugFrames: false,
+  missedPickerOpen: false,
 
   navigate: (route) => set({ route, paletteOpen: false }),
   setDraft: (fn) => {
@@ -179,7 +182,7 @@ export function wireClient(): void {
   client.onState((conn) => {
     useStore.setState((s) => ({ conn, everConnected: s.everConnected || conn === 'open' }))
     if (conn === 'open') client.send({ type: 'catalog_get' })
-    else useStore.setState({ sessions: { sound: null, air: null } })
+    else useStore.setState({ sessions: { sound: null, sonar: null, air: null } })
   })
   client.on('hello', (hello) => useStore.setState({ hello }))
   client.on('status', (status) => useStore.setState({ status }))
@@ -228,7 +231,7 @@ export function wireClient(): void {
     }))
   )
   client.on('calibration', (calibration) => useStore.setState({ calibration }))
-  client.on('session', (m) => useStore.setState((s) => ({ sessions: { ...s.sessions, [m.kind === 'sound' ? 'sound' : 'air']: m } })))
+  client.on('session', (m) => useStore.setState((s) => ({ sessions: { ...s.sessions, [m.kind]: m } })))
   client.on('catalog', (m) => useStore.setState({ catalog: m.catalog }))
   client.on('error', (e) => useStore.setState({ lastError: e.message }))
 }

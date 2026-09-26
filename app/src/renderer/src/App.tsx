@@ -78,6 +78,7 @@ function useGlobalKeys(): void {
       } else if (cmd === 'palette') useStore.setState({ paletteOpen: !s.paletteOpen })
       else if (cmd === 'tour') useStore.setState({ onboarding: true, onboardingStep: 0 })
       else if (cmd === 'pause-toggle') s.setPaused(!s.status?.paused)
+      else if (cmd === 'feedback-missed') useStore.setState({ onboarding: false, route: 'live', missedPickerOpen: true })
     })
     return () => {
       window.removeEventListener('keydown', onKey)

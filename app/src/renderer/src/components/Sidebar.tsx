@@ -3,6 +3,7 @@ import { motion, useReducedMotion } from 'motion/react'
 import { useStore, type Route } from '@/lib/store'
 import { client } from '@/lib/client'
 import { cn } from '@/lib/utils'
+import { SESSION_KINDS, SESSION_NAME, SESSION_STOP } from '@shared/protocol'
 
 export const NAV: { route: Route; label: string }[] = [
   { route: 'live', label: 'Live' },
@@ -61,7 +62,7 @@ function TouchDot({ state }: { state: 'on' | 'paused' | 'off' }): React.JSX.Elem
 /** Microphone or camera open right now: say so plainly, with a way to stop it. */
 function SessionLine(): React.JSX.Element | null {
   const sessions = useStore((s) => s.sessions)
-  const active = (['sound', 'air'] as const).filter((k) => sessions[k]?.active)
+  const active = SESSION_KINDS.filter((k) => sessions[k]?.active)
   const [, tick] = React.useState(0)
   React.useEffect(() => {
     if (!active.length) return
@@ -76,11 +77,11 @@ function SessionLine(): React.JSX.Element | null {
         return (
           <div key={k} className="flex items-center gap-2.5 text-[12px]" role="status">
             <span className="size-1.5 rounded-full bg-ink" />
-            <span className="flex-1 text-ink">{k === 'sound' ? 'Microphone on' : 'Camera on'}</span>
+            <span className="flex-1 text-ink">{SESSION_NAME[k]} on</span>
             <span className="num text-[11px] text-ink-3">{Math.max(0, Math.round(m.secondsLeft))}s</span>
             <button
               className="text-[12px] text-ink-2 hover:text-ink"
-              onClick={() => client.send({ type: k === 'sound' ? 'sound_session_stop' : 'air_session_stop' })}
+              onClick={() => client.send({ type: SESSION_STOP[k] })}
             >
               Stop
             </button>

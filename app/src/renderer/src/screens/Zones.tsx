@@ -9,7 +9,7 @@ import { LAPTOPS, obstacles, rectsOverlap, surfaceMm, type LaptopSpec } from '@s
 import { bindingsForZone } from '@/lib/bindings'
 import { PageHeader, Empty } from '@/components/Page'
 import { Button } from '@/components/ui/button'
-import { ProTag, ZoneIndex } from '@/components/ui/controls'
+import { ProTag, Switch, ZoneIndex } from '@/components/ui/controls'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Confirm } from '@/components/ui/overlays'
 import { LaptopMap, normalizeRect } from '@/components/laptop/LaptopMap'
 
@@ -119,6 +119,13 @@ function Inspector({ zone, onDelete }: { zone: Zone; onDelete: () => void }): Re
         aria-label="Zone name"
         className="-mx-1.5 rounded-[6px] px-1.5 py-1 text-[15px] font-medium text-ink outline-none hover:shadow-[inset_0_0_0_1px_var(--hairline)] focus:shadow-[inset_0_0_0_1px_var(--ink-3)]"
       />
+      <label className="flex items-center justify-between gap-4">
+        <span className="flex flex-col">
+          <span className="text-[13px] text-ink">Listen for taps here</span>
+          <span className="text-[12px] text-ink-3">{zone.enabled === false ? 'Off: left out of the model, fires nothing.' : 'On'}</span>
+        </span>
+        <Switch checked={zone.enabled !== false} onCheckedChange={(enabled) => update({ enabled })} aria-label="Listen for taps in this zone" />
+      </label>
       <div className="flex flex-col gap-1">
         <span className="label-mono">Surface</span>
         <Select value={zone.surface} onValueChange={(v) => moveTo(v as Surface)}>
@@ -276,7 +283,8 @@ export function ZonesScreen(): React.JSX.Element {
                     )}
                   >
                     <ZoneIndex n={i + 1} className={z.id === selected ? 'text-ink' : undefined} />
-                    <span className="flex-1 truncate text-[13px]">{z.name}</span>
+                    <span className={cn('flex-1 truncate text-[13px]', z.enabled === false && 'text-ink-3')}>{z.name}</span>
+                    {z.enabled === false && <span className="tag-mono text-ink-3">Off</span>}
                     {PRO_SURFACE(z) && <ProTag />}
                     <span className="text-[12px] text-ink-3">{SURFACE_LABEL[z.surface]}</span>
                   </button>

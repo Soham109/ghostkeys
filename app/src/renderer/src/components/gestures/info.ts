@@ -1,7 +1,7 @@
 import type { GestureKind } from '@shared/protocol'
 import type { DemoId } from './scenes'
 
-export type GestureGroup = 'Taps' | 'Touch and slide' | 'Motion' | 'Sound' | 'Sonar' | 'Camera'
+export type GestureGroup = 'Taps' | 'Motion' | 'Sound' | 'Sonar' | 'Camera'
 
 export interface GestureInfo {
   id: DemoId
@@ -34,18 +34,18 @@ export const GESTURE_INFO: GestureInfo[] = [
   { id: 'rub', gesture: 'rub', label: 'Rub', how: 'Rub a fingertip back and forth.', group: 'Sound', surfaces: 'Palm rests and grilles', macs: 'Macs with a built-in microphone', needs: 'sound', pro: true },
   { id: 'rub_left', gesture: 'rub_left', label: 'Rub left', how: 'Slide a fingertip to the left.', group: 'Sound', surfaces: 'Palm rests and grilles', macs: 'Macs with a built-in microphone', needs: 'sound', pro: true },
   { id: 'rub_right', gesture: 'rub_right', label: 'Rub right', how: 'Slide a fingertip to the right.', group: 'Sound', surfaces: 'Palm rests and grilles', macs: 'Macs with a built-in microphone', needs: 'sound', pro: true },
-  { id: 'finger_slide_up', label: 'Slide up', how: 'Slide a fingertip up along a speaker grille.', group: 'Touch and slide', surfaces: 'Speaker grilles', macs: 'MacBook Pro 14 and 16-inch', needs: 'grilles', coming: true, pro: true },
-  { id: 'finger_slide_down', label: 'Slide down', how: 'Slide a fingertip down along a speaker grille.', group: 'Touch and slide', surfaces: 'Speaker grilles', macs: 'MacBook Pro 14 and 16-inch', needs: 'grilles', coming: true, pro: true },
-  { id: 'finger_slide_left', label: 'Slide left', how: 'Slide a fingertip left along the strip above the keys.', group: 'Touch and slide', surfaces: 'Top strip', macs: ALL_MACS, coming: true, pro: true },
-  { id: 'finger_slide_right', label: 'Slide right', how: 'Slide a fingertip right along the strip above the keys.', group: 'Touch and slide', surfaces: 'Top strip', macs: ALL_MACS, coming: true, pro: true },
-  { id: 'hover_level', label: 'Hover level', how: 'Hold a palm above a speaker and raise or lower it, like a slider in the air.', group: 'Sonar', surfaces: 'Above the speakers', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', coming: true, pro: true },
-  { id: 'push', label: 'Push', how: 'Move an open hand toward the screen above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', coming: true, pro: true },
-  { id: 'pull', label: 'Pull', how: 'Draw an open hand back toward you above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', coming: true, pro: true },
-  { id: 'sweep_left', label: 'Sweep left', how: 'Sweep a hand to the left, just above the deck.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', coming: true, pro: true },
-  { id: 'sweep_right', label: 'Sweep right', how: 'Sweep a hand to the right, just above the deck.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', coming: true, pro: true },
-  { id: 'wave_toward', gesture: 'wave_toward', label: 'Wave toward', how: 'A quick wave toward the screen above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', pro: true },
-  { id: 'wave_away', gesture: 'wave_away', label: 'Wave away', how: 'A quick wave back toward you.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', pro: true },
-  { id: 'wave_sweep', gesture: 'wave_sweep', label: 'Wave across', how: 'Sweep a hand across above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in speakers and microphone; not with headphones', needs: 'sound', pro: true },
+  { id: 'finger_slide_up', gesture: 'finger_slide_up', label: 'Slide up', how: 'Slide a fingertip up along a speaker grille.', group: 'Sonar', surfaces: 'Speaker grilles', macs: 'MacBook Pro 14 and 16-inch', needs: 'grilles', pro: true },
+  { id: 'finger_slide_down', gesture: 'finger_slide_down', label: 'Slide down', how: 'Slide a fingertip down along a speaker grille.', group: 'Sonar', surfaces: 'Speaker grilles', macs: 'MacBook Pro 14 and 16-inch', needs: 'grilles', pro: true },
+  { id: 'finger_slide_left', gesture: 'finger_slide_left', label: 'Slide left', how: 'Slide a fingertip left along a speaker grille.', group: 'Sonar', surfaces: 'Speaker grilles', macs: 'MacBook Pro 14 and 16-inch', needs: 'grilles', pro: true },
+  { id: 'finger_slide_right', gesture: 'finger_slide_right', label: 'Slide right', how: 'Slide a fingertip right along a speaker grille.', group: 'Sonar', surfaces: 'Speaker grilles', macs: 'MacBook Pro 14 and 16-inch', needs: 'grilles', pro: true },
+  { id: 'hover_level', gesture: 'hover_level', label: 'Hover level', how: 'Hold a palm above a speaker and raise or lower it, like a slider in the air.', group: 'Sonar', surfaces: 'Above the speakers', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
+  { id: 'push', gesture: 'push', label: 'Push', how: 'Move an open hand toward the screen above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
+  { id: 'pull', gesture: 'pull', label: 'Pull', how: 'Draw an open hand back toward you above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
+  { id: 'sweep_left', gesture: 'sweep_left', label: 'Sweep left', how: 'Sweep a hand to the left, just above the deck.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
+  { id: 'sweep_right', gesture: 'sweep_right', label: 'Sweep right', how: 'Sweep a hand to the right, just above the deck.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
+  { id: 'wave_toward', gesture: 'wave_toward', label: 'Wave toward', how: 'A quick wave toward the screen above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
+  { id: 'wave_away', gesture: 'wave_away', label: 'Wave away', how: 'A quick wave back toward you.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
+  { id: 'wave_sweep', gesture: 'wave_sweep', label: 'Wave across', how: 'Sweep a hand across above the keys.', group: 'Sonar', surfaces: 'Above the keyboard', macs: 'Built-in stereo speakers and microphone; never with headphones', needs: 'sound', pro: true },
   { id: 'lid_nudge', gesture: 'lid_nudge', label: 'Lid nudge', how: 'Push the top of the lid back a little and let it return.', group: 'Motion', surfaces: 'The lid', macs: 'Macs with a lid angle sensor', needs: 'lid', pro: true },
   { id: 'cover', gesture: 'cover', label: 'Cover sensor', how: 'Briefly cover the light sensor beside the camera.', group: 'Motion', surfaces: 'Light sensor, top of the screen', macs: 'Macs with an ambient light sensor', needs: 'light', pro: true },
   { id: 'cover_hold', gesture: 'cover_hold', label: 'Cover and hold', how: 'Keep the light sensor covered for over a second.', group: 'Motion', surfaces: 'Light sensor, top of the screen', macs: 'Macs with an ambient light sensor', needs: 'light', pro: true },
@@ -65,7 +65,7 @@ export const GESTURE_INFO: GestureInfo[] = [
   { id: 'point', label: 'Point', how: 'Point at the screen; the fingertip becomes a pointer.', group: 'Camera', surfaces: 'In front of the camera', macs: 'Any Mac with a camera', needs: 'camera', pro: true }
 ]
 
-export const GROUP_ORDER: GestureGroup[] = ['Taps', 'Touch and slide', 'Motion', 'Sound', 'Sonar', 'Camera']
+export const GROUP_ORDER: GestureGroup[] = ['Taps', 'Motion', 'Sound', 'Sonar', 'Camera']
 
 export function infoFor(id: string): GestureInfo | undefined {
   return GESTURE_INFO.find((g) => g.id === id)

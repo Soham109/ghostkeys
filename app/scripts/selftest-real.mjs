@@ -12,7 +12,7 @@ const env = {
   SELFTEST: '1',
   GK_PORT: process.env.GK_PORT ?? '47932',
   GHOSTKEYSD_PATH: join(root, '../daemon/.build-app/debug/ghostkeysd'),
-  GHOSTKEYSD_ARGS: '--dry-run --no-hardware-sessions',
+  GHOSTKEYSD_ARGS: '--dry-run --no-hardware-sessions --simulate-sensors',
   GHOSTKEYS_CONFIG_DIR: configDir
 }
 delete env.GK_MOCK

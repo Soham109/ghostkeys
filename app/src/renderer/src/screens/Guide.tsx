@@ -7,6 +7,7 @@ import { ProTag } from '@/components/ui/controls'
 import { GestureDemo } from '@/components/gestures/GestureDemo'
 import { GESTURE_INFO, GROUP_ORDER, type GestureInfo } from '@/components/gestures/info'
 import { uid } from '@/lib/utils'
+import { CAMERA_GESTURES, SONAR_AIR_GESTURES } from '@shared/protocol'
 
 function supported(info: GestureInfo, hello: ReturnType<typeof useStore.getState>['hello']): boolean | null {
   if (!hello) return null
@@ -34,7 +35,14 @@ function Row({ info }: { info: GestureInfo }): React.JSX.Element {
   const ok = supported(info, hello)
   const use = (): void => {
     if (!info.gesture || !draft) return
-    const zone = ['tap', 'double', 'triple', 'rhythm', 'knock_knuckle'].includes(info.gesture) ? (draft.zones[0]?.id ?? null) : info.gesture.startsWith('pinch') || info.gesture.startsWith('palm') || info.gesture.startsWith('circle') || info.gesture === 'air_tap' ? 'air' : null
+    const g = info.gesture
+    const zone = ['tap', 'double', 'triple', 'rhythm', 'knock_knuckle'].includes(g)
+      ? (draft.zones[0]?.id ?? null)
+      : g.startsWith('finger_slide')
+        ? (draft.zones.find((z) => z.id === 'right-grille')?.id ?? draft.zones[0]?.id ?? null)
+        : [...CAMERA_GESTURES, ...SONAR_AIR_GESTURES].includes(g)
+          ? 'air'
+          : null
     useStore.getState().navigate('bindings')
     useStore.setState({
       editorSeed: {
@@ -45,9 +53,10 @@ function Row({ info }: { info: GestureInfo }): React.JSX.Element {
         zones: info.gesture === 'sequence' ? [draft.zones[0]?.id ?? '', draft.zones[1]?.id ?? ''] : null,
         modifiers: [],
         app: '*',
-        action: { kind: 'media', command: 'playpause' },
-        label: 'Play or pause',
-        knob: info.gesture === 'pinch_hold' ? { axis: 'y', stepPx: 24 } : null
+        action: info.gesture === 'hover_level' ? { kind: 'volume', step: 6 } : { kind: 'media', command: 'playpause' },
+        label: info.gesture === 'hover_level' ? 'Volume' : 'Play or pause',
+        knob: info.gesture === 'pinch_hold' ? { axis: 'y', stepPx: 24 } : null,
+        slider: info.gesture === 'hover_level' ? { mode: 'relative', stepMm: 15, inverse: { kind: 'volume', step: -6 } } : null
       }
     })
   }

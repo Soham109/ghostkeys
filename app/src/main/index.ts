@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import { randomBytes } from 'node:crypto'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -7,11 +7,11 @@ import { DaemonSupervisor } from './daemon'
 import { DaemonBridge } from './bridge'
 import { runScreenshots } from './screenshots'
 import { runSelfTest } from './selftest'
-import { registerNativeIpc } from './native'
+import { buildMenu, registerNativeIpc, type FeedbackHooks } from './native'
 import { loadLibrary } from './library'
-import { DEFAULT_PORT, GESTURE_LABEL, ZONELESS_GESTURES, type AppMessage, type DaemonMessage, type SimpleAction } from '@shared/protocol'
+import { DEFAULT_PORT, GESTURE_LABEL, SESSION_KINDS, SESSION_NAME, SESSION_STOP, ZONELESS_GESTURES, type SessionKind, type AppMessage, type DaemonMessage, type SimpleAction } from '@shared/protocol'
 import { APPROVAL_KINDS, approvalPayload, approvalText } from '@shared/approval'
-import type { AppInfo, AppPrefs, ConnState, DaemonState, HudPayload } from '@shared/ipc'
+import { DEFAULT_SHORTCUTS, type AppInfo, type AppPrefs, type ConnState, type DaemonState, type HudPayload } from '@shared/ipc'
 import { licenseState, parseLicense } from '@shared/license'
 
 const PORT = Number(process.env.GK_PORT ?? DEFAULT_PORT)
@@ -255,10 +255,59 @@ function onDaemonMessage(msg: DaemonMessage): void {
         : (zoneName(msg.zone) ?? GESTURE_LABEL[msg.gesture])
     lastGesture = { title, at: Date.now() }
     showHud(title, ZONELESS_GESTURES.includes(msg.gesture) ? null : GESTURE_LABEL[msg.gesture])
+  } else if (msg.type === 'feedback') {
+    const z = msg.zone ? (zoneName(msg.zone) ?? msg.zone) : 'Last tap'
+    if (msg.kind === 'missed') {
+      const n = msg.counts?.[msg.zone]
+      showHud(z, msg.found && msg.retrained ? `Learned${n ? `, ${n} samples` : ''}` : `Couldn\u2019t find it${msg.reason ? `: ${msg.reason}` : ''}`, msg.found && msg.retrained)
+    } else {
+      showHud(z, msg.retrained ? 'Noted: not a tap' : `Nothing to undo${msg.reason ? `: ${msg.reason}` : ''}`, msg.retrained)
+    }
   } else if (msg.type === 'action') {
     const recent = lastGesture && Date.now() - lastGesture.at < 1500 ? lastGesture.title : null
     const title = msg.bindingId === 'test' || msg.bindingId === null ? 'Test' : (recent ?? 'Ghostkeys')
     showHud(title, msg.label, msg.ok)
+  }
+}
+
+// ---------------------------------------------------------------- feedback loop
+
+/** "I just tapped and nothing happened": uses the classifier's guess for the last dropped tap, else asks in the window. */
+function feedbackMissed(): void {
+  if (!bridge.connected) return showHud('Ghostkeys', 'Not listening', false)
+  const guess = bridge.lastDropped && Date.now() - bridge.lastDropped.at < 6000 ? bridge.lastDropped.zone : null
+  if (guess) {
+    bridge.send({ type: 'feedback_missed', zone: guess })
+    showHud(zoneName(guess) ?? guess, 'Learning that tap')
+  } else {
+    showMain()
+    mainWindow?.webContents.send('menu', 'feedback-missed')
+  }
+}
+
+function feedbackFalse(): void {
+  if (!bridge.connected) return showHud('Ghostkeys', 'Not listening', false)
+  bridge.send({ type: 'feedback_false' })
+}
+
+const feedbackHooks: FeedbackHooks = {
+  missed: feedbackMissed,
+  falseTap: feedbackFalse,
+  shortcuts: () => ({ ...DEFAULT_SHORTCUTS, ...prefs.shortcuts })
+}
+
+function registerShortcuts(): void {
+  globalShortcut.unregisterAll()
+  const sc = feedbackHooks.shortcuts()
+  for (const [acc, fn] of [
+    [sc.missed, feedbackMissed],
+    [sc.falseTap, feedbackFalse]
+  ] as const) {
+    try {
+      if (acc && !globalShortcut.register(acc, fn)) console.error('[shortcuts] taken:', acc)
+    } catch (e) {
+      console.error('[shortcuts] invalid:', acc, e)
+    }
   }
 }
 
@@ -288,21 +337,21 @@ function refreshTray(): void {
       : bridge.paused
         ? 'Paused'
         : 'Listening for taps'
-  const sessions = (['sound', 'air'] as const).filter((k) => bridge.sessions[k]?.active)
-  const sessionLabel = (k: 'sound' | 'air'): string =>
-    `${k === 'sound' ? 'Microphone' : 'Camera'} on, ${Math.max(0, Math.round(bridge.sessions[k]?.secondsLeft ?? 0))} s left`
+  const sessions = SESSION_KINDS.filter((k) => bridge.sessions[k]?.active)
+  const sessionLabel = (k: SessionKind): string =>
+    `${SESSION_NAME[k]} on, ${Math.max(0, Math.round(bridge.sessions[k]?.secondsLeft ?? 0))} s left`
   const sig = JSON.stringify([statusLabel, sessions.map(sessionLabel), bridge.paused])
   if (sig === traySig) return
   traySig = sig
   tray.setToolTip(`Ghostkeys: ${statusLabel}`)
   tray.setImage(trayImage(sessions.length ? 'session' : connected && bridge.paused ? 'paused' : 'normal'))
-  tray.setTitle(sessions.length ? (sessions.includes('air') ? ' CAM' : ' MIC') : '', { fontType: 'monospacedDigit' })
+  tray.setTitle(sessions.length ? (sessions.includes('air') ? ' CAM' : sessions.includes('sonar') ? ' SONAR' : ' MIC') : '', { fontType: 'monospacedDigit' })
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: statusLabel, enabled: false },
       ...sessions.flatMap((k): Electron.MenuItemConstructorOptions[] => [
         { label: sessionLabel(k), enabled: false },
-        { label: k === 'sound' ? 'Turn off the microphone' : 'Turn off the camera', click: () => bridge.send({ type: k === 'sound' ? 'sound_session_stop' : 'air_session_stop' }) }
+        { label: `Turn off the ${SESSION_NAME[k].toLowerCase()}`, click: () => bridge.send({ type: SESSION_STOP[k] }) }
       ]),
       { type: 'separator' },
       {
@@ -311,6 +360,9 @@ function refreshTray(): void {
         click: () => bridge.send({ type: bridge.paused ? 'resume' : 'pause' })
       },
       { label: 'Open Ghostkeys', click: () => showMain() },
+      { type: 'separator' },
+      { label: 'Missed a Tap', enabled: connected, accelerator: feedbackHooks.shortcuts().missed, registerAccelerator: false, click: feedbackMissed },
+      { label: 'That Wasn\u2019t Me', enabled: connected, accelerator: feedbackHooks.shortcuts().falseTap, registerAccelerator: false, click: feedbackFalse },
       { type: 'separator' },
       { label: 'Quit Ghostkeys', accelerator: 'Command+Q', click: () => app.quit() }
     ])
@@ -380,7 +432,14 @@ const RELAYABLE = new Set<AppMessage['type']>([
   'sound_session_start',
   'sound_session_stop',
   'air_session_start',
-  'air_session_stop'
+  'air_session_stop',
+  'sonar_session_start',
+  'sonar_session_stop',
+  'calibration_apply_recommendation',
+  'calibration_apply_merge',
+  'feedback_missed',
+  'feedback_false',
+  'diagnostics_export'
 ])
 
 ipcMain.on('daemon-send', (e, msg: AppMessage) => {
@@ -448,8 +507,15 @@ ipcMain.handle('restart-daemon', async () => {
 })
 
 ipcMain.handle('set-prefs', (_e, p: Partial<AppPrefs>) => {
+  const shortcutsChanged = p.shortcuts && JSON.stringify(p.shortcuts) !== JSON.stringify(prefs.shortcuts)
   prefs = { ...prefs, ...p }
   nativeTheme.themeSource = prefs.theme
+  if (shortcutsChanged) {
+    registerShortcuts()
+    buildMenu(() => mainWindow, feedbackHooks)
+    traySig = ''
+    refreshTray()
+  }
   savePrefs()
   return prefs
 })
@@ -465,7 +531,8 @@ if (!gotLock) {
   void app.whenReady().then(async () => {
     prefs = loadPrefs()
     nativeTheme.themeSource = prefs.theme
-    registerNativeIpc(() => mainWindow)
+    registerNativeIpc(() => mainWindow, feedbackHooks)
+    if (!SCREENSHOT) registerShortcuts()
     if (SCREENSHOT) app.dock?.hide()
     if (process.platform === 'darwin' && !app.isPackaged && !SCREENSHOT) {
       app.dock?.setIcon(join(RES_DIR, 'icon.png'))
@@ -510,6 +577,7 @@ if (!gotLock) {
   })
 
   app.on('activate', () => showMain())
+  app.on('will-quit', () => globalShortcut.unregisterAll())
   app.on('before-quit', () => {
     quitting = true
     bridge.stop()

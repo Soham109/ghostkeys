@@ -1,11 +1,11 @@
 import * as React from 'react'
 import uPlot from 'uplot'
 import { motion } from 'motion/react'
-import { REJECT_LABEL, type AirMsg, type ImuMsg, type RejectReason } from '@shared/protocol'
+import { REJECT_LABEL, type AirMsg, type CandidateMsg, type DiagnosticsMsg, type ImuMsg } from '@shared/protocol'
 import { useStore, zoneNumber } from '@/lib/store'
 import { client } from '@/lib/client'
 import { PageHeader } from '@/components/Page'
-import { Segmented } from '@/components/ui/controls'
+import { Segmented, ZoneIndex } from '@/components/ui/controls'
 import { Button } from '@/components/ui/button'
 
 const WINDOW_S = 8
@@ -256,6 +256,81 @@ function Scale({ value, marks }: { value: number; marks?: { at: number; label: s
   )
 }
 
+/** Stereo sonar: how far a hand moved above each speaker, the hover level, and the last sonar gesture. */
+function SonarPanel(): React.JSX.Element {
+  const session = useStore((s) => s.sessions.sonar)
+  const enabled = useStore((s) => !!s.config?.settings.sonar?.enabled)
+  const [mm, setMm] = React.useState<{ left: number; right: number }>({ left: 0, right: 0 })
+  const [level, setLevel] = React.useState<number | null>(null)
+  const [label, setLabel] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    const unsub = client.subscribe(['air'])
+    const offs = [
+      client.on('air', (m) => {
+        if (m.source && m.source !== 'sonar' && m.gesture !== 'hover_level' && m.gesture !== 'finger_slide') return
+        if (m.gesture === 'hover_level') {
+          const side = m.side ?? 'left'
+          if (m.phase === 'ended') {
+            setMm((p) => ({ ...p, [side]: 0 }))
+            setLevel(null)
+          } else {
+            setMm((p) => ({ ...p, [side]: m.displacementMm ?? (m.value ?? 0) * 150 }))
+            setLevel(m.value ?? null)
+          }
+        } else if (m.gesture === 'finger_slide' && m.phase !== 'ended') setLabel(`slide ${Math.round(m.dyMm ?? 0)} mm`)
+      }),
+      client.on('gesture', (g) => {
+        if (['push', 'pull', 'sweep_left', 'sweep_right'].includes(g.gesture) || g.gesture.startsWith('finger_slide')) setLabel(g.gesture.replace(/_/g, ' '))
+      })
+    ]
+    return () => {
+      unsub()
+      offs.forEach((o) => o())
+    }
+  }, [])
+  React.useEffect(() => {
+    if (!label) return
+    const t = setTimeout(() => setLabel(null), 1100)
+    return () => clearTimeout(t)
+  }, [label])
+  const active = !!session?.active
+  const Bar = ({ side }: { side: 'left' | 'right' }): React.JSX.Element => {
+    const v = Math.max(-1, Math.min(1, mm[side] / 150))
+    return (
+      <div className="flex flex-col items-center gap-1.5">
+        <div className="relative h-16 w-px bg-line">
+          <motion.span
+            className="absolute left-1/2 w-2 -translate-x-1/2 bg-ink"
+            animate={{ top: v >= 0 ? `${50 - v * 50}%` : '50%', height: `${Math.abs(v) * 50}%` }}
+            transition={{ type: 'spring', stiffness: 400, damping: 36 }}
+          />
+          <span className="absolute top-1/2 left-1/2 h-px w-3 -translate-x-1/2 bg-ink-3" />
+        </div>
+        <span className="tag-mono text-ink-3">{side === 'left' ? 'L' : 'R'}</span>
+      </div>
+    )
+  }
+  return (
+    <Panel label="Sonar">
+      <div className="mt-4 flex items-end gap-5">
+        <Bar side="left" />
+        <Bar side="right" />
+        <div className="pb-5">
+          <p className="flex items-baseline gap-1">
+            <span className="numeral text-[28px]">{level === null ? '\u2014' : Math.round(level * 100)}</span>
+          </p>
+          <p className="tag-mono mt-1 text-ink-3">{label ?? (active ? (session?.sonarField === false ? 'Tones off' : 'Listening') : 'Off')}</p>
+        </div>
+      </div>
+      <div className="mt-auto">
+        <Button variant="text" size="sm" disabled={!enabled && !active} onClick={() => client.send({ type: active ? 'sonar_session_stop' : 'sonar_session_start' })}>
+          {active ? `Stop, ${Math.round(session!.secondsLeft)}s left` : enabled ? 'Start sonar' : 'Off in Settings'}
+        </Button>
+      </div>
+    </Panel>
+  )
+}
+
 function AirPanel(): React.JSX.Element {
   const session = useStore((s) => s.sessions.air)
   const [air, setAir] = React.useState<AirMsg | null>(null)
@@ -263,7 +338,10 @@ function AirPanel(): React.JSX.Element {
   React.useEffect(() => {
     const unsub = client.subscribe(['air'])
     const offs = [
-      client.on('air', (m) => setAir(m.phase === 'ended' ? null : m)),
+      client.on('air', (m) => {
+        if (m.source === 'sonar' || m.gesture === 'hover_level' || m.gesture === 'finger_slide') return
+        setAir(m.phase === 'ended' ? null : m)
+      }),
       client.on('gesture', (g) => {
         if (g.zone === 'air') setLabel(g.gesture.replace(/_/g, ' '))
       })
@@ -289,10 +367,99 @@ function AirPanel(): React.JSX.Element {
       </div>
       <div className="mt-3">
         <Button variant="text" size="sm" onClick={() => client.send({ type: active ? 'air_session_stop' : 'air_session_start' })}>
-          {active ? `Stop camera, ${Math.round(session!.secondsLeft)}s left` : 'Start a camera session'}
+          {active ? `Stop, ${Math.round(session!.secondsLeft)}s left` : 'Start camera'}
         </Button>
       </div>
     </Panel>
+  )
+}
+
+const OUTCOME_LABEL: Record<string, string> = { accepted: 'Tap', pending: 'Held', ...REJECT_LABEL }
+
+/**
+ * Every tap onset the detector looked at, and what it decided: the answer to "why didn't my tap count?".
+ * From the "debug" stream, newest first.
+ */
+function DecisionLog({ total }: { total: number }): React.JSX.Element {
+  const config = useStore((s) => s.config)
+  const [rows, setRows] = React.useState<(CandidateMsg & { id: number })[]>([])
+  const [exported, setExported] = React.useState<DiagnosticsMsg | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  React.useEffect(() => {
+    let seq = 0
+    const unsub = client.subscribe(['debug'])
+    const offs = [
+      client.on('candidate', (m) => setRows((r) => [{ ...m, id: ++seq }, ...r].slice(0, 80))),
+      client.on('diagnostics', (m) => {
+        setExported(m)
+        setBusy(false)
+      })
+    ]
+    return () => {
+      unsub()
+      offs.forEach((o) => o())
+    }
+  }, [])
+  const name = (id: string | null): string => (id ? (config?.zones.find((z) => z.id === id)?.name ?? id) : 'Unknown')
+  return (
+    <aside className="flex w-[340px] shrink-0 flex-col shadow-[-1px_0_0_var(--hairline)]" aria-label="Detector decisions">
+      <div className="flex items-end justify-between px-4 pt-4 pb-2">
+        <h2 className="label-mono">Decisions</h2>
+        <span className="num text-[11px] text-ink-3">{total} ignored</span>
+      </div>
+      <div className="grid grid-cols-[44px_1fr_64px_40px_36px] gap-2 px-4 pb-1 shadow-[0_1px_0_var(--hairline)]">
+        {['Time', 'Zone guess', 'Outcome', 'Sure', 'Str'].map((h) => (
+          <span key={h} className="tag-mono text-ink-3">
+            {h}
+          </span>
+        ))}
+      </div>
+      <ol className="fade-bottom min-h-0 flex-1 overflow-y-auto pb-6">
+        {rows.length === 0 && <li className="px-4 py-4 text-[12px] text-ink-3">Tap somewhere, or type. Every bump the detector considers shows up here.</li>}
+        {rows.map((r) => {
+          const ok = r.outcome === 'accepted'
+          return (
+            <li key={r.id} className="grid h-7 grid-cols-[44px_1fr_64px_40px_36px] items-center gap-2 px-4 shadow-[0_1px_0_var(--hairline)]">
+              <span className="num text-[11px] text-ink-3">{(r.t / 1000).toFixed(1)}</span>
+              <span className="flex min-w-0 items-center gap-1.5 text-[12px]">
+                <ZoneIndex n={zoneNumber(config, r.zone)} lit={ok} className="w-4" />
+                <span className="truncate text-ink-2">{name(r.zone)}</span>
+              </span>
+              <span className={ok ? 'text-[12px] text-ink' : 'text-[12px] text-ink-3'}>{OUTCOME_LABEL[r.outcome] ?? r.outcome}</span>
+              <span className="num text-[11px] text-ink-2">{Math.round(r.confidence * 100)}</span>
+              <span className="num text-[11px] text-ink-3" title="log10 of the peak, in milli-g">
+                {r.strength.toFixed(1)}
+              </span>
+            </li>
+          )
+        })}
+      </ol>
+      <div className="flex flex-col gap-2 px-4 py-3 shadow-[0_-1px_0_var(--hairline)]">
+        <div className="flex items-center justify-between">
+          <Button
+            variant="outline"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true)
+              client.send({ type: 'diagnostics_export' })
+              setTimeout(() => setBusy(false), 5000)
+            }}
+          >
+            {busy ? 'Saving' : 'Export last 10 s'}
+          </Button>
+          {exported && (
+            <Button variant="text" size="sm" onClick={() => void navigator.clipboard.writeText(exported.path)}>
+              Copy path
+            </Button>
+          )}
+        </div>
+        {exported && (
+          <p className="truncate font-mono text-[11px] text-ink-3" title={exported.path}>
+            {exported.path.replace(/^\/Users\/[^/]+/, '~')}
+          </p>
+        )}
+      </div>
+    </aside>
   )
 }
 
@@ -300,7 +467,6 @@ export function SensorsScreen(): React.JSX.Element {
   const buffer = React.useMemo(() => new SensorBuffer(), [])
   const theme = useStore((s) => s.resolvedTheme)
   const rejected = useStore((s) => s.rejected)
-  const lastRejected = useStore((s) => s.lastRejected)
   const status = useStore((s) => s.status)
   const hello = useStore((s) => s.hello)
   const [lid, setLid] = React.useState<number | null>(null)
@@ -343,7 +509,6 @@ export function SensorsScreen(): React.JSX.Element {
   const total = Object.values(rejected).reduce((s, v) => s + v, 0)
   const det = status?.detector
   const detMax = det ? Math.max(det.thresholdMg * 1.6, det.level * 1.2, 1) : 1
-  const since = lastRejected ? Math.round((Date.now() - lastRejected.at) / 1000) : null
 
   return (
     <>
@@ -357,7 +522,8 @@ export function SensorsScreen(): React.JSX.Element {
           </span>
         }
       />
-      <div className="flex min-h-0 flex-1 flex-col">
+      <div className="flex min-h-0 flex-1">
+        <div className="flex min-w-0 flex-1 flex-col">
         <section className="flex min-h-0 flex-1 flex-col px-6 pt-4 pb-2" aria-label="Accelerometer">
           <div className="flex items-center justify-between pb-1">
             <h2 className="label-mono">Accelerometer {hello && !hello.sensors.imu && '(not found)'}</h2>
@@ -404,23 +570,11 @@ export function SensorsScreen(): React.JSX.Element {
               </>
             )}
           </Panel>
-          <Panel label={`Ignored · ${total}`}>
-            <dl className="mt-4 grid grid-cols-2 gap-x-5 gap-y-1">
-              {(Object.keys(REJECT_LABEL) as RejectReason[]).map((r) => (
-                <div key={r} className="flex items-baseline justify-between text-[12px]">
-                  <dt className="text-ink-2">{REJECT_LABEL[r]}</dt>
-                  <dd className="num text-ink">{rejected[r]}</dd>
-                </div>
-              ))}
-            </dl>
-            {lastRejected && (
-              <p className="mt-auto truncate text-[12px] text-ink-3">
-                Last: {REJECT_LABEL[lastRejected.reason].toLowerCase()}, {since}s ago
-              </p>
-            )}
-          </Panel>
+          {hello?.sensors.sound && <SonarPanel />}
           {hello?.sensors.camera && <AirPanel />}
         </div>
+        </div>
+        <DecisionLog total={total} />
       </div>
     </>
   )

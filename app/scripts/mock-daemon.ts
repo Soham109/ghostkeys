@@ -167,6 +167,16 @@ function pointIn(z: Zone): { x: number; y: number } {
   return { x: z.rect.x + z.rect.w * rand(0.25, 0.75), y: z.rect.y + z.rect.h * rand(0.25, 0.75) }
 }
 
+let lastAccepted: { zone: string; t: number } | null = null
+let lastDropped: { zone: string; t: number; confidence: number; strength: number; reason: RejectReason } | null = null
+const sampleCounts: Record<string, number> = {}
+let lastAccuracy: Record<string, number> = {}
+let lastMerge: [string, string][] = []
+
+function candidate(zone: string | null, outcome: string, confidence: number, strength: number): void {
+  broadcast({ type: 'candidate', t: now(), zone, confidence, strength, outcome: outcome as never }, 'debug')
+}
+
 function emitTap(zone: Zone): void {
   tapEnergy = rand(0.4, 1)
   if (paused) {
@@ -174,6 +184,8 @@ function emitTap(zone: Zone): void {
     return
   }
   const { x, y } = pointIn(zone)
+  lastAccepted = { zone: zone.id, t: now() }
+  candidate(zone.id, 'accepted', rand(0.82, 0.99), rand(1.1, 2.2))
   const tapType = sessions.sound.timer ? (Math.random() < 0.3 ? 'knuckle' : 'fingertip') : undefined
   broadcast({ type: 'tap', t: now(), zone: zone.id, confidence: rand(0.82, 0.99), x, y, strength: rand(0.3, 0.9), source: 'imu', ...(tapType ? { tapType } : {}) })
 }
@@ -238,7 +250,13 @@ function randomEvent(): void {
     setTimeout(() => emitTap(b), 240)
     setTimeout(() => emitGesture('sequence', null, [a.id, b.id]), 600)
   } else if (r < 0.88) {
-    broadcast({ type: 'rejected', t: now(), reason: REASONS[Math.floor(Math.random() * REASONS.length)]! })
+    const reason = REASONS[Math.floor(Math.random() * REASONS.length)]!
+    const z = reason === 'motion' ? null : (zones[Math.floor(Math.random() * zones.length)]?.id ?? null)
+    const confidence = rand(0.3, 0.78)
+    const strength = rand(0.6, 1.6)
+    if (z) lastDropped = { zone: z, t: now(), confidence, strength, reason }
+    broadcast({ type: 'rejected', t: now(), reason, ...(z ? { zone: z, confidence, strength } : {}) }, 'taps')
+    candidate(z, reason, confidence, strength)
   } else {
     const g = (['cover', 'cover_hold', 'lid_nudge', 'tilt_left', 'tilt_right'] as const)[Math.floor(Math.random() * 5)]!
     if (g === 'cover' || g === 'cover_hold') lightCover = 0.95
@@ -345,7 +363,20 @@ function finish(): void {
     () => {
       calibrating = false
       calibrated = true
-      broadcast({ type: 'calibration', phase: 'done', accuracy, overall, confusion, labels })
+      const drop: Record<string, string> = {}
+      const keep: string[] = []
+      for (const [z, a] of Object.entries(accuracy)) {
+        if (a < 0.8) drop[z] = `recognised ${Math.round(a * 100)}% of the time (needs 80%)`
+        else keep.push(z)
+      }
+      const merge: [string, string][] = weak && calZones.includes('top-strip') ? [[weak, 'top-strip']] : []
+      for (const [a] of merge) delete drop[a]
+      const expectedAccuracy = Object.fromEntries(keep.map((z) => [z, Math.min(0.99, (accuracy[z] ?? 0.9) + 0.02)]))
+      calZones.forEach((z) => (sampleCounts[z] = calTarget))
+      lastAccuracy = accuracy
+      lastMerge = merge
+      sampleCounts.none = 30
+      broadcast({ type: 'calibration', phase: 'done', accuracy, overall, confusion, labels, recommendation: { keep, drop, merge, expectedAccuracy }, peaks: Object.fromEntries(calZones.map((z) => [z, { p10: 0.02, p50: rand(0.03, 0.06), p90: 0.1 }])) })
       broadcast(status())
     },
     fast ? 200 : 1600
@@ -354,33 +385,56 @@ function finish(): void {
 
 // ---------------------------------------------------------------- sound and camera sessions (simulated)
 
-const sessions: Record<'sound' | 'air', { left: number; timer: ReturnType<typeof setInterval> | null }> = {
+type Kind = 'sound' | 'sonar' | 'air'
+const sessions: Record<Kind, { left: number; timer: ReturnType<typeof setInterval> | null }> = {
   sound: { left: 0, timer: null },
+  sonar: { left: 0, timer: null },
   air: { left: 0, timer: null }
 }
-function sessionMsg(kind: 'sound' | 'air', reason?: string): DaemonMessage {
+function sessionMsg(kind: Kind, reason?: string): DaemonMessage {
   const s = sessions[kind]
-  return { type: 'session', kind, active: !!s.timer, secondsLeft: s.left, simulated: true, ...(reason ? { reason } : {}), ...(s.timer ? { trigger: 'request' } : {}) }
+  return { type: 'session', kind, active: !!s.timer, secondsLeft: s.left, simulated: true, ...(kind === 'sonar' ? { sonarField: !!s.timer } : {}), ...(reason ? { reason } : {}), ...(s.timer ? { trigger: 'request' } : {}) }
 }
-function startSession(kind: 'sound' | 'air', seconds?: number): void {
+function startSession(kind: Kind, seconds?: number): void {
   const s = sessions[kind]
   if (s.timer) clearInterval(s.timer)
-  s.left = Math.max(1, Math.min(120, seconds ?? config.settings[kind === 'sound' ? 'sound' : 'camera']?.sessionSeconds ?? 30))
+  if (kind === 'sonar' && sessions.sound.timer) stopSession('sound', 'requested')
+  s.left = Math.max(1, Math.min(120, seconds ?? config.settings[kind === 'air' ? 'camera' : kind]?.sessionSeconds ?? 30))
   s.timer = setInterval(() => {
     s.left -= 1
     if (kind === 'air') simulateAir()
+    if (kind === 'sonar') simulateSonar()
     if (s.left <= 0) stopSession(kind, 'timeout')
     else broadcast(sessionMsg(kind))
   }, 1000)
   broadcast(sessionMsg(kind))
 }
-function stopSession(kind: 'sound' | 'air', reason: string): void {
+function stopSession(kind: Kind, reason: string): void {
   const s = sessions[kind]
   if (s.timer) clearInterval(s.timer)
   s.timer = null
   s.left = 0
   broadcast(sessionMsg(kind, reason))
 }
+let sonarPhase = 0
+let sonarTimer: ReturnType<typeof setInterval> | null = null
+function simulateSonar(): void {
+  sonarPhase += 1
+  if (sonarTimer) return
+  // a hand hovering over the right speaker, rising and falling, at 20 Hz for most of each second
+  let k = 0
+  sonarTimer = setInterval(() => {
+    k += 1
+    const v = Math.sin((sonarPhase + k / 20) * 1.3) * 0.6
+    broadcast({ type: 'air', t: now(), phase: k === 1 ? 'began' : 'changed', gesture: 'hover_level', side: 'right', value: v, displacementMm: v * 150, source: 'sonar' }, 'air')
+    if (k >= 16) {
+      clearInterval(sonarTimer!)
+      sonarTimer = null
+    }
+  }, 50)
+  if (sonarPhase % 3 === 0) emitGesture(Math.random() < 0.5 ? 'push' : 'sweep_left', 'air', ['air'])
+}
+
 let airPhase = 0
 function simulateAir(): void {
   airPhase += 1
@@ -457,6 +511,79 @@ function handle(ws: WebSocket, msg: AppMessage): void {
       send(ws, { type: 'revoked', hash: msg.hash, found })
       return
     }
+    case 'feedback_missed': {
+      const found = !!lastDropped && lastDropped.zone === msg.zone && now() - lastDropped.t < 5000
+      if (found) sampleCounts[msg.zone] = (sampleCounts[msg.zone] ?? calTarget) + 1
+      send(ws, {
+        type: 'feedback',
+        kind: 'missed',
+        zone: msg.zone,
+        found: found || Math.random() < 0.7,
+        retrained: true,
+        diagnostic: `~/Library/Application Support/Ghostkeys/daemon/diagnostics/missed-${msg.zone}-${Date.now()}.gkrec`,
+        candidate: { t: now() - 800, zone: msg.zone, confidence: 0.64, strength: 1.2, droppedBecause: lastDropped?.reason ?? 'low_confidence' },
+        counts: { ...sampleCounts, [msg.zone]: sampleCounts[msg.zone] ?? 21 },
+        overall: 0.94
+      })
+      return
+    }
+    case 'feedback_false':
+      send(
+        ws,
+        lastAccepted && now() - lastAccepted.t < 60000
+          ? { type: 'feedback', kind: 'false', zone: lastAccepted.zone, t: lastAccepted.t, retrained: true, counts: sampleCounts, overall: 0.95 }
+          : { type: 'feedback', kind: 'false', retrained: false, reason: 'no recent tap' }
+      )
+      return
+    case 'diagnostics_export':
+      send(ws, { type: 'diagnostics', path: `/Users/you/Library/Application Support/Ghostkeys/daemon/diagnostics/${new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14)}.gkrec`, samples: 7970, seconds: 10 })
+      return
+    case 'calibration_apply_recommendation': {
+      const disabled = config.zones.filter((z) => (lastAccuracy[z.id] ?? 1) < 0.8 && !lastMerge.flat().includes(z.id)).map((z) => z.id)
+      config = { ...config, zones: config.zones.map((z) => (disabled.includes(z.id) ? { ...z, enabled: false } : z)) }
+      broadcast({ type: 'config', config })
+      send(ws, { type: 'calibration', phase: 'recommendation_applied', disabled, keep: config.zones.filter((z) => z.enabled !== false).map((z) => z.id), mergeSuggested: lastMerge, overall: 0.96, accuracy: lastAccuracy, labels: Object.keys(lastAccuracy) })
+      return
+    }
+    case 'calibration_apply_merge': {
+      const [a, b] = msg.zones
+      const za = config.zones.find((z) => z.id === a)
+      const zb = config.zones.find((z) => z.id === b)
+      if (!za || !zb) {
+        send(ws, { type: 'error', message: 'calibration_apply_merge: unknown zone' })
+        return
+      }
+      const id = msg.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'merged'
+      const x = Math.min(za.rect.x, zb.rect.x)
+      const y = Math.min(za.rect.y, zb.rect.y)
+      const rect = { x, y, w: Math.max(za.rect.x + za.rect.w, zb.rect.x + zb.rect.w) - x, h: Math.max(za.rect.y + za.rect.h, zb.rect.y + zb.rect.h) - y }
+      const changed = config.bindings.filter((bd) => bd.zone === a || bd.zone === b)
+      config = {
+        ...config,
+        zones: [...config.zones.filter((z) => z.id !== a && z.id !== b), { id, name: msg.name, surface: za.surface, rect, color: za.color, enabled: true }],
+        bindings: config.bindings.map((bd) => (bd.zone === a || bd.zone === b ? { ...bd, zone: id } : bd))
+      }
+      const key = (bd: (typeof config.bindings)[number]): string => [bd.gesture, bd.zone, bd.modifiers.join(), bd.app].join('|')
+      const conflicts: [string, string][] = []
+      const moved = config.bindings.filter((bd) => bd.zone === id && bd.enabled)
+      for (let i = 0; i < moved.length; i++) for (let j = i + 1; j < moved.length; j++) if (key(moved[i]!) === key(moved[j]!)) conflicts.push([moved[i]!.id, moved[j]!.id])
+      broadcast({ type: 'config', config })
+      send(ws, {
+        type: 'calibration',
+        phase: 'merge_applied',
+        zone: id,
+        name: msg.name,
+        merged: [a, b],
+        samples: (sampleCounts[a] ?? 20) + (sampleCounts[b] ?? 20),
+        bindingsChanged: changed.map((bd) => ({ id: bd.id, label: bd.label, gesture: bd.gesture, from: bd.zone ?? '', to: id })),
+        conflicts,
+        overall: 0.96,
+        accuracy: lastAccuracy,
+        labels: Object.keys(lastAccuracy),
+        ...(za.surface !== zb.surface ? { note: `The two zones were on different surfaces; the merged zone keeps the ${za.surface}.` } : {})
+      })
+      return
+    }
     case 'catalog_get':
       send(ws, { type: 'catalog', catalog: catalog as never })
       return
@@ -467,6 +594,16 @@ function handle(ws: WebSocket, msg: AppMessage): void {
     case 'sound_session_stop':
     case 'air_session_stop':
       stopSession(msg.type === 'sound_session_stop' ? 'sound' : 'air', 'requested')
+      return
+    case 'sonar_session_start':
+      if (!config.settings.sonar?.enabled) {
+        send(ws, { ...sessionMsg('sonar', 'error'), error: 'sonar is off in settings' } as DaemonMessage)
+        return
+      }
+      startSession('sonar', msg.seconds)
+      return
+    case 'sonar_session_stop':
+      stopSession('sonar', 'requested')
       return
     case 'request_permission':
       setTimeout(() => {
@@ -484,6 +621,7 @@ wss.on('connection', (ws) => {
   send(ws, { type: 'config', config })
   send(ws, sessionMsg('sound'))
   send(ws, sessionMsg('air'))
+  send(ws, sessionMsg('sonar'))
   ws.on('message', (data) => {
     try {
       handle(ws, JSON.parse(String(data)) as AppMessage)

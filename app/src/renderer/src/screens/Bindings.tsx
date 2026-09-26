@@ -34,6 +34,7 @@ function freshBinding(config: Config, seed?: Partial<Binding>, zoneId?: string):
     ...seed
   }
   if (zoneId) return { ...base, zone: zoneId }
+  if (seed?.gesture) return base
   // Pick a trigger nobody uses yet, so two clicks give a working binding.
   const used = new Set(config.bindings.map(triggerKey))
   const gestures: GestureKind[] = ['double', 'tap', 'triple', 'rhythm']
@@ -142,7 +143,7 @@ export function BindingsScreen(): React.JSX.Element {
   }
   const pickPreset = (p: Preset): void => {
     useStore.setState({ presetsOpen: false })
-    openEditor(freshBinding(draft, { action: structuredClone(p.action), label: p.name, app: p.app ?? '*' }), true)
+    openEditor(freshBinding(draft, { action: structuredClone(p.action), label: p.name, app: p.app ?? '*', ...(p.binding ? structuredClone(p.binding) : {}) }), true)
   }
 
   return (
@@ -308,7 +309,7 @@ export function BindingsScreen(): React.JSX.Element {
         onOpenChange={(o) => useStore.setState({ presetsOpen: o })}
         onPick={pickPreset}
         onApplyLayout={(l) => setPendingLayout(l)}
-        suggest={(p) => freshBinding(draft, { action: p.action, app: p.app ?? '*' })}
+        suggest={(p) => freshBinding(draft, { action: p.action, app: p.app ?? '*', ...p.binding })}
       />
       <Confirm
         open={!!confirmDelete}

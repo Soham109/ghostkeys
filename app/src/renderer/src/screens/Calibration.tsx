@@ -15,6 +15,8 @@ import { Seismograph } from '@/components/Seismograph'
 
 type Step = 'pick' | 'capture' | 'negatives' | 'training' | 'results'
 type Done = Extract<CalibrationMsg, { phase: 'done' }>
+type Applied = Extract<CalibrationMsg, { phase: 'recommendation_applied' }>
+type Merged = Extract<CalibrationMsg, { phase: 'merge_applied' }>
 
 interface Wizard {
   step: Step
@@ -26,6 +28,8 @@ interface Wizard {
   negLeft: number
   heard: { typing: number; trackpad: number }
   result: Done | null
+  applied: Applied | null
+  merged: Merged[]
 }
 
 const NEG_SECONDS = 45
@@ -39,7 +43,9 @@ export const useWizard = create<Wizard>()(() => ({
   negSeconds: NEG_SECONDS,
   negLeft: NEG_SECONDS,
   heard: { typing: 0, trackpad: 0 },
-  result: null
+  result: null,
+  applied: null,
+  merged: []
 }))
 
 const STEPS: { id: Step[]; label: string }[] = [
@@ -107,7 +113,11 @@ function useCalibrationEvents(): void {
       } else if (m.phase === 'cancelled') {
         if (w.step !== 'results') useWizard.setState({ step: 'pick', index: 0, counts: {} })
       } else if (m.phase === 'done') {
-        useWizard.setState({ step: 'results', result: m })
+        useWizard.setState({ step: 'results', result: m, applied: null, merged: [] })
+      } else if (m.phase === 'recommendation_applied') {
+        useWizard.setState({ applied: m })
+      } else if (m.phase === 'merge_applied') {
+        useWizard.setState({ merged: [...w.merged, m] })
       }
     })
     const offRej = client.on('rejected', (r) => {
@@ -242,8 +252,8 @@ function Pick({ zones }: { zones: Zone[] }): React.JSX.Element {
     <Frame
       left={
         <>
-          <Heading>Teach Ghostkeys how your taps feel.</Heading>
-          <Body>Every MacBook rings a little differently. Tap each zone a few times, then type normally for {NEG_SECONDS} seconds.</Body>
+          <Heading>Tap the way you want to use it</Heading>
+          <Body>Use a light, relaxed fingertip tap, the kind you would like to use every day. You do not need to tap hard. Mix in a few slightly firmer taps too, so both are recognised. Keep your other hand off the keyboard and trackpad.</Body>
           <div className="mt-6 flex items-end justify-between pb-2">
             <span className="label-mono">Zones</span>
             <Button variant="text" size="sm" onClick={() => useWizard.setState({ picked: picked.length === zones.length ? [] : zones.map((z) => z.id) })}>
@@ -326,9 +336,10 @@ function Capture({ zones }: { zones: Zone[] }): React.JSX.Element {
                 Zone {String(zoneN).padStart(2, '0')} &middot; {index + 1} of {picked.length}
               </p>
               <div className="mt-2">
-                <Heading>Tap the {zone?.name.toLowerCase()}</Heading>
+                <Heading>
+                  Tap {zone?.name.toLowerCase()} lightly, about once a second ({count} of {target})
+                </Heading>
               </div>
-              <Body>Use one fingertip. Vary the spot and strength a little, the way you would in real use.</Body>
             </motion.div>
           </AnimatePresence>
           <div className="mt-8">
@@ -384,8 +395,7 @@ function Negatives(): React.JSX.Element {
     <Frame
       left={
         <>
-          <Heading>Now just type, and use your trackpad.</Heading>
-          <Body>Type anything and use the trackpad as usual. Don&rsquo;t tap the zones.</Body>
+          <Heading>Now type and use the trackpad as you normally would for {negSeconds} seconds</Heading>
           <div className="mt-8">
             <Dial count={negSeconds - negLeft} target={negSeconds}>
               <Roll value={String(negLeft)} className="numeral text-[44px]" />
@@ -446,6 +456,108 @@ function Training(): React.JSX.Element {
   )
 }
 
+/** The daemon's advice after training: which zones to keep, turn off or merge, and what accuracy to expect. */
+function RecommendationBlock({ rec, name, idx }: { rec: NonNullable<Done['recommendation']>; name: (id: string) => string; idx: (id: string) => string }): React.JSX.Element {
+  const { applied, merged } = useWizard()
+  const navigate = useStore((s) => s.navigate)
+  const [names, setNames] = React.useState<Record<string, string>>({})
+  const drops = Object.entries(rec.drop)
+  const mergedPairs = new Set(merged.flatMap((m) => m.merged))
+  const expected = Object.values(rec.expectedAccuracy)
+  const avg = expected.length ? expected.reduce((a, b) => a + b, 0) / expected.length : null
+  return (
+    <section className="pb-10" aria-label="Recommendation">
+      <div className="flex items-end justify-between pb-2">
+        <p className="label-mono">Recommendation</p>
+        {avg !== null && <p className="num text-[11px] tracking-[0.04em] text-ink-2">EXPECTED {pct(avg)} ON THE ZONES KEPT</p>}
+      </div>
+      <ul className="shadow-[0_-1px_0_var(--hairline)]">
+        <li className="flex gap-4 py-3 shadow-[0_1px_0_var(--hairline)]">
+          <span className="tag-mono w-16 shrink-0 pt-1 text-ink-3">Keep</span>
+          <p className="text-[13px] leading-relaxed text-ink">
+            {rec.keep.map((id, i) => (
+              <span key={id}>
+                <span className="num text-[11px] text-ink-3">{idx(id)}</span> {name(id)}
+                {i < rec.keep.length - 1 ? ', ' : ''}
+              </span>
+            ))}
+          </p>
+        </li>
+        {drops.length > 0 && (
+          <li className="flex items-start gap-4 py-3 shadow-[0_1px_0_var(--hairline)]">
+            <span className="tag-mono w-16 shrink-0 pt-1 text-ink-3">Turn off</span>
+            <div className="flex min-w-0 flex-1 flex-col gap-1">
+              {drops.map(([id, why]) => (
+                <p key={id} className="text-[13px] leading-relaxed text-ink">
+                  <span className="num text-[11px] text-ink-3">{idx(id)}</span> {name(id)}
+                  <span className="text-ink-2">: {why}</span>
+                </p>
+              ))}
+              {applied && <p className="text-[12px] text-ink-3">Turned off {applied.disabled.map(name).join(', ') || 'nothing'}. Overall is now {pct(applied.overall)}.</p>}
+            </div>
+            <Button variant={applied ? 'ghost' : 'primary'} size="sm" disabled={!!applied} onClick={() => client.send({ type: 'calibration_apply_recommendation' })}>
+              {applied ? 'Applied' : 'Apply'}
+            </Button>
+          </li>
+        )}
+        {rec.merge.map(([a, b]) => {
+          const key = `${a}+${b}`
+          const done = merged.find((m) => m.merged.includes(a) && m.merged.includes(b))
+          const def = `${name(a)} and ${name(b).toLowerCase()}`
+          return (
+            <li key={key} className="flex items-start gap-4 py-3 shadow-[0_1px_0_var(--hairline)]">
+              <span className="tag-mono w-16 shrink-0 pt-1 text-ink-3">Merge</span>
+              <div className="flex min-w-0 flex-1 flex-col gap-2">
+                <p className="text-[13px] leading-relaxed text-ink">
+                  <span className="num text-[11px] text-ink-3">{idx(a)}</span> {name(a)} and <span className="num text-[11px] text-ink-3">{idx(b)}</span> {name(b)}
+                  <span className="text-ink-2"> are mostly heard as each other. As one zone they are reliable.</span>
+                </p>
+                {!done && !mergedPairs.has(a) && (
+                  <input
+                    value={names[key] ?? def}
+                    onChange={(e) => setNames({ ...names, [key]: e.target.value })}
+                    aria-label="Name for the merged zone"
+                    className="h-7 max-w-[280px] rounded-[6px] bg-fill px-2.5 text-[13px] text-ink shadow-[inset_0_0_0_1px_var(--hairline)] outline-none focus:shadow-[inset_0_0_0_1px_var(--ink-3)]"
+                  />
+                )}
+                {done && (
+                  <div className="text-[12px] leading-relaxed text-ink-2">
+                    <p>
+                      Now one zone, {done.name}, from {done.samples} samples. Overall {pct(done.overall)}.
+                    </p>
+                    {done.bindingsChanged.map((b) => (
+                      <p key={b.id} className="text-ink-3">
+                        {b.label}: {name(b.from)} &rarr; {done.name}
+                      </p>
+                    ))}
+                    {done.conflicts.length > 0 && (
+                      <p className="mt-1 text-ink">
+                        {done.conflicts.length} {done.conflicts.length === 1 ? 'pair of bindings now has' : 'pairs of bindings now have'} the same trigger; only the first fires.{' '}
+                        <button className="underline decoration-ink-3 underline-offset-2" onClick={() => navigate('bindings')}>
+                          Review
+                        </button>
+                      </p>
+                    )}
+                    {done.note && <p className="text-ink-3">{done.note}</p>}
+                  </div>
+                )}
+              </div>
+              <Button
+                variant={done ? 'ghost' : 'outline'}
+                size="sm"
+                disabled={!!done}
+                onClick={() => client.send({ type: 'calibration_apply_merge', zones: [a, b], name: (names[key] ?? def).trim() || def })}
+              >
+                {done ? 'Merged' : 'Merge'}
+              </Button>
+            </li>
+          )
+        })}
+      </ul>
+    </section>
+  )
+}
+
 function Results({ zones }: { zones: Zone[] }): React.JSX.Element {
   const { result } = useWizard()
   const navigate = useStore((s) => s.navigate)
@@ -481,6 +593,11 @@ function Results({ zones }: { zones: Zone[] }): React.JSX.Element {
             : `${name(id)} needs more samples. Recalibrate it with 30 taps.`
     }
   })
+  const p50s = Object.values(result.peaks ?? {})
+    .map((q) => q.p50)
+    .sort((a, b) => a - b)
+  const medianPeak = p50s.length ? (p50s.length % 2 ? p50s[(p50s.length - 1) / 2]! : (p50s[p50s.length / 2 - 1]! + p50s[p50s.length / 2]!) / 2) : null
+  const firm = medianPeak !== null && medianPeak > 0.08
   const ready = entries.length - weak.length
   const words = ['No', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
   const summary =
@@ -498,6 +615,7 @@ function Results({ zones }: { zones: Zone[] }): React.JSX.Element {
             <span className="numeral text-[28px] text-ink-3">%</span>
           </p>
           <p className="mt-4 max-w-[36ch] text-[15px] leading-[1.55] text-ink-2">{summary}</p>
+          {firm && <p className="mt-3 max-w-[40ch] text-[13px] leading-relaxed text-ink">Your taps were quite firm. If you want lighter taps to work, calibrate again using gentler taps.</p>}
           <div className="mt-6 flex items-center gap-5">
             {weak.length > 0 ? (
               <>
@@ -538,6 +656,7 @@ function Results({ zones }: { zones: Zone[] }): React.JSX.Element {
       }
       right={
         <div className="flex min-h-0 flex-col overflow-y-auto">
+          {result.recommendation && <RecommendationBlock rec={result.recommendation} name={name} idx={idx} />}
           <p className="label-mono pb-3">What each tap was taken for</p>
           <div className="overflow-x-auto">
             <table className="border-collapse text-[11px]">

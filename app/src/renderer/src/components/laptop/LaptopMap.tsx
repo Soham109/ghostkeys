@@ -489,8 +489,9 @@ export function LaptopMap({
         const r = toSvg(layout, zone.surface, nr)
         const selected = selectedId === zone.id
         const focused = focusId === zone.id
-        const muted = !!mutedIds?.includes(zone.id)
-        const recede = !!focusId && !focused
+        const off = zone.enabled === false
+        const muted = !!mutedIds?.includes(zone.id) || off
+        const recede = (!!focusId && !focused) || (off && !selected)
         const interactive = mode === 'edit' || !!onSelect
         const isHover = hover === zone.id
         const isLit = !!lit[zone.id]

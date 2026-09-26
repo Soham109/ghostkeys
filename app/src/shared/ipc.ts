@@ -39,7 +39,11 @@ export interface AppPrefs {
   licenseKey?: string | null
   /** A soft tick when a tap is felt. Off by default. */
   tapSound?: boolean
+  /** Global shortcuts (Electron accelerators) for the feedback loop. */
+  shortcuts?: { missed: string; falseTap: string }
 }
+
+export const DEFAULT_SHORTCUTS = { missed: 'Control+Alt+Command+M', falseTap: 'Control+Alt+Command+X' }
 
 export interface ContextItem {
   id?: string
@@ -57,6 +61,7 @@ export type MenuCommand =
   | 'library'
   | 'tour'
   | 'pause-toggle'
+  | 'feedback-missed'
   | `go:${string}`
 
 export interface HudPayload {

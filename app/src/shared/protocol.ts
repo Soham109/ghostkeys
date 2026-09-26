@@ -21,6 +21,8 @@ export interface Zone {
   surface: Surface
   rect: Rect
   color: string
+  /** Default true. A disabled zone is left out of the model and never fires bindings. */
+  enabled?: boolean
 }
 
 export type GestureKind =
@@ -53,6 +55,34 @@ export type GestureKind =
   | 'palm_swipe_right'
   | 'circle_cw'
   | 'circle_ccw'
+  // stereo sonar (sonar sessions)
+  | 'push'
+  | 'pull'
+  | 'sweep_left'
+  | 'sweep_right'
+  | 'finger_slide_left'
+  | 'finger_slide_right'
+  | 'finger_slide_up'
+  | 'finger_slide_down'
+  | 'hover_level'
+  | 'finger_slide'
+
+export const SONAR_GESTURES: GestureKind[] = [
+  'hover_level',
+  'push',
+  'pull',
+  'sweep_left',
+  'sweep_right',
+  'finger_slide',
+  'finger_slide_up',
+  'finger_slide_down',
+  'finger_slide_left',
+  'finger_slide_right'
+]
+/** Sonar gestures that happen in the air (zone "air"); finger slides use the grille zone on that side. */
+export const SONAR_AIR_GESTURES: GestureKind[] = ['hover_level', 'push', 'pull', 'sweep_left', 'sweep_right']
+/** Continuous gestures that drive a slider. */
+export const SLIDER_GESTURES: GestureKind[] = ['hover_level', 'finger_slide']
 
 export const SOUND_GESTURES: GestureKind[] = ['knock_knuckle', 'rub', 'rub_left', 'rub_right', 'wave_toward', 'wave_away', 'wave_sweep']
 export const CAMERA_GESTURES: GestureKind[] = [
@@ -80,6 +110,7 @@ export const GESTURES: GestureKind[] = [
   'tilt_left',
   'tilt_right',
   ...SOUND_GESTURES,
+  ...SONAR_GESTURES,
   ...CAMERA_GESTURES
 ]
 
@@ -96,6 +127,7 @@ export const ZONELESS_GESTURES: GestureKind[] = [
   'wave_toward',
   'wave_away',
   'wave_sweep',
+  ...SONAR_AIR_GESTURES,
   ...CAMERA_GESTURES
 ]
 export const AIR_ZONE = 'air'
@@ -130,6 +162,12 @@ export const SYSTEM_OPS: SystemOp[] = [
   'launchpad',
   'show-desktop'
 ]
+
+export type SessionKind = 'sound' | 'sonar' | 'air'
+export const SESSION_KINDS: SessionKind[] = ['sound', 'sonar', 'air']
+export const SESSION_START = { sound: 'sound_session_start', sonar: 'sonar_session_start', air: 'air_session_start' } as const
+export const SESSION_STOP = { sound: 'sound_session_stop', sonar: 'sonar_session_stop', air: 'air_session_stop' } as const
+export const SESSION_NAME: Record<SessionKind, string> = { sound: 'Microphone', sonar: 'Sonar', air: 'Camera' }
 
 export type IntegrationArgValue = string | number | boolean
 
@@ -188,6 +226,14 @@ export interface KnobSpec {
   inverse?: Action | null
 }
 
+export interface SliderSpec {
+  /** absolute: output follows position since the gesture began; relative: every step counts, like a knob. */
+  mode: 'absolute' | 'relative'
+  stepMm: number
+  /** Runs once per step down (hover: hand lowered; slide: away from the hinge). */
+  inverse?: Action | null
+}
+
 export interface Binding {
   id: string
   enabled: boolean
@@ -201,6 +247,8 @@ export interface Binding {
   label: string
   /** pinch_hold only: turn hand movement into repeated steps. */
   knob?: KnobSpec | null
+  /** hover_level / finger_slide only: turn movement into repeated steps. */
+  slider?: SliderSpec | null
 }
 
 export interface SessionSettings {
@@ -217,7 +265,11 @@ export interface Settings {
   minConfidence: number
   hud: boolean
   haptics: boolean
+  /** 0..minConfidence: a weaker tap may complete a double or triple whose other tap was confident. */
+  followUpConfidence?: number
   sound?: SessionSettings
+  /** Stereo sonar. The tones never play unless enabled. */
+  sonar?: SessionSettings
   camera?: SessionSettings & { deskMode: boolean }
 }
 
@@ -228,7 +280,7 @@ export interface Config {
   settings: Settings
 }
 
-export type Stream = 'imu' | 'lid' | 'light' | 'taps' | 'air'
+export type Stream = 'imu' | 'lid' | 'light' | 'taps' | 'air' | 'debug'
 
 // ---------------------------------------------------------------- daemon -> app
 
@@ -282,6 +334,46 @@ export interface RejectedMsg {
   type: 'rejected'
   t: number
   reason: RejectReason
+  /** The classifier's best guess for the dropped tap (only when calibrated). */
+  zone?: string | null
+  confidence?: number
+  /** log10 of the peak in milli-g */
+  strength?: number
+}
+/** "debug" stream: every tap onset the detector analysed, before the gates. */
+export interface CandidateMsg {
+  type: 'candidate'
+  t: number
+  zone: string | null
+  confidence: number
+  strength: number
+  outcome: 'accepted' | 'pending' | RejectReason
+}
+export type FeedbackMsg =
+  | {
+      type: 'feedback'
+      kind: 'missed'
+      zone: string
+      found: boolean
+      retrained: boolean
+      reason?: string
+      diagnostic?: string
+      candidate?: { t: number; zone: string | null; confidence: number; strength: number; droppedBecause: string }
+      counts?: Record<string, number>
+      overall?: number
+    }
+  | { type: 'feedback'; kind: 'false'; zone?: string; t?: number; retrained: boolean; reason?: string; counts?: Record<string, number>; overall?: number }
+export interface DiagnosticsMsg {
+  type: 'diagnostics'
+  path: string
+  samples: number
+  seconds: number
+}
+export interface Recommendation {
+  keep: string[]
+  drop: Record<string, string>
+  merge: [string, string][]
+  expectedAccuracy: Record<string, number>
 }
 export interface GestureMsg {
   type: 'gesture'
@@ -318,7 +410,35 @@ export type CalibrationMsg =
       overall: number
       confusion: number[][]
       labels: string[]
+      recommendation?: Recommendation
+      /** Tap peak quantiles per zone, in g (requested from the daemon; optional until it sends them). */
+      peaks?: Record<string, { p10: number; p50: number; p90: number }>
     }
+  | {
+      type: 'calibration'
+      phase: 'recommendation_applied'
+      disabled: string[]
+      keep: string[]
+      mergeSuggested: [string, string][]
+      overall: number
+      accuracy: Record<string, number>
+      labels: string[]
+    }
+  | {
+      type: 'calibration'
+      phase: 'merge_applied'
+      zone: string
+      name: string
+      merged: string[]
+      samples: number
+      bindingsChanged: { id: string; label: string; gesture: string; from: string; to: string }[]
+      conflicts: [string, string][]
+      overall: number
+      accuracy: Record<string, number>
+      labels: string[]
+      note?: string
+    }
+  | { type: 'calibration'; phase: 'taptype_capturing'; tapType: string; count: number; target: number; types: string[] }
 export interface ConfigMsg {
   type: 'config'
   config: Config
@@ -340,10 +460,20 @@ export interface AirMsg {
   dx?: number
   dy?: number
   scale?: number
+  /** sonar */
+  side?: 'left' | 'right'
+  value?: number
+  displacementMm?: number
+  dxMm?: number
+  dyMm?: number
+  cancelled?: boolean
+  source?: string
 }
 export interface SessionMsg {
   type: 'session'
-  kind: 'air' | 'sound'
+  kind: 'air' | 'sound' | 'sonar'
+  /** sonar: the stereo tones are actually playing */
+  sonarField?: boolean
   active: boolean
   secondsLeft: number
   reason?: string
@@ -408,6 +538,9 @@ export type DaemonMessage =
   | ApprovedMsg
   | RevokedMsg
   | CatalogMsg
+  | CandidateMsg
+  | FeedbackMsg
+  | DiagnosticsMsg
 
 export type DaemonMessageType = DaemonMessage['type']
 
@@ -435,6 +568,13 @@ export type AppMessage =
   | { type: 'sound_session_stop' }
   | { type: 'air_session_start'; seconds?: number }
   | { type: 'air_session_stop' }
+  | { type: 'sonar_session_start'; seconds?: number }
+  | { type: 'sonar_session_stop' }
+  | { type: 'calibration_apply_recommendation' }
+  | { type: 'calibration_apply_merge'; zones: [string, string]; name: string }
+  | { type: 'feedback_missed'; zone: string }
+  | { type: 'feedback_false' }
+  | { type: 'diagnostics_export' }
 
 const DAEMON_TYPES: ReadonlySet<string> = new Set([
   'hello',
@@ -453,7 +593,10 @@ const DAEMON_TYPES: ReadonlySet<string> = new Set([
   'session',
   'approved',
   'revoked',
-  'catalog'
+  'catalog',
+  'candidate',
+  'feedback',
+  'diagnostics'
 ])
 
 /** Parses a text frame. Returns null for anything that is not a known daemon message. */
@@ -498,7 +641,17 @@ export const GESTURE_LABEL: Record<GestureKind, string> = {
   palm_swipe_left: 'Palm swipe left',
   palm_swipe_right: 'Palm swipe right',
   circle_cw: 'Circle clockwise',
-  circle_ccw: 'Circle counterclockwise'
+  circle_ccw: 'Circle counterclockwise',
+  push: 'Push',
+  pull: 'Pull',
+  sweep_left: 'Sweep left',
+  sweep_right: 'Sweep right',
+  finger_slide_left: 'Slide left',
+  finger_slide_right: 'Slide right',
+  finger_slide_up: 'Slide up',
+  finger_slide_down: 'Slide down',
+  hover_level: 'Hover level',
+  finger_slide: 'Slide on the grille'
 }
 
 export const GESTURE_HINT: Record<GestureKind, string> = {
@@ -528,7 +681,17 @@ export const GESTURE_HINT: Record<GestureKind, string> = {
   palm_swipe_left: 'Sweep an open palm to the left',
   palm_swipe_right: 'Sweep an open palm to the right',
   circle_cw: 'Draw a circle clockwise with a finger; one step per 30 degrees',
-  circle_ccw: 'Draw a circle counterclockwise; one step per 30 degrees'
+  circle_ccw: 'Draw a circle counterclockwise; one step per 30 degrees',
+  push: 'Move a hand quickly down toward a speaker',
+  pull: 'Lift a hand quickly up away from a speaker',
+  sweep_left: 'Pass a hand across above the keyboard, right to left',
+  sweep_right: 'Pass a hand across above the keyboard, left to right',
+  finger_slide_left: 'Slide a fingertip left along a grille',
+  finger_slide_right: 'Slide a fingertip right along a grille',
+  finger_slide_up: 'Slide a fingertip along a grille toward the hinge',
+  finger_slide_down: 'Slide a fingertip along a grille toward you',
+  hover_level: 'Hold a palm above a speaker and raise or lower it, like a slider',
+  finger_slide: 'Slide a fingertip along a grille, like a slider'
 }
 
 export const MODIFIER_GLYPH: Record<Modifier, string> = {
