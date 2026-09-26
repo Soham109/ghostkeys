@@ -7,18 +7,40 @@ import CoreGraphics
 /// the runner re-checks `isPaused` before every step as a second line of defence.
 final class ActionRunner: @unchecked Sendable {
     let dryRun: Bool
+    let approvals: ApprovalStore
     /// Returns the daemon's paused flag. Read from the action queue.
     var isPaused: () -> Bool = { false }
     private let queue = DispatchQueue(label: "ghostkeys.actions", qos: .userInitiated)
+    private let pendingLock = NSLock()
+    private var pending = 0
+
+    /// At most this many actions waiting or running; more are refused (bounded queue).
+    static let maxPending = 8
 
     static let maxMacroSteps = 50
     static let maxMacroSeconds = 30.0
     static let shellTimeout = 10.0
 
-    init(dryRun: Bool) { self.dryRun = dryRun }
+    init(dryRun: Bool, approvals: ApprovalStore) { self.dryRun = dryRun; self.approvals = approvals }
 
-    func run(_ action: JSONValue, completion: @escaping @Sendable (_ ok: Bool, _ error: String?) -> Void) {
+    /// Queues an action. `maxAge`: drop it if it has waited longer than this before starting (stale gesture).
+    func run(_ action: JSONValue, maxAge: TimeInterval? = nil,
+             completion: @escaping @Sendable (_ ok: Bool, _ error: String?) -> Void) {
+        pendingLock.lock()
+        guard pending < Self.maxPending else {
+            pendingLock.unlock()
+            completion(false, "busy: too many actions waiting")
+            return
+        }
+        pending += 1
+        pendingLock.unlock()
+        let enqueued = Date()
         queue.async { [self] in
+            defer { pendingLock.lock(); pending -= 1; pendingLock.unlock() }
+            if let maxAge, Date().timeIntervalSince(enqueued) > maxAge {
+                completion(false, "dropped: waited too long behind another action")
+                return
+            }
             do {
                 try perform(action, inMacro: false)
                 completion(true, nil)
@@ -40,6 +62,7 @@ final class ActionRunner: @unchecked Sendable {
             return
         }
         try validate(kind, action)
+        if let reason = approvals.check(action) { throw ActionError(reason) }
         if dryRun {
             Log.info("dry-run: would run \(Self.describe(action))")
             return
@@ -60,14 +83,13 @@ final class ActionRunner: @unchecked Sendable {
             guard ["playpause", "next", "previous"].contains(a["command"]?.string ?? "") else { throw ActionError("unknown media command") }
         case "open":
             guard let t = a["target"]?.string, !t.isEmpty else { throw ActionError("open needs a target") }
+            if let bad = CommandFilter.dangerous(t) { throw ActionError("refusing to open a target that uses \(bad)") }
         case "shell":
             guard let c = a["command"]?.string, !c.isEmpty else { throw ActionError("shell needs a command") }
-            if Self.mentionsSudo(c) { throw ActionError("refusing to run a command that uses sudo") }
+            if let bad = CommandFilter.dangerous(c) { throw ActionError("refusing a command that uses \(bad)") }
         case "applescript":
             guard let s = a["source"]?.string, !s.isEmpty else { throw ActionError("applescript needs a source") }
-            if Self.mentionsSudo(s) || s.range(of: "administrator privileges", options: .caseInsensitive) != nil {
-                throw ActionError("refusing an AppleScript that asks for admin rights")
-            }
+            if let bad = CommandFilter.dangerous(s) { throw ActionError("refusing an AppleScript that uses \(bad)") }
         case "shortcut":
             guard let n = a["name"]?.string, !n.isEmpty else { throw ActionError("shortcut needs a name") }
         case "text", "clipboard":
@@ -105,18 +127,17 @@ final class ActionRunner: @unchecked Sendable {
         case "shell":
             let r = ProcessRunner.run("/bin/zsh", ["-lc", a["command"]!.string!], timeout: Self.shellTimeout)
             if r.timedOut { throw ActionError("shell command timed out after \(Int(Self.shellTimeout)) s") }
-            if r.status != 0 { throw ActionError("shell exited \(r.status): \(r.stderr.prefix(300))") }
+            // Output is never forwarded: it can contain anything (SAFETY_AUDIT M7).
+            if r.status != 0 { throw ActionError("shell command exited with status \(r.status)") }
         case "applescript":
-            try onMain {
-                var err: NSDictionary?
-                guard let script = NSAppleScript(source: a["source"]!.string!) else { throw ActionError("invalid AppleScript") }
-                script.executeAndReturnError(&err)
-                if let err { throw ActionError("AppleScript error: \(err[NSAppleScript.errorMessage] ?? err)") }
-            }
+            // Out of process with a hard limit, so a hung script can never block the daemon (SAFETY_AUDIT H1).
+            let r = ProcessRunner.osascript(a["source"]!.string!, timeout: Self.shellTimeout)
+            if r.timedOut { throw ActionError("AppleScript timed out after \(Int(Self.shellTimeout)) s") }
+            if r.status != 0 { throw ActionError("AppleScript failed with status \(r.status)") }
         case "shortcut":
             let r = ProcessRunner.run("/usr/bin/shortcuts", ["run", a["name"]!.string!], timeout: 30)
             if r.timedOut { throw ActionError("shortcut timed out") }
-            if r.status != 0 { throw ActionError("shortcut failed: \(r.stderr.prefix(300))") }
+            if r.status != 0 { throw ActionError("shortcut failed with status \(r.status)") }
         case "text":
             try EventPoster.type(a["text"]!.string!)
         case "clipboard":
@@ -147,6 +168,7 @@ final class ActionRunner: @unchecked Sendable {
             guard let kind = step["kind"]?.string else { throw ActionError("macro step \(i + 1) has no kind") }
             if kind == "macro" { throw ActionError("a macro cannot contain another macro") }
             do { try validate(kind, step) } catch { throw ActionError("macro step \(i + 1): \(error)") }
+            if let reason = approvals.check(step) { throw ActionError("macro step \(i + 1): \(reason)") }
         }
         let deadline = Date().addingTimeInterval(Self.maxMacroSeconds)
         for (i, step) in steps.enumerated() {
@@ -164,7 +186,7 @@ final class ActionRunner: @unchecked Sendable {
 
     private func osa(_ source: String) throws {
         let r = ProcessRunner.osascript(source)
-        if r.status != 0 { throw ActionError("osascript failed: \(r.stderr.prefix(300))") }
+        if r.status != 0 { throw ActionError("osascript failed with status \(r.status)") }
     }
 
     /// Output volume 0-100, read without changing anything.
@@ -187,7 +209,7 @@ final class ActionRunner: @unchecked Sendable {
             args = ["-a", target]   // an app name
         }
         let r = ProcessRunner.run("/usr/bin/open", args, timeout: 10)
-        if r.status != 0 { throw ActionError("open failed: \(r.stderr.prefix(300))") }
+        if r.status != 0 { throw ActionError("open failed with status \(r.status)") }
     }
 
     static let systemOps: Set<String> = ["lock", "sleep-display", "screenshot", "screenshot-area", "dnd-toggle",
@@ -201,12 +223,12 @@ final class ActionRunner: @unchecked Sendable {
             }
         case "sleep-display":
             let r = ProcessRunner.run("/usr/bin/pmset", ["displaysleepnow"], timeout: 5)
-            if r.status != 0 { throw ActionError("pmset failed: \(r.stderr.prefix(200))") }
+            if r.status != 0 { throw ActionError("pmset failed with status \(r.status)") }
         case "screenshot", "screenshot-area":
             let file = Self.screenshotPath()
             let args = op == "screenshot" ? [file] : ["-i", file]
             let r = ProcessRunner.run("/usr/sbin/screencapture", args, timeout: op == "screenshot" ? 10 : 120)
-            if r.status != 0 { throw ActionError("screencapture failed: \(r.stderr.prefix(200))") }
+            if r.status != 0 { throw ActionError("screencapture failed with status \(r.status)") }
         case "dnd-toggle":
             let list = ProcessRunner.run("/usr/bin/shortcuts", ["list"], timeout: 10)
             let names = list.stdout.split(separator: "\n").map(String.init)
@@ -215,7 +237,7 @@ final class ActionRunner: @unchecked Sendable {
                 throw ActionError("unsupported: create a Shortcut named \"Toggle Do Not Disturb\" to enable this")
             }
             let r = ProcessRunner.run("/usr/bin/shortcuts", ["run", name], timeout: 30)
-            if r.status != 0 { throw ActionError("shortcut failed: \(r.stderr.prefix(200))") }
+            if r.status != 0 { throw ActionError("shortcut failed with status \(r.status)") }
         case "mission-control":
             try open("/System/Applications/Mission Control.app")
         case "launchpad":
@@ -263,12 +285,18 @@ final class ActionRunner: @unchecked Sendable {
         if let thrown { throw thrown }
     }
 
-    static func mentionsSudo(_ s: String) -> Bool {
-        s.range(of: #"(^|[^A-Za-z0-9_])sudo([^A-Za-z0-9_]|$)"#, options: .regularExpression) != nil
-    }
-
+    /// Log-safe description: kind, op/key names and lengths only, never text, commands, sources or targets.
     static func describe(_ a: JSONValue) -> String {
-        guard let data = try? JSONSerialization.data(withJSONObject: a.any, options: [.sortedKeys]) else { return "action" }
-        return String(decoding: data, as: UTF8.self)
+        let kind = a["kind"]?.string ?? "?"
+        var parts = [kind]
+        if let op = a["op"]?.string { parts.append("op=\(op)") }
+        if kind == "media", let c = a["command"]?.string { parts.append("command=\(c)") }
+        if kind == "keystroke" { parts.append("key=\(a["key"]?.string ?? "?")") }
+        if let step = a["step"]?.double { parts.append("step=\(Int(step))") }
+        for f in ["text", "command", "source", "target", "name"] {
+            if let v = a[f]?.string, !(kind == "media" && f == "command") { parts.append("\(f): \(v.count) chars") }
+        }
+        if let steps = a["steps"]?.array { parts.append("\(steps.count) steps") }
+        return parts.joined(separator: " ")
     }
 }

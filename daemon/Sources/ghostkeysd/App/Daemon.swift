@@ -17,6 +17,11 @@ final class Daemon: @unchecked Sendable {
     let input = InputMonitor()
     let actions: ActionRunner
     let server: WebSocketServer
+    let token: SessionToken
+    let approvals: ApprovalStore
+    private var limiter = ActionLimiter()
+    private var pausedReason: String?          // "user" or "rate_limit" while paused
+    private var lastPermissionPrompt = -100.0
 
     private var config: Config
     private let engine: TapEngine
@@ -45,10 +50,12 @@ final class Daemon: @unchecked Sendable {
     private var imuHz = 0.0
     private var lastAccessibility = false
 
-    init(options: Options) {
+    init(options: Options) throws {
         self.options = options
-        actions = ActionRunner(dryRun: options.dryRun)
-        server = WebSocketServer(port: options.port, queue: core)
+        token = try SessionToken(directory: store.directory)
+        approvals = ApprovalStore(directory: store.directory)
+        actions = ActionRunner(dryRun: options.dryRun, approvals: approvals)
+        server = WebSocketServer(port: options.port, queue: core, token: token)
         config = store.loadConfig()
         engine = TapEngine(settings: config.settings.detection)
         engine.model = store.loadModel()
@@ -182,26 +189,56 @@ final class Daemon: @unchecked Sendable {
         // No actions while calibrating: the user is tapping zones on purpose.
         guard calibration == nil else { return }
         guard let binding = BindingResolver.resolve(g, bindings: config.bindings, app: app) else { return }
-        runAction(binding.action, bindingId: binding.id, label: binding.label ?? binding.id, t: g.t)
-    }
-
-    private func runAction(_ action: JSONValue, bindingId: String?, label: String, t: Double) {
-        guard !paused else {
-            sendAction(t: t, bindingId: bindingId, label: label, ok: false, error: "paused")
+        let label = binding.label ?? binding.id
+        switch limiter.admit(bindingId: binding.id, gesture: g.gesture, now: Clock.now()) {
+        case .ok: break
+        case .cooldown:
+            Log.debug("binding \(binding.id) in cooldown or still running; skipped")
+            return
+        case .tripped(let why):
+            tripRateLimit(why)
+            sendAction(t: g.t, bindingId: binding.id, label: label, ok: false, error: "rate limit: \(why); paused")
             return
         }
-        actions.run(action) { [weak self] ok, error in
+        // Gesture actions are dropped if they would start more than 1 s late (stale).
+        runAction(binding.action, bindingId: binding.id, label: label, t: g.t, maxAge: 1)
+    }
+
+    /// Too many actions: pause everything and tell the app why (SAFETY_AUDIT H5).
+    private func tripRateLimit(_ why: String) {
+        guard !paused else { return }
+        Log.info("action rate limit tripped (\(why)); pausing")
+        paused = true
+        pausedReason = "rate_limit"
+        server.broadcast(status())
+    }
+
+    /// `replyTo`: for test_action, the result (and any error detail) goes only to the client that asked.
+    private func runAction(_ action: JSONValue, bindingId: String?, label: String, t: Double, maxAge: TimeInterval? = nil,
+                           replyTo: WebSocketServer.Client? = nil) {
+        guard !paused else {
+            if let bindingId { limiter.finished(bindingId: bindingId) }
+            sendAction(t: t, bindingId: bindingId, label: label, ok: false, error: "paused", replyTo: replyTo)
+            return
+        }
+        let replyID = replyTo?.id
+        actions.run(action, maxAge: maxAge) { [weak self] ok, error in
             self?.core.async {
+                guard let self else { return }
+                if let bindingId { self.limiter.finished(bindingId: bindingId) }
                 if let error { Log.info("action \(label) failed: \(error)") }
-                self?.sendAction(t: t, bindingId: bindingId, label: label, ok: ok, error: error)
+                let client = replyID.flatMap { self.server.clients[$0] }
+                if replyID != nil && client == nil { return }   // requester is gone
+                self.sendAction(t: t, bindingId: bindingId, label: label, ok: ok, error: error, replyTo: client)
             }
         }
     }
 
-    private func sendAction(t: Double, bindingId: String?, label: String, ok: Bool, error: String?) {
+    private func sendAction(t: Double, bindingId: String?, label: String, ok: Bool, error: String?,
+                            replyTo: WebSocketServer.Client? = nil) {
         let msg: [String: Any] = ["type": "action", "t": Clock.protocolMs(t), "bindingId": bindingId ?? NSNull(),
                                   "label": label, "ok": ok, "error": error ?? NSNull()]
-        server.broadcast(msg)
+        if let replyTo { server.send(msg, to: replyTo) } else { server.broadcast(msg) }
     }
 
     // MARK: Calibration
@@ -289,9 +326,12 @@ final class Daemon: @unchecked Sendable {
             }
         case "pause":
             paused = true
+            pausedReason = "user"
             server.broadcast(status())
         case "resume":
             paused = false
+            pausedReason = nil
+            limiter.reset()
             server.broadcast(status())
         case "calibration_start":
             let zones = (m["zones"] as? [String]) ?? config.zones.map(\.id)
@@ -338,9 +378,42 @@ final class Daemon: @unchecked Sendable {
             guard let a = m["action"] else { return sendError("test_action needs an action", to: c) }
             let action = JSONValue(any: a)
             let label = action["label"]?.string ?? "Test: \(action["kind"]?.string ?? "?")"
-            runAction(action, bindingId: nil, label: label, t: Clock.now())
+            let now = Clock.now()
+            c.testActionTimes = c.testActionTimes.filter { now - $0 < 1 }
+            guard c.testActionTimes.count < 2 else {
+                return sendAction(t: now, bindingId: nil, label: label, ok: false, error: "rate limit: at most 2 test actions per second", replyTo: c)
+            }
+            c.testActionTimes.append(now)
+            if case .tripped(let why) = limiter.admitGlobal(now: now) {
+                tripRateLimit(why)
+                return sendAction(t: now, bindingId: nil, label: label, ok: false, error: "rate limit: \(why); paused", replyTo: c)
+            }
+            runAction(action, bindingId: nil, label: label, t: now, replyTo: c)
+        case "approve_action":
+            // The app shows a native confirmation with the exact command before sending this.
+            guard let a = m["action"] else { return sendError("approve_action needs an action", to: c) }
+            let action = JSONValue(any: a)
+            do {
+                let h = try approvals.approve(action)
+                Log.info("approved \(ActionRunner.describe(action))")
+                server.send(["type": "approved", "hash": h, "kind": action["kind"]?.string ?? NSNull()], to: c)
+            } catch {
+                sendError("approve_action: \(error)", to: c)
+            }
+        case "revoke_action":
+            let h = (m["hash"] as? String) ?? (m["action"]).flatMap { ApprovalStore.hash(JSONValue(any: $0)) }
+            guard let h else { return sendError("revoke_action needs a hash or an action", to: c) }
+            do {
+                let found = try approvals.revoke(hash: h)
+                server.send(["type": "revoked", "hash": h, "found": found], to: c)
+            } catch {
+                sendError("revoke_action: \(error)", to: c)
+            }
         case "request_permission":
             guard (m["which"] as? String) == "accessibility" else { return sendError("unknown permission", to: c) }
+            // The system prompt must not be spammable.
+            guard Clock.now() - lastPermissionPrompt > 10 else { return server.send(hello(), to: c) }
+            lastPermissionPrompt = Clock.now()
             DispatchQueue.main.async { [weak self] in
                 let opts = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
                 let trusted = AXIsProcessTrustedWithOptions(opts)
@@ -372,6 +445,8 @@ final class Daemon: @unchecked Sendable {
     private func status() -> [String: Any] {
         let labels = (engine.model?.labels ?? []).filter { $0 != "none" }
         return ["type": "status", "paused": paused, "calibrated": !labels.isEmpty, "zones": labels,
+                // Addition to PROTOCOL.md: why the daemon is paused ("user" or "rate_limit"), null when running.
+                "pausedReason": paused ? (pausedReason ?? "user") : NSNull(),
                 "imuHz": Int(imuHz.rounded()),
                 // Addition to PROTOCOL.md: live onset detector state, all in milli-g.
                 "detector": ["noiseFloorMg": Self.r4(engine.noiseFloor * 1000), "thresholdMg": Self.r4(engine.onsetThreshold * 1000),

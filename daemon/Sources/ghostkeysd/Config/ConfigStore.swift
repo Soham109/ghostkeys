@@ -66,6 +66,13 @@ final class ConfigStore {
 
     private func write(_ data: Data, to url: URL) throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        // Keep the previous version one step back (SAFETY_AUDIT item 13).
+        let fm = FileManager.default
+        if fm.fileExists(atPath: url.path), url.lastPathComponent != "samples.json" {
+            let bak = url.appendingPathExtension("bak")
+            try? fm.removeItem(at: bak)
+            try? fm.copyItem(at: url, to: bak)
+        }
         try data.write(to: url, options: .atomic)
     }
 }

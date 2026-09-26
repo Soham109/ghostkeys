@@ -99,7 +99,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 ```jsonc
 { "type": "hello", "version": "0.1.0", "device": { "model": "Mac17,8", "chip": "Apple M5 Pro", "family": "macbook-pro-14" },
   "sensors": { "imu": true, "gyro": true, "lid": true, "light": true }, "permissions": { "accessibility": false } }
-{ "type": "status", "paused": false, "calibrated": true, "zones": ["left-palm", "..."], "imuHz": 797 }
+{ "type": "status", "paused": false, "pausedReason": null, "calibrated": true, "zones": ["left-palm", "..."], "imuHz": 797,
+  "detector": { "noiseFloorMg": 1.2, "thresholdMg": 17.5, "level": 3.1 } }   // pausedReason: "user" | "rate_limit" | null
 { "type": "imu", "t": 1234.5, "a": [0.01, -0.02, -0.99], "g": [0.1, 0.0, -0.2] }      // only when subscribed; ~60 Hz decimated
 { "type": "lid", "t": 1234.5, "angle": 112 }                                               // only when subscribed; on change
 { "type": "light", "t": 1234.5, "value": 0.42 }                                            // only when subscribed; 0..1 normalized

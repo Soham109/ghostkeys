@@ -76,13 +76,8 @@ final class SensorHub: @unchecked Sendable {
         t.start()
         ready.wait()
 
-        // Light and lid are system sensors; they normally already stream. Wake them only if they stay silent.
-        DispatchQueue.global().asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self else { return }
-            for kind in [SensorKind.light, .lid] where self.present.contains(kind) && self.count(kind) == 0 {
-                SPUDriverControl.shared.wakeSilent(kind)
-            }
-        }
+        // Light and lid are system sensors: read passively only, never woken (SAFETY_AUDIT H3). If they are silent,
+        // the app simply gets no light / lid data.
     }
 
     func stop() {

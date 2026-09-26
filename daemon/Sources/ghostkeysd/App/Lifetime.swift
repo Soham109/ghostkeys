@@ -29,6 +29,31 @@ enum InstanceLock {
     }
 }
 
+/// Shutdown plumbing that never depends on the main thread or the core queue (SAFETY_AUDIT H1): signal handlers and
+/// parent watchers run on their own serial queue and restore the sensors directly.
+enum Lifetime {
+    static let queue = DispatchQueue(label: "ghostkeys.lifetime", qos: .userInteractive)
+    nonisolated(unsafe) private static var signalSources: [DispatchSourceSignal] = []
+
+    /// Restores the sensors, kills any process groups started by actions, and exits.
+    static func shutdown(_ reason: String, code: Int32 = 0) -> Never {
+        Log.info("\(reason); shutting down")
+        SPUDriverControl.shared.restore()
+        ProcessRunner.killAll()
+        exit(code)
+    }
+
+    static func installSignalHandlers() {
+        for sig in [SIGINT, SIGTERM, SIGHUP] {
+            signal(sig, SIG_IGN)
+            let src = DispatchSource.makeSignalSource(signal: sig, queue: queue)
+            src.setEventHandler { shutdown("signal \(sig)") }
+            src.resume()
+            signalSources.append(src)
+        }
+    }
+}
+
 /// Exits the daemon when the app that started it goes away, so the daemon never outlives it unintentionally.
 /// Watches `--parent-pid` (kqueue EVFILT_PROC NOTE_EXIT) and the real parent (reparented to launchd = parent died),
 /// with a 2 s polling fallback for both.
@@ -46,19 +71,19 @@ final class ParentWatch {
 
         if let pid = explicitParent {
             guard Self.alive(pid) else { return trigger("parent pid \(pid) is not running") }
-            let src = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: .main)
+            let src = DispatchSource.makeProcessSource(identifier: pid, eventMask: .exit, queue: Lifetime.queue)
             src.setEventHandler { [weak self] in self?.trigger("parent pid \(pid) exited") }
             src.resume()
             sources.append(src)
         }
         if watchPPID {
-            let src = DispatchSource.makeProcessSource(identifier: initialPPID, eventMask: .exit, queue: .main)
+            let src = DispatchSource.makeProcessSource(identifier: initialPPID, eventMask: .exit, queue: Lifetime.queue)
             src.setEventHandler { [weak self] in self?.trigger("parent process \(initialPPID) exited") }
             src.resume()
             sources.append(src)
         }
 
-        let timer = DispatchSource.makeTimerSource(queue: .main)
+        let timer = DispatchSource.makeTimerSource(queue: Lifetime.queue)
         timer.schedule(deadline: .now() + 2, repeating: 2)
         timer.setEventHandler { [weak self] in
             if watchPPID, getppid() == 1 { self?.trigger("parent process exited (reparented to launchd)") }
