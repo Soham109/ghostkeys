@@ -1,0 +1,59 @@
+[package]
+name = "ghostkeysd-win"
+version = "0.1.0"
+edition = "2021"
+description = "Ghostkeys daemon for Windows: sensors, gesture detection, actions, and the loopback WebSocket from docs/PROTOCOL.md"
+publish = false
+
+[lib]
+name = "ghostkeysd_win"
+path = "src/lib.rs"
+
+[[bin]]
+name = "ghostkeysd-win"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "signal"] }
+tokio-tungstenite = "0.29"
+futures-util = { version = "0.3", default-features = false, features = ["sink", "std"] }
+sha2 = "0.10"
+getrandom = "0.3"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62", features = [
+    "Foundation",
+    "Devices_Sensors",
+    "Win32_Foundation",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_Media_KernelStreaming",
+    "Win32_Media_MediaFoundation",
+    "Win32_Media_Multimedia",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_Security",
+    "Win32_System_DataExchange",
+    "Win32_System_Environment",
+    "Win32_System_JobObjects",
+    "Win32_System_Performance",
+    "Win32_System_Registry",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Shutdown",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Win32_System_Variant",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+windows-core = "0.62"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync", "time", "test-util"] }
