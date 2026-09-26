@@ -211,15 +211,35 @@ function zoneName(id: string | null): string | null {
   return bridge.config?.zones.find((z) => z.id === id)?.name ?? id
 }
 
+// The HUD page must finish loading before the window is ever shown, or macOS
+// flashes an empty window and the first payload is lost.
+let hudReady: Promise<void> | null = null
+
+function ensureHud(): Promise<void> {
+  if (!hudWindow || hudWindow.isDestroyed()) {
+    hudWindow = createHudWindow()
+    const win = hudWindow
+    hudReady = new Promise((resolve) => {
+      if (!win.webContents.isLoading()) resolve()
+      else win.webContents.once('did-finish-load', () => resolve())
+    })
+  }
+  return hudReady ?? Promise.resolve()
+}
+
 function showHud(title: string, detail: string | null, ok = true): void {
   if (bridge.config && !bridge.config.settings.hud) return
-  if (!hudWindow) hudWindow = createHudWindow()
   const payload: HudPayload = { id: ++hudSeq, title, detail, ok }
+  void ensureHud().then(() => presentHud(payload))
+}
+
+function presentHud(payload: HudPayload): void {
+  if (!hudWindow || hudWindow.isDestroyed()) return
+  hudWindow.webContents.send('hud', payload)
   if (!SCREENSHOT) {
     positionHud()
     hudWindow.showInactive()
   }
-  hudWindow.webContents.send('hud', payload)
   if (hudHideTimer) clearTimeout(hudHideTimer)
   hudHideTimer = setTimeout(() => {
     if (!SCREENSHOT) hudWindow?.hide()
@@ -482,6 +502,8 @@ if (!gotLock) {
       app.quit()
       return
     }
+    // Load the HUD page now, hidden, so the first gesture never shows a blank window.
+    void ensureHud()
 
     tray = new Tray(trayImage('normal'))
     refreshTray()
