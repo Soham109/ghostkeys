@@ -62,7 +62,8 @@ final class Daemon: @unchecked Sendable {
         approvals = ApprovalStore(directory: store.directory)
         actions = ActionRunner(dryRun: options.dryRun, approvals: approvals)
         server = WebSocketServer(port: options.port, queue: core, token: token)
-        config = store.loadConfig()
+        ZoneDefaults.warnIfStale()
+        config = store.loadConfig(family: device.family)
         engine = TapEngine(settings: config.settings.detection)
         engine.model = store.loadModel()
         applyConfigToEngine()   // also sets the model's zone centres
@@ -553,11 +554,10 @@ final class Daemon: @unchecked Sendable {
         Log.debug("zones needing multi-tap: \(config.zonesNeedingMultiTap.sorted())")
     }
 
-    /// Tap x,y comes from the zone centres, so custom zone rectangles must reach the model.
+    /// Tap x,y comes from the zone centres, so the configured zone rectangles must reach the model (converted to
+    /// deck-plane centres per surface: edges at x 0/1, lid at the hinge, front lip at y 1).
     private func applyZoneCenters() {
-        let centers = Dictionary(config.zones.map { ($0.id, [$0.rect.x + $0.rect.w / 2, $0.rect.y + $0.rect.h / 2]) },
-                                 uniquingKeysWith: { a, _ in a })
-        engine.model?.setZoneCenters(centers)
+        engine.model?.setZoneCenters(config.zoneCenters)
     }
 
     private static func r4(_ v: Double) -> Double { (v * 10000).rounded() / 10000 }

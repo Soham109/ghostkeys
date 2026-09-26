@@ -195,8 +195,17 @@ struct Config: Codable, Equatable, Sendable {
 
     // MARK: Defaults
 
-    /// Default zones for a MacBook Pro (top view, x 0 = left edge of the base, y 0 = hinge, 1 = front lip).
-    static let defaultZones: [Zone] = [
+    /// Default zones for a family, from the app's zone-defaults.json (see ZoneDefaults). Falls back to the built-in
+    /// MacBook Pro layout below only if the embedded JSON could not be read.
+    static func defaultZones(family: String) -> [Zone] {
+        ZoneDefaults.zones(for: family) ?? builtInZones
+    }
+
+    /// Default zones when the family is not known yet (decoding a config without zones).
+    static var defaultZones: [Zone] { defaultZones(family: ZoneDefaults.fallbackFamily) }
+
+    /// Last-resort layout (top view, x 0 = left edge of the base, y 0 = hinge, 1 = front lip).
+    static let builtInZones: [Zone] = [
         Zone(id: "left-palm", name: "Left palm rest", surface: "base", rect: .init(x: 0.04, y: 0.62, w: 0.28, h: 0.34), color: "#3DDC97"),
         Zone(id: "right-palm", name: "Right palm rest", surface: "base", rect: .init(x: 0.68, y: 0.62, w: 0.28, h: 0.34), color: "#FFB547"),
         Zone(id: "left-grille", name: "Left grille", surface: "base", rect: .init(x: 0.02, y: 0.08, w: 0.1, h: 0.45), color: "#4FC3F7"),
@@ -207,13 +216,28 @@ struct Config: Codable, Equatable, Sendable {
         Zone(id: "lid", name: "Lid", surface: "lid", rect: .init(x: 0.1, y: 0.1, w: 0.8, h: 0.8), color: "#B0BEC5"),
     ]
 
-    /// Only two harmless bindings are enabled by default.
-    static let defaultBindings: [Binding] = [
-        Binding(id: "b1", enabled: true, gesture: "double", zone: "right-grille", zones: nil,
-                action: .object(["kind": .string("volume"), "step": .number(6)]), label: "Volume up"),
-        Binding(id: "b2", enabled: true, gesture: "double", zone: "left-grille", zones: nil,
-                action: .object(["kind": .string("volume"), "step": .number(-6)]), label: "Volume down"),
-    ]
+    /// Only two harmless bindings are enabled by default: double tap to change the volume, on the speaker grilles
+    /// where the family has them (MacBook Pro), else on the side edges (MacBook Air), like the app's defaults.
+    static func defaultBindings(zones: [Zone]) -> [Binding] {
+        let ids = Set(zones.map(\.id))
+        let right = ids.contains("right-grille") ? "right-grille" : "right-edge"
+        let left = ids.contains("left-grille") ? "left-grille" : "left-edge"
+        return [
+            Binding(id: "b1", enabled: true, gesture: "double", zone: right, zones: nil,
+                    action: .object(["kind": .string("volume"), "step": .number(6)]), label: "Volume up"),
+            Binding(id: "b2", enabled: true, gesture: "double", zone: left, zones: nil,
+                    action: .object(["kind": .string("volume"), "step": .number(-6)]), label: "Volume down"),
+        ].filter { ids.contains($0.zone ?? "") }
+    }
 
-    static var defaults: Config { Config(zones: defaultZones, bindings: defaultBindings, settings: AppSettings()) }
+    /// A new config for the detected family. Only used when there is no config.json yet.
+    static func defaults(family: String) -> Config {
+        let zones = defaultZones(family: family)
+        return Config(zones: zones, bindings: defaultBindings(zones: zones), settings: AppSettings())
+    }
+
+    /// Zone centres on the deck plane for ZoneModel, from each zone's rect and surface.
+    var zoneCenters: [String: [Double]] {
+        Dictionary(zones.map { ($0.id, ZoneDefaults.deckCenter($0)) }, uniquingKeysWith: { a, _ in a })
+    }
 }

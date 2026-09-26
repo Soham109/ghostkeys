@@ -94,10 +94,12 @@ final class ConfigStore {
         return e
     }()
 
-    /// Loads config.json, creating it from defaults if missing. A corrupt file is kept aside, not overwritten.
-    func loadConfig() -> Config {
+    /// Loads config.json, creating it from the family's defaults if missing. An existing file is never replaced by
+    /// defaults; a corrupt one is kept aside as config.json.bad and the defaults are used in memory only.
+    func loadConfig(family: String) -> Config {
         guard let data = try? Data(contentsOf: configURL) else {
-            let c = Config.defaults
+            let c = Config.defaults(family: family)
+            Log.info("created a new config for \(family) (\(c.zones.count) zones)")
             do { try save(c) } catch { Log.error("could not write default config: \(error)") }
             return c
         }
@@ -108,7 +110,7 @@ final class ConfigStore {
             let bad = directory.appendingPathComponent("config.json.bad")
             try? FileManager.default.removeItem(at: bad)
             try? FileManager.default.copyItem(at: configURL, to: bad)
-            return Config.defaults
+            return Config.defaults(family: family)
         }
     }
 
