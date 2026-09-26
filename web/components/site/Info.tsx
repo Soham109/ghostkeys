@@ -66,8 +66,25 @@ export function PrivacyList() {
 
 export function CompatTable() {
   return (
-    <div className="mt-14 overflow-x-auto md:ml-[25%]" data-lenis-prevent>
-      <table className="w-full min-w-[620px] text-left">
+    <div className="mt-14 md:ml-[25%]">
+      {/* phones: one block per Mac */}
+      <ul className="md:hidden">
+        {COMPAT.map((r) => (
+          <li key={r.mac} className="border-t hairline py-5">
+            <p className="text-[17px] text-ink">{r.mac}</p>
+            <p className="mt-1 text-[13px] text-ink-3">{r.note}</p>
+            <dl className="mt-4 grid grid-cols-2 gap-y-2">
+              {["Taps and zones", "Lid and tilt", "Light sensor", "Camera add-on"].map((c, i) => (
+                <div key={c} className="contents">
+                  <dt className="label">{c}</dt>
+                  <dd className={`text-[14px] ${r.cells[i] === "No" ? "text-ink-3" : "text-ink"}`}>{r.cells[i]}</dd>
+                </div>
+              ))}
+            </dl>
+          </li>
+        ))}
+      </ul>
+      <table className="hidden w-full text-left md:table">
         <caption className="sr-only">Supported MacBooks and what works on each</caption>
         <thead>
           <tr className="border-b hairline">
@@ -97,7 +114,7 @@ export function CompatTable() {
           ))}
         </tbody>
       </table>
-      <p className="mt-5 text-[13px] text-ink-3">Apple menu, then About This Mac, shows your chip. macOS 14 or later.</p>
+      <p className="mt-5 border-t hairline pt-5 text-[13px] text-ink-3 md:border-0 md:pt-0">Apple menu, then About This Mac, shows your chip. macOS 14 or later.</p>
     </div>
   );
 }

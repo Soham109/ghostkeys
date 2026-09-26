@@ -123,3 +123,12 @@ Client: "don't make the website unnecessarily long". The landing now has six cha
 - **Assets added to public:** `hdr/studio.hdr` (Poly Haven "studio_small_03", CC0, 1k), `textures/live.webp` (the app's Live screen, 84 KB), `stills/*.avif`.
 - **Debug hook:** `?debug` exposes `window.__gkBus` (the bus) for Playwright checks.
 - `MiniStage.tsx` was deleted (unused). `Heatmap.tsx` is kept but not mounted.
+
+## 10. Site side, after QA round 2 (docs/review/WEB_QA.md): open items that are in the scene
+
+- `StillStage` is now mounted for reduced motion, tier 0 and no WebGL2 (the canvas is not mounted in those cases), so QA bug 7 (reduced motion still animating) is closed by that.
+- 3D labels and HUD pills over the copy column: "LEFT GRILLE" sits on "Every" at 1280x800 (zones chapter), pills land on "buttons" and "layers." (QA bugs 4 and 5). Please keep drei `<Html>` labels out of the left ~45% on desktop (or hide them while `bus.chapter` copy is on screen), and clamp or hide labels whose anchor is off-frame.
+- Headlines now carry a local radial scrim (`.scrim` in globals.css, bg color at 86% center). It helps, but framing the laptop so copy lands on the backdrop is still the better fix at 1280 wide.
+- Accent use (QA art item 3): rings still cross the trackpad and other zones; inter-key glow reads as decoration.
+- Screen texture uses blue, green, purple and pink zone colors (QA art item 4, APP_CRITIQUE item 1): monochrome please.
+- Mobile jagged, dashed-looking chassis and trackpad edges at 390 wide, tier 1 (not in the site's area).

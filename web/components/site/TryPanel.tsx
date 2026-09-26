@@ -65,6 +65,7 @@ export function TryPanel() {
     <section ref={ref} id="try" data-chapter="try" aria-label="Try it" style={{ height: `calc(100svh * ${CHAPTER_SCREENS.try})` }} className="relative">
       <div className="sticky top-0 h-[100svh] pointer-events-none">
         <div className="page-x absolute inset-x-0 top-[17svh]">
+          <div className="scrim" aria-hidden />
           <h2 data-line className="display max-w-[10ch] text-[length:var(--t-line)] text-ink">
             Go on. Tap <em>it.</em>
           </h2>

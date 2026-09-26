@@ -6,6 +6,7 @@ import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { LogoMark } from "./Logo";
 import { DOWNLOAD_URL } from "@/lib/site";
 import { play } from "@/lib/sound";
+import { setThemePref, useThemePref, type ThemePref } from "@/lib/theme";
 
 const LINKS = [
   { href: "/guide/", label: "Guide" },
@@ -82,11 +83,24 @@ export function Nav() {
               </a>
             ))}
           </div>
+          <ThemeCycle />
           <a href={DOWNLOAD_URL} className="btn-ink h-8 px-4 text-[13px]">
             Download
           </a>
         </nav>
       </div>
     </>
+  );
+}
+
+/** Phones and tablets: one tap cycles Auto, Light, Dark. Desktop has the full control in the corner and footer. */
+function ThemeCycle() {
+  const pref = useThemePref();
+  const next: Record<ThemePref, ThemePref> = { system: "light", light: "dark", dark: "system" };
+  const name = pref === "system" ? "Auto" : pref === "light" ? "Light" : "Dark";
+  return (
+    <button onClick={() => setThemePref(next[pref])} className="label hover:!text-ink lg:hidden" aria-label={`Theme: ${name}. Change theme`}>
+      {name}
+    </button>
   );
 }

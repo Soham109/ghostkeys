@@ -282,3 +282,21 @@ html.lenis body {
     transition-duration: 1ms !important;
   }
 }
+
+/* Local light-well behind headlines over the scene: darkens (or lightens) the backdrop, never a panel. */
+.scrim {
+  position: absolute;
+  z-index: -1;
+  left: -14vw;
+  top: -18vh;
+  width: min(82vw, 1200px);
+  height: calc(100% + 36vh);
+  pointer-events: none;
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--bg) 86%, transparent) 0%, color-mix(in oklab, var(--bg) 70%, transparent) 45%, color-mix(in oklab, var(--bg) 30%, transparent) 75%, transparent 100%);
+}
+@media (max-width: 767px) {
+  .scrim {
+    left: -20vw;
+    width: 140vw;
+  }
+}

@@ -16,6 +16,7 @@ import { Toggles } from "./Toggles";
 import { FooterLinks } from "./FooterLinks";
 
 const StageCanvas = dynamic(() => import("../three/StageCanvas"), { ssr: false });
+const StillStage = dynamic(() => import("../three/Stills"), { ssr: false });
 
 /** Legacy rig position for each chapter's progress, so the current scene keeps its choreography. */
 const LEGACY_MAP: Record<ChapterId, [number, number]> = {
@@ -65,7 +66,8 @@ const CHAPTERS: ChapterDef[] = [
 export function Experience() {
   const tier = useTier();
   const [active, setActive] = useState(true);
-  const webgl = tier.ready && tier.tier > 0;
+  const webgl = tier.ready && tier.tier > 0 && !tier.reducedMotion;
+  const stills = tier.ready && !webgl;
 
   useEffect(() => {
     const onVis = () => {
@@ -140,6 +142,7 @@ export function Experience() {
     <>
       <div className="fixed inset-0 z-0" aria-hidden>
         {webgl && <StageCanvas tier={tier} active={active} />}
+        {stills && <StillStage />}
       </div>
       <FadingToggles />
       <main className="relative z-10">
@@ -216,11 +219,12 @@ function Intro() {
     <section id="top" ref={ref} data-chapter="intro" aria-label="Ghostkeys" style={{ height: `calc(100svh * ${CHAPTER_SCREENS.intro})` }} className="relative">
       <div className="pointer-events-none sticky top-0 h-[100svh]">
         <div className="page-x absolute inset-x-0 bottom-[13svh]">
+          <div className="scrim invisible" data-intro data-fade aria-hidden />
           <h1 data-line data-intro className="display invisible max-w-[9ch] text-[length:var(--t-hero)] text-ink">
             Your laptop has <em>more</em> buttons.
           </h1>
-          <div data-intro data-fade className="invisible pointer-events-auto mt-10 flex items-baseline gap-8">
-            <a href={DOWNLOAD_URL} className="quiet-link text-[15px]">
+          <div data-intro data-fade className="invisible pointer-events-auto mt-10 flex items-center gap-8">
+            <a href={DOWNLOAD_URL} className="btn-ink h-11 px-6 text-[14px]">
               Download for Mac
             </a>
             <span className="label">Free to start</span>
@@ -236,7 +240,11 @@ function Chapter({ def, index }: { def: ChapterDef; index: number }) {
   const [el, setEl] = useState<HTMLElement | null>(null);
   const capRef = useRef<HTMLSpanElement>(null);
   const tagRef = useRef<HTMLParagraphElement>(null);
-  useEffect(() => setEl(ref.current), []);
+  const reducedRef = useRef(false);
+  useEffect(() => {
+    setEl(ref.current);
+    reducedRef.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches || new URLSearchParams(location.search).has("reduced");
+  }, []);
 
   // each beat's lines rise out of their masks inside the chapter's scrubbed range, then rise away
   useSplitLines(el, (lines, line) => {
@@ -267,6 +275,8 @@ function Chapter({ def, index }: { def: ChapterDef; index: number }) {
         if (capRef.current) capRef.current.textContent = steps.length ? `${String(i + 1).padStart(2, "0")} / ${String(steps.length).padStart(2, "0")}   ${steps[i]}` : "";
         if (tagRef.current) tagRef.current.textContent = beat.tag ?? "";
       }
+      if (reducedRef.current)
+        el?.querySelectorAll<HTMLElement>("[data-beat]").forEach((h) => (h.style.opacity = Number(h.dataset.beat) === def.beats.indexOf(beat) ? "1" : "0"));
       const o = String(Math.max(0, Math.min(1, Math.min(p * 12 - 0.3, (1 - p) * 10))));
       el?.querySelectorAll<HTMLElement>("[data-chrome]").forEach((c) => (c.style.opacity = o));
     };
@@ -279,6 +289,7 @@ function Chapter({ def, index }: { def: ChapterDef; index: number }) {
     <section ref={ref} id={def.anchor} data-chapter={def.id} style={{ height: `calc(100svh * ${CHAPTER_SCREENS[def.id]})` }} className="relative">
       <div className="pointer-events-none sticky top-0 h-[100svh]">
         <div className={`page-x absolute inset-x-0 ${pos}`}>
+          <div className="scrim" data-chrome aria-hidden style={{ opacity: 0 }} />
           <div className="grid">
             {def.beats.map((b, k) => (
               <h2 key={k} data-line data-beat={k} className="display col-start-1 row-start-1 max-w-[9.5ch] text-[length:var(--t-line)] text-ink">
@@ -314,7 +325,8 @@ function Finale() {
   return (
     <section ref={ref} data-chapter="finale" aria-label="Get Ghostkeys" style={{ height: `calc(100svh * ${CHAPTER_SCREENS.finale})` }} className="relative">
       <div className="pointer-events-none sticky top-0 flex h-[100svh] flex-col justify-between">
-        <div className="page-x pt-[19svh]">
+        <div className="page-x relative pt-[19svh]">
+          <div className="scrim" data-fade aria-hidden />
           <h2 data-line className="display max-w-[9ch] text-[length:var(--t-line)] text-ink">
             The <em>blank</em> space is the interface.
           </h2>

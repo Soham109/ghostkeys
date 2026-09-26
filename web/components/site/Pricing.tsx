@@ -45,11 +45,11 @@ export function Pricing() {
 
       {/* tiers: columns split by hairlines; Pro sits on a quiet raised ground so its value reads first */}
       <div className="page-x mt-24">
-        <div className="grid grid-cols-1 border-t hairline md:grid-cols-3">
+        <div id="tiers" className="scroll-mt-28 grid grid-cols-1 border-t hairline md:grid-cols-3">
           {tiers.map((t, i) => (
             <div
               key={t.id}
-              className={`flex flex-col pt-8 pb-10 md:px-8 ${i > 0 ? "border-t md:border-t-0 md:border-l hairline" : "md:pl-0"} ${t.id === "pro" ? "md:bg-bg-raised" : ""}`}
+              className={`flex flex-col pt-8 pb-10 md:px-8 ${i > 0 ? "border-t md:border-t-0 md:border-l hairline" : "md:pl-0"}`}
             >
               <div className="flex items-baseline justify-between">
                 <h3 className="label !text-ink">{t.name}</h3>

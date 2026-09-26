@@ -181,15 +181,26 @@ export function Internals({ taps, state, signal, ink }: { taps: TapField; state:
   }, []);
 
   const ampRef = useRef(0);
+  const root = useRef<THREE.Group>(null!);
+  // the internals only render during the x-ray (their parent group is hidden otherwise); skip all work then
+  const innerVisible = () => {
+    let o: THREE.Object3D | null = root.current;
+    while (o) {
+      if (!o.visible) return false;
+      o = o.parent;
+    }
+    return true;
+  };
 
   useFrame((_, dt) => {
     const t = taps.time;
+    if (!innerVisible()) return;
     fanL.current.rotation.y += dt * 9;
     fanR.current.rotation.y -= dt * 9;
     const age = t - spike.current.t;
     // chip glow: always faintly alive, flares on each tap
     const flare = age >= 0 ? Math.exp(-age * 5) * spike.current.s : 0;
-    chipMat.current.color.set(ink).lerp(new THREE.Color(signal), Math.min(1, flare * 1.5)).multiplyScalar(1.2 + flare * 6 + Math.sin(t * 3) * 0.2);
+    chipMat.current.color.set(ink).multiplyScalar(1.2 + flare * 3 + Math.sin(t * 3) * 0.2);
     haloMat.current.uniforms.uFlare.value = flare;
     haloMat.current.uniforms.uTime.value = t;
     // three accelerometer axes, 800 Hz squeezed into a scrolling trace
@@ -210,16 +221,22 @@ export function Internals({ taps, state, signal, ink }: { taps: TapField; state:
       }
       for (let i = 0; i < N; i++) pts[i].set(i / (N - 1), b[i], 0);
       const line = lines[a].current;
-      if (line) {
-        const arr = new Float32Array(N * 3);
-        for (let i = 0; i < N; i++) {
-          arr[i * 3] = pts[i].x * 1.1;
-          arr[i * 3 + 1] = pts[i].y;
-          arr[i * 3 + 2] = 0;
+      if (line && innerVisible()) {
+        // write the segments in place: LineGeometry.setPositions allocates new GPU buffers on every call
+        const data = (line.geometry as unknown as { attributes: { instanceStart: THREE.InterleavedBufferAttribute } }).attributes.instanceStart.data;
+        const arr = data.array as Float32Array;
+        for (let i = 0; i < N - 1; i++) {
+          const o = i * 6;
+          arr[o] = pts[i].x * 1.1;
+          arr[o + 1] = pts[i].y;
+          arr[o + 2] = 0;
+          arr[o + 3] = pts[i + 1].x * 1.1;
+          arr[o + 4] = pts[i + 1].y;
+          arr[o + 5] = 0;
         }
-        line.geometry.setPositions(arr);
-        const mat = line.material as THREE.Material & { color: THREE.Color };
-        mat.color.set(ink).lerp(new THREE.Color(signal), Math.min(1, flare * 2));
+        data.needsUpdate = true;
+        // the trace stays ink: orange is reserved for the ring where a touch lands
+        (line.material as THREE.Material & { color: THREE.Color }).color.set(ink);
       }
     }
     const open = Math.max(state.hood, state.xray);
@@ -229,7 +246,7 @@ export function Internals({ taps, state, signal, ink }: { taps: TapField; state:
   const init = useMemo(() => Array.from({ length: N }, (_, i) => [i / (N - 1), 0, 0] as [number, number, number]), []);
 
   return (
-    <group>
+    <group ref={root}>
       {/* logic board */}
       <mesh position={[0, Y0 + 0.006, -0.62]}>
         <boxGeometry args={[1.9, 0.01, 0.76]} />
