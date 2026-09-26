@@ -1,0 +1,37 @@
+{
+  "name": "@ghostkeys/cli",
+  "version": "0.1.0",
+  "description": "gk: a terminal client for ghostkeysd",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "gk": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node -e \"require('node:fs').chmodSync('dist/index.js', 0o755)\"",
+    "dev": "tsc -w -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@ghostkeys/sdk": "file:../sdk",
+    "commander": "^12.1.0",
+    "picocolors": "^1.1.1",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/ws": "^8.5.13",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
