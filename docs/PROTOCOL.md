@@ -23,6 +23,26 @@ Every message has `"type"`. Timestamps `t` are milliseconds since daemon start (
 - Config lives in `~/Library/Application Support/Ghostkeys/` only. Nothing else on disk is written.
 - No network except the loopback WebSocket.
 
+## Authentication
+
+The daemon only accepts WebSocket handshakes from the app, never from a browser page.
+
+- Token: on every launch the daemon generates 32 random bytes, hex encoded (64 characters), and writes them to
+  `~/Library/Application Support/Ghostkeys/token` with mode 0600, replacing the previous one. If the parent passes
+  `GHOSTKEYS_TOKEN` in the daemon's environment (at least 32 characters), that value is accepted too.
+- Handshake: the client must send the header `X-Ghostkeys-Token: <token>`. A missing or wrong token is rejected.
+- Any handshake that carries an `Origin` header is rejected (browsers always send one; the app must not).
+- Limits: at most 8 clients; more than 200 messages per second from one client disconnects it; at most 2
+  `test_action` per second per client. A client that stops reading first loses stream frames (`imu`, `light`, `lid`,
+  `taps`), then is disconnected once about 1 MB is waiting.
+- Approval of powerful actions: `shell`, `applescript`, `shortcut` and `open` actions (also as macro steps) only run if
+  they carry `approvedHash` and that hash is in the daemon's `approved.json`. The app shows a native confirmation with
+  the exact command, then sends `approve_action`; the daemon replies with the hash, which the app stores in the action as
+  `approvedHash`. The hash is SHA-256 over the action without `approvedHash`, `label` and `delayMs`, computed by the
+  daemon only, so changing the command invalidates it. `approved.json` is written only by the daemon. Even approved,
+  commands using `sudo`, `rm -rf`, `diskutil`, `csrutil`, `launchctl`, `defaults write`, `networksetup`, `curl | sh`,
+  or AppleScript admin privileges are refused.
+
 ## Surfaces and zones
 
 Laptop top view, normalized coordinates: x from 0 (left edge of the base) to 1 (right edge), y from 0 (hinge) to 1 (front lip).
@@ -50,6 +70,28 @@ Default zones (MacBook Pro): `left-palm`, `right-palm`, `left-grille`, `right-gr
 | `cover_hold` | ambient light stays covered over 1.2 s |
 | `tilt_left` / `tilt_right` | laptop rolled over 8 degrees and back while held |
 
+Optional sound mode (GhostkeysAcoustics, mic sessions only):
+
+| gesture | meaning |
+| --- | --- |
+| `knock_knuckle` | a tap in a zone that sound classifies as a knuckle (a fingertip tap stays `tap`) |
+| `rub` / `rub_left` / `rub_right` | fingertip rub or swipe on a palm rest or grille; left/right only when direction confidence >= 0.7 |
+| `wave_toward` / `wave_away` / `wave_sweep` | hand movement above the keyboard, via an inaudible 20 kHz pilot tone (built-in speakers only) |
+
+Optional camera add-on (GhostkeysVision, camera sessions only), sent with `"zone": "air"` plus `hand`, `x`, `y`:
+
+| gesture | meaning |
+| --- | --- |
+| `air_tap` | pinch and release in under 250 ms |
+| `pinch_drag_left` / `_right` / `_up` / `_down` | pinch, move, release |
+| `palm_swipe_left` / `palm_swipe_right` | open palm sweep |
+| `circle_cw` / `circle_ccw` | one step per 30 degrees of a drawn circle |
+
+Continuous camera gestures (`pinch_hold` with dx/dy, `two_hand_zoom` with scale, `point` with x/y) arrive as
+`{ "type": "air", "phase": "began|changed|ended", "gesture": "...", ... }`. Sessions: app sends `air_session_start` /
+`air_session_stop` and `sound_session_start` / `sound_session_stop`; daemon replies `{ "type": "session", "kind": "air|sound", "active": true, "secondsLeft": 30 }`.
+`hello.sensors` gains `sound` and `camera` booleans. `tap` may carry `"tapType": "fingertip|knuckle|nail"` and `"source": "imu|camera"`.
+
 Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, `fn`.
 
 ## Daemon to app
@@ -70,6 +112,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "calibration", "phase": "done", "accuracy": { "left-palm": 0.97 }, "overall": 0.95, "confusion": [[...]], "labels": ["..."] }
 { "type": "config", "config": { /* full config, see below */ } }
 { "type": "error", "message": "..." }
+{ "type": "approved", "hash": "<64 hex>", "kind": "shell" }  // reply to approve_action, only to the requester
+{ "type": "revoked", "hash": "<64 hex>", "found": true }     // reply to revoke_action, only to the requester
 ```
 
 ## App to daemon
@@ -87,6 +131,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "config_set", "config": { } }                      // daemon saves and replies with config
 { "type": "test_action", "action": { } }
 { "type": "request_permission", "which": "accessibility" }   // daemon calls AXIsProcessTrustedWithOptions(prompt: true)
+{ "type": "approve_action", "action": { "kind": "shell", "command": "..." } }  // only after the user confirmed natively
+{ "type": "revoke_action", "hash": "<64 hex>" }              // or { "action": { ... } }
 ```
 
 ## Config file (`~/Library/Application Support/Ghostkeys/config.json`)
