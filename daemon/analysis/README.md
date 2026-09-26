@@ -22,12 +22,38 @@ python3 -m venv --system-site-packages .venv          # numpy, scipy, scikit-lea
 
 - `classifier_sweep.py data/calib1/samples.json`: compares classifier designs (kNN, shrinkage LDA, logistic regression, blends, class balancing) with repeated cross-validation. It reports tap recall, wrong-zone and false-tap rates at several confidence thresholds.
 - `operating_points.py dump.tsv`: the same metrics for the real Swift classifier, from a dump made by the harness below.
+- `harness/GentleEval.swift`: gentle and light taps, old fixed floor vs adaptive floor. It injects synthetic taps into the real rest recording, looped, and also rescales the lab recording's real taps. It reports onset recall, calibration, zone-correct taps and false taps per minute. Run it like the harness below.
 - `harness/`: a temporary Swift test that cross-validates the live classifier path on a `samples.json`, and prints one TSV row per held-out sample. To use it:
   1. Copy both files into `Tests/GhostkeysDetectionTests/`.
   2. Run `ZZ_DROP=left-edge,lid scripts/run-tests.sh Detection -- --filter zzLivePath | grep '^ZZ' | sed 's/^ZZ //' > out.tsv`. Set `ZZ_DROP` to the zones you want left out, or leave it empty.
   3. Remove both files again. They read local user data, so they must not stay in the test target.
 
 Copy the daemon's files before analysing them, and never modify the originals: `cp ~/Library/Application\ Support/Ghostkeys/daemon/model/*.json data/calib1/`.
+
+## Gentle taps (26 Sep 2026): adaptive onset floor
+
+The user had to tap very hard: the fixed 17.5 mg floor sat far above the 1 to 4 mg desk noise. The floor now adapts:
+- **Learned floor:** half the 10th-percentile peak of the user's gentlest calibrated zone, clamped to 4 to 17.5 mg.
+- **Quiet desk:** 6 mg, when noise has been under 3 mg for 300 ms with no key or trackpad use for 1 s.
+- **Calibration capture:** also 6 mg.
+- **Noisy conditions:** k x noise takes over, with k = 5.
+- **Sensitivity:** scales everything by x0.5 to x2.
+
+Results from `harness/GentleEval.swift` (60 s, 5 zones, typing negatives in calibration):
+
+| Quiet desk | old: detected | old: right zone | new: detected | new: right zone |
+|---|---|---|---|---|
+| Gentle 8 to 15 mg | 0/39 | 0/39 | 37/39 | 4/39 |
+| Light 15 to 40 mg | 30/39 | 30/39 | 39/39 | 32/39 |
+
+- **Disturbed desk** (the recording's own desk-wobble stretches): light taps detected 25 of 35, versus 19 of 35 before.
+- **False taps per minute** are the same as before on the looped rest recording (5, all from its real desk events). They are 0 while typing with key events, and 0 while typing with key events ignored (old: 2).
+- **Lab recording** 5-fold went from 0.852 to 0.902.
+- **Gentle taps cannot be told apart by zone.** At 8 to 15 mg the zone cues (twist near the 0.061 deg/s gyro step, impulse direction, ringing) are at the noise level: 46 to 50% cross-validated accuracy even with 3 zones. So gentle taps are now heard, but the classifier correctly declines most of them.
+- **Tap strength does not carry over.** A model calibrated hard accepts only 58% of light taps; one calibrated light accepts 58% of normal taps.
+  - Training on strength-scaled copies (0.7x/1.4x) fixed the second case on synthetic data (58 to 95%).
+  - On the real calibration it tripled typing negatives read as taps (0.05 to 0.145), so it is off by default.
+  - Calibrate at the strengths the user will really use.
 
 ## Findings from the first real calibration (calib1, 26 Sep 2026)
 

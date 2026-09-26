@@ -29,7 +29,8 @@ public final class TapEngine {
     }
 
     /// Calibration capture: skips the typing, trackpad and burst gates so keystrokes and clicks can
-    /// be captured as "none" negatives. The paused and motion gates still apply.
+    /// be captured as "none" negatives, and uses the low (quiet-desk) onset floor so gentle
+    /// calibration taps are captured too. The paused and motion gates still apply.
     public var bypassInputGates = false
     /// Emit tilt_left / tilt_right gestures.
     public var tiltEnabled = true
@@ -46,12 +47,14 @@ public final class TapEngine {
     public var noiseFloor: Double { onset.noise }
     /// Current trigger threshold (g).
     public var onsetThreshold: Double { onset.threshold }
+    /// True while the quiet-desk floor is in effect (calm for 300 ms, no key or trackpad for 1 s).
+    public var isQuiet: Bool { onset.quiet }
     /// Current high-passed accel magnitude (g), for visualizers.
     public var level: Double { onset.level }
 
     // Components.
     private var history: SampleHistory
-    private var onset = OnsetDetector()
+    var onset = OnsetDetector()   // internal: evaluation harnesses flip legacyThreshold
     private var gravity = GravityMonitor()
     private var tilt = TiltDetector()
     private var grammar = GestureGrammar()
@@ -59,6 +62,9 @@ public final class TapEngine {
 
     // Input activity: recent key / mouse event times (seconds, same clock as samples).
     private var keyTimes: [Double] = []
+    /// Key release times (a held key's release bump can arrive long after its key-down).
+    private var keyUpTimes: [Double] = []
+    private let keyUpGate = 0.150
     private var mouseTimes: [Double] = []
     /// Key events can be delivered a little after the vibration they caused.
     private let lateInputTolerance = 0.08
@@ -92,7 +98,7 @@ public final class TapEngine {
         gravity.reset()
         tilt.reset()
         grammar.reset()
-        keyTimes.removeAll(); mouseTimes.removeAll()
+        keyTimes.removeAll(); keyUpTimes.removeAll(); mouseTimes.removeAll()
         inFlight.removeAll()
         activePulseIndex = nil
     }
@@ -104,6 +110,9 @@ public final class TapEngine {
         recordInput(context, t: s.t)
 
         onset.sensitivity = settings.sensitivity
+        onset.learnedFloor = model?.onsetFloor
+        onset.captureMode = bypassInputGates
+        onset.inputIdle = context.secondsSinceKey > 1 && context.secondsSinceMouse > 1
         grammar.doubleWindow = settings.doubleWindowMs / 1000
 
         // Gravity, motion and tilt.
@@ -117,14 +126,11 @@ public final class TapEngine {
         if let o = onset.process(ax: s.a.x, ay: s.a.y, az: s.a.z, t: s.t, index: index) {
             switch o {
             case .onset(let info):
-                inFlight.append(InFlight(
-                    info: info, movingAtOnset: gravity.wasMoving(at: s.t),
-                    typingAtOnset: context.secondsSinceKey * 1000 < settings.typingGateMs,
-                    trackpadAtOnset: context.secondsSinceMouse < trackpadGate,
-                    modifiers: context.modifiers))
-                activePulseIndex = index
-                // Keep the tap's own rocking out of the gravity estimate (see GravityMonitor.swift).
-                gravity.freeze(until: s.t + gravity.freezeAfterOnset)
+                startInFlight(info, context: context, t: s.t)
+            case .restart(let info):
+                // The weak pulse in flight is dropped without an event; this hit replaces it.
+                inFlight.removeAll { $0.info.index == activePulseIndex }
+                startInFlight(info, context: context, t: s.t)
             case .pulseEnded(let width):
                 if let i = inFlight.firstIndex(where: { $0.info.index == activePulseIndex }) { inFlight[i].width = width }
                 activePulseIndex = nil
@@ -163,7 +169,8 @@ public final class TapEngine {
         if context.paused { return reject(.paused) }
         if !bypassInputGates {
             let gate = settings.typingGateMs / 1000
-            if f.typingAtOnset || keyTimes.contains(where: { $0 >= t - gate && $0 <= t + lateInputTolerance }) {
+            if f.typingAtOnset || keyTimes.contains(where: { $0 >= t - gate && $0 <= t + lateInputTolerance })
+                || keyUpTimes.contains(where: { $0 >= t - keyUpGate && $0 <= t + lateInputTolerance }) {
                 return reject(.typing)
             }
             if f.trackpadAtOnset || mouseTimes.contains(where: { $0 >= t - trackpadGate && $0 <= t + lateInputTolerance }) {
@@ -205,6 +212,17 @@ public final class TapEngine {
         return out
     }
 
+    private func startInFlight(_ info: OnsetInfo, context: InputContext, t: Double) {
+        inFlight.append(InFlight(
+            info: info, movingAtOnset: gravity.wasMoving(at: t),
+            typingAtOnset: context.secondsSinceKey * 1000 < settings.typingGateMs || context.secondsSinceKeyUp < keyUpGate,
+            trackpadAtOnset: context.secondsSinceMouse < trackpadGate,
+            modifiers: context.modifiers))
+        activePulseIndex = info.index
+        // Keep the tap's own rocking out of the gravity estimate (see GravityMonitor.swift).
+        gravity.freeze(until: t + gravity.freezeAfterOnset)
+    }
+
     private func makeTap(_ f: InFlight, _ features: TapFeatures, _ r: ZoneModel.Result) -> TapEvent {
         // Strength 0...1: 0 at the trigger threshold, 1 at 20x the threshold (log scale).
         let peakMg = pow(10, features[.strength])
@@ -219,6 +237,10 @@ public final class TapEngine {
         if c.secondsSinceKey < 60 {
             let k = t - c.secondsSinceKey
             if keyTimes.last.map({ abs(k - $0) > 0.005 }) ?? true { append(&keyTimes, k) }
+        }
+        if c.secondsSinceKeyUp < 60 {
+            let u = t - c.secondsSinceKeyUp
+            if keyUpTimes.last.map({ abs(u - $0) > 0.005 }) ?? true { append(&keyUpTimes, u) }
         }
         if c.secondsSinceMouse < 60 {
             let m = t - c.secondsSinceMouse

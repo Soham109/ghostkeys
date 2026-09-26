@@ -18,9 +18,16 @@ public struct InputContext: Sendable {
     public var modifiers: Set<String>      // shift, control, option, command, fn
     public var lidAngle: Double?
     public var paused: Bool
-    public init(secondsSinceKey: Double = 99, secondsSinceMouse: Double = 99, modifiers: Set<String> = [], lidAngle: Double? = nil, paused: Bool = false) {
+    /// Seconds since the last key release. A key held longer than the typing gate still makes a release bump.
+    public var secondsSinceKeyUp: Double
+    /// Seconds since a modifier key (shift, control, option, command, fn) went down or up. Informational: a modifier
+    /// pressed just before a tap is normally intentional (shift + tap), so the engine does not gate on it.
+    public var secondsSinceModifierChange: Double
+    public init(secondsSinceKey: Double = 99, secondsSinceMouse: Double = 99, modifiers: Set<String> = [], lidAngle: Double? = nil, paused: Bool = false,
+                secondsSinceKeyUp: Double = 99, secondsSinceModifierChange: Double = 99) {
         self.secondsSinceKey = secondsSinceKey; self.secondsSinceMouse = secondsSinceMouse
         self.modifiers = modifiers; self.lidAngle = lidAngle; self.paused = paused
+        self.secondsSinceKeyUp = secondsSinceKeyUp; self.secondsSinceModifierChange = secondsSinceModifierChange
     }
 }
 

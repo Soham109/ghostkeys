@@ -39,11 +39,12 @@ import Testing
         let samples = restRecording()
         #expect(samples.count == RestRecording.sampleCount)
         let events = run(TapEngine(settings: DetectionSettings()), samples)
-        let onsets = events.candidates.map(\.t) + events.rejections.map(\.t)
-        // Nothing outside the wobbles, and the wobbles that do pass are weak (under 40 mg).
-        #expect(onsets.filter { !Self.inWobble($0) }.isEmpty, "\(onsets)")
-        #expect(events.candidates.count <= 3)
+        // With the quiet-desk floor (~6 mg) the small real desk events become candidates. They must
+        // all be weak (under 40 mg) and few; realDeskWobblesAreNotTaps checks that none of them
+        // survives the classifier.
+        #expect(events.candidates.count <= 8, "\(events.candidates.map(\.t))")
         #expect(events.candidates.allSatisfy { $0[.strength] < log10(40) })
+        #expect(events.rejections.allSatisfy { $0.reason == .motion })
     }
 
     @Test func tapsInjectedIntoRealRestDataAreFound() {
@@ -61,11 +62,13 @@ import Testing
             IMUSample(t: r.t, a: r.a + (s.a - StreamBuilder.restGravity), g: r.g + (s.g - SIMD3(0.121, -0.092, -0.006)))
         }
         let events = run(TapEngine(settings: DetectionSettings()), mixed)
-        let detected = events.candidates.map(\.t).filter { !Self.inWobble($0) }
-        let m = match(detected: detected, truth: truth)
+        let detected = events.candidates.filter { !Self.inWobble($0.t) }
+        let m = match(detected: detected.map(\.t), truth: truth)
         #expect(truth.count >= 12)
         #expect(m.hits == truth.count, "\(m.hits)/\(truth.count)")
-        #expect(m.falsePositives == 0)
+        // Anything else detected is one of the recording's own small desk events (under 20 mg).
+        let extra = detected.filter { d in !truth.contains { abs($0 - d.t) <= 0.02 } }
+        #expect(extra.allSatisfy { $0[.strength] < log10(20) }, "\(extra.map(\.t))")
     }
 
     @Test func typingGateRejectsKeystrokes() {
@@ -134,7 +137,11 @@ import Testing
         b.addTap(.leftPalm, at: 1.4, amp: 0.2)                  // while rotating
         b.addTap(.leftPalm, at: 2.8, amp: 0.2)                  // held still at the new angle
         let events = run(TapEngine(settings: DetectionSettings()), b.samples())
-        #expect(events.rejections.map(\.reason) == [.motion], "\(events.rejections)")
+        // The tap during the lift never becomes a candidate (it is gated as motion, or swallowed by
+        // the lift's own over-long pulse, which is itself rejected as motion); the tap after it is.
+        #expect(!events.rejections.isEmpty)
+        #expect(events.rejections.allSatisfy { $0.reason == .motion })
+        #expect(events.candidates.map(\.t).filter { abs($0 - 2.8) < 0.02 }.count == 1)
         #expect(events.candidates.count == 1)
     }
 
@@ -193,8 +200,8 @@ import Testing
         var strict = DetectionSettings(); strict.sensitivity = 0
         var loose = DetectionSettings(); loose.sensitivity = 1
         var b = StreamBuilder(seconds: 3, seed: 28)
-        b.addTap(.leftPalm, at: 1.0, amp: 0.012)
-        b.addTap(.leftPalm, at: 2.0, amp: 0.012)
+        b.addTap(.leftPalm, at: 1.0, amp: 0.006)
+        b.addTap(.leftPalm, at: 2.0, amp: 0.006)
         #expect(run(TapEngine(settings: strict), b.samples()).candidates.isEmpty)
         #expect(run(TapEngine(settings: loose), b.samples()).candidates.count == 2)
     }
@@ -222,5 +229,78 @@ import Testing
         #expect(abs(v[.ringFrequency] - 100) < 25)  // right palm rings at ~100 Hz
         #expect(v[.pulseWidth] > 0 && v[.pulseWidth] < 120)
         #expect(abs(v[.strength] - log10(200)) < 0.3)
+    }
+}
+
+@Suite struct AdaptiveFloorTests {
+    /// 10 mg fingertip taps on the quiet part of the real rest recording, no calibration yet.
+    @Test func gentleTapsTriggerOnAQuietDesk() {
+        let rest = Array(restRecording().prefix(Int(3.3 * fs)))     // the quiet first 3.3 s
+        var b = StreamBuilder(seconds: 3.3, seed: 41, noiseMg: 0)
+        var truth: [Double] = []
+        for k in 0..<4 { truth.append(b.addTap(.leftGrille, at: 0.6 + Double(k) * 0.65, amp: 0.007)) }
+        let syn = b.samples()
+        let mixed = zip(rest, syn).map { r, s in IMUSample(t: r.t, a: r.a + (s.a - StreamBuilder.restGravity), g: r.g) }
+        let e = TapEngine(settings: DetectionSettings())
+        let ev = run(e, mixed)
+        #expect(match(detected: ev.candidates.map(\.t), truth: truth).hits == 4)
+        #expect(e.onsetThreshold < 0.008)
+    }
+
+    @Test func floorRisesWithInputActivityAndNoise() {
+        // Same quiet signal, but a key was pressed 0.5 s ago: quiet mode is off, the floor goes back up.
+        let rest = Array(restRecording().prefix(Int(3 * fs)))
+        let quiet = TapEngine(settings: DetectionSettings())
+        let busy = TapEngine(settings: DetectionSettings())
+        for s in rest {
+            _ = quiet.ingest(s, context: InputContext())
+            _ = busy.ingest(s, context: InputContext(secondsSinceKey: 0.5))
+        }
+        #expect(quiet.isQuiet && !busy.isQuiet)
+        #expect(busy.onsetThreshold > 2 * quiet.onsetThreshold)
+        // Noisy (lap-like) signal: k x noise takes over.
+        let noisy = TapEngine(settings: DetectionSettings())
+        for s in StreamBuilder(seconds: 3, seed: 2, noiseMg: 12).samples() { _ = noisy.ingest(s, context: InputContext()) }
+        #expect(!noisy.isQuiet)
+        #expect(noisy.onsetThreshold > 0.02)
+    }
+
+    @Test func floorIsLearnedFromCalibrationTaps() {
+        let cal = captureCalibration(zones: [.leftPalm, .leftGrille], perZone: 12, keystrokes: 10)
+        let t = Trainer()
+        for (f, l) in zip(cal.features, cal.labels) { t.add(f, label: l) }
+        let m = t.train().0
+        let q = m.peakQuantiles ?? [:]
+        #expect(Set(q.keys) == ["left-palm", "left-grille"])
+        let gentlest = q.values.map { $0[0] }.min()!
+        #expect(m.onsetFloor == Stats.clamp(0.5 * gentlest, 0.004, 0.0175))
+        // The engine uses it (not quiet: a key was just pressed, so the learned floor applies).
+        let e = TapEngine(settings: DetectionSettings())
+        e.model = m
+        for s in StreamBuilder(seconds: 1, seed: 3).samples() { _ = e.ingest(s, context: InputContext(secondsSinceKey: 0.2)) }
+        #expect(abs(e.onsetThreshold - max(m.onsetFloor!, 5 * e.noiseFloor)) < 1e-9)
+    }
+
+    @Test func sensitivityStillOverridesTheLearnedFloor() {
+        var m = ZoneModel(labels: ["a"])
+        m.onsetFloor = 0.008
+        var d = OnsetDetector()
+        d.learnedFloor = m.onsetFloor
+        d.inputIdle = false
+        d.sensitivity = 0.5; let mid = d.absoluteFloor
+        d.sensitivity = 0; let strict = d.absoluteFloor
+        d.sensitivity = 1; let loose = d.absoluteFloor
+        #expect(abs(mid - 0.008) < 1e-12 && abs(strict - 0.016) < 1e-12 && abs(loose - 0.004) < 1e-12)
+    }
+
+    @Test func modelsSavedBeforeTheLearnedFloorStillLoad() throws {
+        let cal = captureCalibration(zones: [.leftPalm, .rightPalm], perZone: 10)
+        let t = Trainer()
+        for (f, l) in zip(cal.features, cal.labels) { t.add(f, label: l) }
+        var old = t.train().0
+        old.onsetFloor = nil; old.peakQuantiles = nil; old.ignoredFeatures = nil
+        let back = try jsonRoundTrip(old)       // nil optionals are omitted from the JSON, as in old files
+        #expect(back.onsetFloor == nil)
+        #expect(back.classify(cal.features[0]).zone == old.classify(cal.features[0]).zone)
     }
 }

@@ -68,6 +68,22 @@ public enum FeatureIndex: Int, CaseIterable, Sendable {
     case twistPerImpX, twistPerImpY, twistPerImpZ
 }
 
+extension FeatureIndex {
+    /// Features proportional to the force of the tap: impulses, peaks, twists, peak gyro (0...11).
+    /// `strength` (26) is log10 of a peak, so it shifts by log10(factor). Everything else is a ratio,
+    /// a direction, a frequency or a time, and does not change with force (up to noise).
+    public static let forceScaled: [FeatureIndex] = Array(FeatureIndex.allCases[0...11])
+
+    /// The feature vector of the same tap made `factor` times harder (noise ignored).
+    public static func scaleForce(_ v: [Double], by factor: Double) -> [Double] {
+        guard factor != 1, v.count == TapFeatures.count else { return v }
+        var out = v
+        for f in forceScaled { out[f.rawValue] *= factor }
+        out[FeatureIndex.strength.rawValue] += log10(factor)
+        return out
+    }
+}
+
 extension TapFeatures {
     /// Length of `values`.
     public static let count = FeatureIndex.allCases.count

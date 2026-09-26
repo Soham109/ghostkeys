@@ -55,8 +55,36 @@ public final class Trainer {
         zip(features, labels).map { (TapFeatures(values: $0, t: 0), $1) }
     }
 
+    /// Calibration taps weaker than this fraction of their zone's median peak are dropped before
+    /// training: with the low capture floor, tiny unrelated spikes (a desk bump, a key) can be
+    /// captured while the user taps a zone, and would teach the model that noise is that zone.
+    public var junkPeakFraction = 0.25
+
+    /// Training options. Off by default: strength augmentation (training copies of every tap made
+    /// 0.7x/1.4x or 1.4x/2x as hard) helped synthetic zones generalize from light calibration taps to
+    /// harder ones (58% -> 95% accepted), but on the first real calibration it tripled typing
+    /// negatives read as taps (0.05 -> 0.145 per negative at minConfidence 0.8). Better: calibrate with
+    /// taps of the strengths the user will really use.
+    var options = ZoneModel.TrainingOptions()
+
+    /// Indices of samples kept for training (see `junkPeakFraction`).
+    func keptIndices() -> [Int] {
+        let s = FeatureIndex.strength.rawValue
+        var keep: [Int] = []
+        for name in Set(labels) {
+            let idx = labels.indices.filter { labels[$0] == name }
+            guard name != ZoneModel.noneLabel, idx.count >= 8 else { keep += idx; continue }
+            let median = Stats.median(idx.map { features[$0][s] })
+            keep += idx.filter { features[$0][s] >= median + log10(junkPeakFraction) }
+        }
+        return keep.sorted()
+    }
+
     public func train() -> (ZoneModel, CalibrationReport) {
-        let full = ZoneModel.fit(features: features, labels: labels)
+        let kept = keptIndices()
+        let features = kept.map { self.features[$0] }
+        let labels = kept.map { self.labels[$0] }
+        let full = ZoneModel.fit(features: features, labels: labels, options: options)
         // "none" is always a column: a zone tap rejected by the reject option counts as an error.
         var names = full.labels
         if !names.contains(ZoneModel.noneLabel) { names.append(ZoneModel.noneLabel) }
@@ -80,7 +108,7 @@ public final class Trainer {
             let trainIdx = features.indices.filter { fold[$0] != f }
             let testIdx = features.indices.filter { fold[$0] == f }
             guard !testIdx.isEmpty, !trainIdx.isEmpty else { continue }
-            let m = ZoneModel.fit(features: trainIdx.map { features[$0] }, labels: trainIdx.map { labels[$0] })
+            let m = ZoneModel.fit(features: trainIdx.map { features[$0] }, labels: trainIdx.map { labels[$0] }, options: options)
             for i in testIdx {
                 let predicted = m.classify(TapFeatures(values: features[i], t: 0)).zone
                 if let a = index[labels[i]], let b = index[predicted] { confusion[a][b] += 1 }

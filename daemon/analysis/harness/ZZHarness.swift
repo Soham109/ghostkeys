@@ -19,7 +19,7 @@ import Testing
         }
         for f in 0..<5 {
             let tr = s.indices.filter { fold[$0] != f }
-            let m = Trainer.fitModel(features: tr.map { s[$0].features.values }, labels: tr.map { s[$0].label })
+            let m = ZoneModel.fit(features: tr.map { s[$0].features.values }, labels: tr.map { s[$0].label }, options: env["ZZ_AUG"] == "1" ? .init(augment: [1.4, 2.0]) : .init())
             for i in s.indices where fold[i] == f {
                 let r = m.classifyDetailed(s[i].features)
                 print("ZZ \(rep)\t\(s[i].label)\t\(r.zone)\t\(r.confidence)\t\(r.distance)\t\(m.rejectDistance)\t\(r.outOfDistribution)")

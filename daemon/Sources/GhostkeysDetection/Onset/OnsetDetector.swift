@@ -12,7 +12,7 @@
 //      train) does raise it. The floor falls fast: it is the lower of the 2 s median and the median
 //      of the last 0.5 s. In the first real recording a 2 s burst of handling noise otherwise kept
 //      the threshold at 156 mg for two more seconds and hid 60 to 100 mg taps made in 5 mg quiet.
-//   4. Trigger when m > max(absoluteFloor, k * noise). k and absoluteFloor come from sensitivity.
+//   4. Trigger when m > max(floor, k * noise). See "Threshold" below for k and the floor.
 //   5. Pulse tracking. The pulse ends after 15 ms below max(half the trigger threshold, 30% of the
 //      pulse's own peak). Its width is the time from onset to the last sample at 50% or more of its
 //      peak. Widths over 160 ms are not taps (the laptop is being moved, bumped or carried).
@@ -43,6 +43,9 @@ enum OnsetOutput {
     case onset(OnsetInfo)
     /// The current pulse ended; width in seconds (onset to the last sample at >= 50% of its peak).
     case pulseEnded(width: Double)
+    /// A much stronger spike started while a weak pulse was still active: the weak pulse is
+    /// abandoned (it gets no pulseEnded) and this is the new onset.
+    case restart(OnsetInfo)
     /// The pulse stayed above half its peak for more than 160 ms (or never settled within 400 ms).
     case pulseTooLong
 }
@@ -58,6 +61,7 @@ struct OnsetDetector {
     var tailGuardDuration = 0.300      // ringing tail guard, see header
     var tailJumpFactor = 2.0
     var tailLookback = 20              // samples, about 25 ms
+    var restartFactor = 3.0            // a hit this many times the active pulse's peak restarts it
     var burstCount = 4
     var burstWindow = 0.5
     var burstLockout = 0.4
@@ -103,14 +107,51 @@ struct OnsetDetector {
 
     var isPulseActive: Bool { pulse != .idle }
 
-    /// Multiplier on the noise floor. Strict: 9x, sensitive: 3x (6x at the default 0.5).
-    var noiseMultiplier: Double { 9 - 6 * Stats.clamp(sensitivity, 0, 1) }
-    /// Absolute floor in g. Strict: 30 mg, default (0.5): 17.5 mg, sensitive: 5 mg.
-    /// On the recorded rest data the median level is ~1.2 mg, so 6x noise would be ~7 mg, but the
-    /// same recording has several 12 to 25 mg, ~40 Hz desk wobbles (someone moving nearby). The
-    /// floor keeps most of those out; the pulse width limit and the classifier handle the rest.
-    var absoluteFloor: Double { (30 - 25 * Stats.clamp(sensitivity, 0, 1)) / 1000 }
-    var threshold: Double { max(absoluteFloor, noiseMultiplier * noise) }
+    // MARK: Threshold
+    //
+    // threshold = max(k * noise, floor), both scaled by sensitivity (the user's override):
+    //   k      = 7 - 4 s               (7 strict, 5 default, 3 sensitive)
+    //   floor  = base * 2^(1 - 2 s)    (x2 strict, x1 default, x0.5 sensitive), at least 3 mg, where
+    //   base   = the floor learned from this user's calibration taps (ZoneModel.onsetFloor: half the
+    //            10th-percentile peak of their gentlest zone, 4 to 17.5 mg), or 17.5 mg without one;
+    //            lowered to 6 mg while the machine is quiet (see `quiet`), or during calibration
+    //            capture so that gentle calibration taps are captured at all.
+    // On a quiet desk (noise ~1.2 mg) the default threshold is then ~6 mg, so 8 to 15 mg fingertip
+    // taps trigger. With lap, typing or music noise, k * noise takes over and the threshold rises by
+    // itself. The old fixed 17.5 mg floor made users tap very hard; it was set against 12 to 32 mg
+    // desk wobbles, which are now left to the classifier (none class, reject distance, gates).
+
+    /// Floor learned at calibration (g), or nil.
+    var learnedFloor: Double?
+    /// Calibration capture: use the quiet floor regardless of activity.
+    var captureMode = false
+    /// Set by the engine: no key or trackpad activity in the last second.
+    var inputIdle = true
+    var defaultFloor = 0.0175
+    var quietFloor = 0.006
+    var quietNoiseMax = 0.003          // noise must stay under this...
+    var quietBlocks = 6                // ...for the last 6 blocks (300 ms)
+    private(set) var recentNoiseMax = Double.infinity
+
+    var sensitivityScale: Double { exp2(1 - 2 * Stats.clamp(sensitivity, 0, 1)) }
+    var noiseMultiplier: Double { 7 - 4 * Stats.clamp(sensitivity, 0, 1) }
+    /// Quiet: the last 300 ms were calm (median of the 50 ms block medians under 3 mg) and no key or
+    /// trackpad activity for a second.
+    var quiet: Bool { recentNoiseMax < quietNoiseMax && inputIdle }
+    var absoluteFloor: Double {
+        var base = learnedFloor ?? defaultFloor
+        if captureMode || quiet { base = min(base, quietFloor) }
+        return max(0.003, base * sensitivityScale)
+    }
+    var threshold: Double {
+        if legacyThreshold {   // the pre-adaptive rule, kept only to measure against
+            let sv = Stats.clamp(sensitivity, 0, 1)
+            return max((30 - 25 * sv) / 1000, (9 - 6 * sv) * noise)
+        }
+        return max(absoluteFloor, noiseMultiplier * noise)
+    }
+    /// Evaluation only: use the old fixed-floor threshold (17.5 mg, 6x noise at sensitivity 0.5).
+    var legacyThreshold = false
     var isWarmedUp: Bool { blockMedians.count >= minBlocksBeforeDetecting }
 
     mutating func reset() {
@@ -119,6 +160,7 @@ struct OnsetDetector {
         blockMedians.removeAll(keepingCapacity: true)
         blockMedianCursor = 0
         noise = 0
+        recentNoiseMax = .infinity
         pulse = .idle
         lastOnsetT = -.infinity
         tailGuardUntil = -.infinity
@@ -150,6 +192,12 @@ struct OnsetDetector {
 
         switch pulse {
         case .active:
+            // A fresh, much stronger hit inside a weak pulse (a gentle desk wobble just before a
+            // real tap): restart the onset at the hit, otherwise the tap is swallowed by the wobble.
+            if m > restartFactor * pulsePeak, t - pulseOnsetT >= 0.02, m > threshold,
+               m > tailJumpFactor * (recentLevels.max() ?? 0) {
+                return .restart(startPulse(m: m, t: t, index: index, thr: threshold, burst: false))
+            }
             if m > pulsePeak { pulsePeak = m; pulsePeakT = t }
             if m >= 0.5 * pulsePeak { pulseLastAboveHalfPeak = t }
             if m > max(pulseHysteresis, 0.3 * pulsePeak) { pulseLastAbove = t }
@@ -187,6 +235,11 @@ struct OnsetDetector {
         }
 
         // New onset.
+        let info = startPulse(m: m, t: t, index: index, thr: thr, burst: false)
+        return .onset(info)
+    }
+
+    private mutating func startPulse(m: Double, t: Double, index: Int, thr: Double, burst _: Bool) -> OnsetInfo {
         lastOnsetT = t
         pulse = .active
         pulseOnsetT = t
@@ -203,7 +256,7 @@ struct OnsetDetector {
             lockoutUntil = t + burstLockout
             burst = true
         }
-        return .onset(OnsetInfo(index: index, t: t, threshold: thr, noise: noise, burst: burst))
+        return OnsetInfo(index: index, t: t, threshold: thr, noise: noise, burst: burst)
     }
 
     private mutating func rememberTail() {
@@ -227,7 +280,9 @@ struct OnsetDetector {
         let newest = blockMedians.count < noiseBlocks ? n : blockMedianCursor + n
         var recent: [Double] = []
         recent.reserveCapacity(fastNoiseBlocks)
-        for k in 1...min(fastNoiseBlocks, n) { recent.append(blockMedians[(newest - k) % n]) }
-        noise = min(Stats.median(blockMedians), Stats.median(recent))
+        for k in 1...min(max(fastNoiseBlocks, quietBlocks), n) { recent.append(blockMedians[(newest - k) % n]) }
+        noise = min(Stats.median(blockMedians), Stats.median(Array(recent.prefix(fastNoiseBlocks))))
+        // Median, not max: the taps themselves must not switch quiet mode off.
+        recentNoiseMax = n >= quietBlocks ? Stats.median(Array(recent.prefix(quietBlocks))) : .infinity
     }
 }

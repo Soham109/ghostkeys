@@ -54,6 +54,16 @@ public struct ZoneModel: Codable, Sendable {
     /// How much of the per-tap position offset is blended into the zone centre (0 = centre only).
     public var positionBlend: Double = 0.5
 
+    /// Per zone: 10th, 50th and 90th percentile of the calibration taps' peak acceleration (g).
+    public var peakQuantiles: [String: [Double]]? = nil
+    /// Onset floor learned from this user's taps (g): half the 10th-percentile peak of their
+    /// gentlest zone, clamped to 4...17.5 mg. The engine uses it instead of the 17.5 mg default.
+    /// Optional so models saved before it existed still decode.
+    public var onsetFloor: Double? = nil
+    public static let onsetFloorRange: ClosedRange<Double> = 0.004...0.0175
+    /// Feature indices the model ignores (set to 0 before whitening). Optional for old models.
+    var ignoredFeatures: [Int]? = nil
+
     public init(labels: [String]) { self.labels = labels }
 
     var featureCount: Int { mean.count }
@@ -100,7 +110,7 @@ public struct ZoneModel: Codable, Sendable {
             return Result(zone: Self.noneLabel, confidence: 0, x: 0.5, y: 0.5, probabilities: labels.map { _ in 0 },
                           distance: .infinity, outOfDistribution: true)
         }
-        let w = whiten(f.values)
+        let w = whiten(masked(f.values))
         let nLabels = labels.count
         let noneIndex = labels.firstIndex(of: Self.noneLabel)
 
@@ -175,6 +185,13 @@ public struct ZoneModel: Codable, Sendable {
                       distance: dTop, outOfDistribution: false)
     }
 
+    func masked(_ x: [Double]) -> [Double] {
+        guard let ig = ignoredFeatures, !ig.isEmpty else { return x }
+        var v = x
+        for i in ig where i < v.count { v[i] = 0 }
+        return v
+    }
+
     func whiten(_ x: [Double]) -> [Double] {
         var z = [Double](repeating: 0, count: featureCount)
         for i in 0..<featureCount { z[i] = (x[i] - mean[i]) / scale[i] }
@@ -212,7 +229,47 @@ public struct ZoneModel: Codable, Sendable {
     // MARK: Training
 
     /// Fits a model. `labels[i]` is the class of `features[i]`; "none" marks negatives.
-    static func fit(features: [[Double]], labels raw: [String], k: Int = 5) -> ZoneModel {
+    struct TrainingOptions {
+        /// Feature indices to ignore.
+        var ignored: Set<Int> = []
+        /// Extra training copies of every sample with its force-dependent features rescaled by these
+        /// factors (see FeatureIndex.forceScaled), so the model accepts softer and harder taps than
+        /// the ones calibrated.
+        var augment: [Double] = []
+    }
+
+    static func fit(features original: [[Double]], labels rawLabels: [String], k: Int = 5,
+                    options: TrainingOptions = TrainingOptions()) -> ZoneModel {
+        var x: [[Double]] = [], y: [String] = [], group: [Int] = []
+        for (i, v) in original.enumerated() {
+            for f in [1.0] + options.augment {
+                var c = FeatureIndex.scaleForce(v, by: f)
+                for j in options.ignored where j < c.count { c[j] = 0 }
+                x.append(c); y.append(rawLabels[i]); group.append(i)
+            }
+        }
+        var model = fitCore(features: x, labels: y, groups: group, k: k)
+        model.ignoredFeatures = options.ignored.isEmpty ? nil : options.ignored.sorted()
+
+        // Tap strength distribution and the learned onset floor (from the real samples only).
+        var quantiles: [String: [Double]] = [:]
+        for name in Set(rawLabels) where name != noneLabel {
+            let peaks = original.indices.filter { rawLabels[$0] == name }
+                .map { pow(10, original[$0][FeatureIndex.strength.rawValue]) / 1000 }
+            guard peaks.count >= 3 else { continue }
+            quantiles[name] = [Stats.quantile(peaks, 0.1), Stats.quantile(peaks, 0.5), Stats.quantile(peaks, 0.9)]
+        }
+        if !quantiles.isEmpty {
+            model.peakQuantiles = quantiles
+            let gentlest = quantiles.values.map { $0[0] }.min()!
+            model.onsetFloor = Stats.clamp(0.5 * gentlest, onsetFloorRange.lowerBound, onsetFloorRange.upperBound)
+        }
+        return model
+    }
+
+    /// `groups[i]` identifies the original sample a (possibly augmented) row came from; rows of one
+    /// group always share a cross-validation fold.
+    static func fitCore(features: [[Double]], labels raw: [String], groups: [Int], k: Int) -> ZoneModel {
         let zoneNames = Array(Set(raw.filter { $0 != noneLabel })).sorted()
         var labels = zoneNames
         if raw.contains(noneLabel) { labels.append(noneLabel) }
@@ -242,7 +299,12 @@ public struct ZoneModel: Codable, Sendable {
         if zoneIdx.count >= 2 * folds {
             var fold = [Int](repeating: 0, count: n)
             var rank = [Int](repeating: 0, count: labels.count)
-            for i in zoneIdx { fold[i] = rank[y[i]] % folds; rank[y[i]] += 1 }
+            var groupFold: [Int: Int] = [:]
+            for i in zoneIdx {
+                if let f = groupFold[groups[i]] { fold[i] = f; continue }
+                fold[i] = rank[y[i]] % folds; rank[y[i]] += 1
+                groupFold[groups[i]] = fold[i]
+            }
             for f in 0..<folds {
                 let trainIdx = (0..<n).filter { y[$0] == noneIdx || fold[$0] != f }
                 let g = Geometry(features: trainIdx.map { features[$0] }, y: trainIdx.map { y[$0] },
@@ -264,6 +326,7 @@ public struct ZoneModel: Codable, Sendable {
             model.positionMeans[labels[c]] = [rawMeans[c][FeatureIndex.xHat.rawValue], rawMeans[c][FeatureIndex.yHat.rawValue]]
         }
         model.fitPositionGain()
+
         return model
     }
 
