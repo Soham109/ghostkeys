@@ -1,0 +1,77 @@
+{
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "ghostkeys",
+  "title": "Ghostkeys",
+  "description": "Check sensor status, pause/resume, search and edit gesture bindings, bind presets, watch live gestures, and apply zone layouts for Ghostkeys.",
+  "icon": "icon.png",
+  "author": "sohamaggarwal",
+  "categories": [
+    "System",
+    "Productivity"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "commands": [
+    {
+      "name": "status",
+      "title": "Ghostkeys Status",
+      "subtitle": "Ghostkeys",
+      "description": "Shows sensors, paused/calibrated state, and recent gestures.",
+      "mode": "view"
+    },
+    {
+      "name": "toggle-pause",
+      "title": "Pause / Resume Ghostkeys",
+      "subtitle": "Ghostkeys",
+      "description": "Pauses Ghostkeys if it's running, or resumes it if it's paused.",
+      "mode": "no-view"
+    },
+    {
+      "name": "search-bindings",
+      "title": "Search Bindings",
+      "subtitle": "Ghostkeys",
+      "description": "Search gesture bindings; toggle enabled, dry-test, or copy as JSON.",
+      "mode": "view"
+    },
+    {
+      "name": "bind-preset",
+      "title": "Bind a Preset",
+      "subtitle": "Ghostkeys",
+      "description": "Pick a preset action, then a zone and gesture, and add it as a binding.",
+      "mode": "view"
+    },
+    {
+      "name": "watch-gestures",
+      "title": "Watch Gestures",
+      "subtitle": "Ghostkeys",
+      "description": "Live feed of taps, gestures, and rejected inputs as they happen.",
+      "mode": "view"
+    },
+    {
+      "name": "apply-layout",
+      "title": "Apply Layout",
+      "subtitle": "Ghostkeys",
+      "description": "Pick a zone layout preset, preview the diff against the current config, and apply it.",
+      "mode": "view"
+    }
+  ],
+  "dependencies": {
+    "@ghostkeys/sdk": "file:../sdk",
+    "@raycast/api": "^2.5.2",
+    "ws": "^8.18.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.17",
+    "@types/react": "19.0.10",
+    "@types/ws": "^8.18.1",
+    "typescript": "^7.0.2",
+    "tsx": "^4.23.15"
+  },
+  "scripts": {
+    "build": "ray build -e dist -o dist",
+    "dev": "ray develop",
+    "lint": "ray lint",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --import tsx --test test/*.test.ts"
+  }
+}

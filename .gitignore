@@ -8,3 +8,4 @@ release/
 *.log
 .env
 .build-*/
+*.gkrec
