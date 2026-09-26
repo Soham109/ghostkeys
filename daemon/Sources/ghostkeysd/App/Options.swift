@@ -10,9 +10,10 @@ struct Options {
     var restoreSensors = false
     var noHardwareSessions = false
     var configDir: String?
+    var simulateSensors = false
 
     static let usage = """
-    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors] [--no-hardware-sessions] [--config-dir PATH]
+    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors] [--no-hardware-sessions] [--config-dir PATH] [--simulate-sensors]
       --port N          WebSocket port on 127.0.0.1 (default 47823)
       --parent-pid PID  exit (restoring the sensors) when this process ends; the parent process is always watched too
       --verbose         debug logging to stderr
@@ -22,6 +23,7 @@ struct Options {
       --restore-sensors restore sensor settings left behind by a crashed run, then exit
       --config-dir PATH directory for every file the daemon owns (default ~/Library/Application Support/Ghostkeys/daemon,
                         or GHOSTKEYS_CONFIG_DIR)
+      --simulate-sensors   test mode: synthetic motion data, never touches sensor hardware (implies no sensor lock)
       --no-hardware-sessions  simulate sound/camera sessions (state and timers only; never opens the mic or camera)
     """
 
@@ -50,6 +52,7 @@ struct Options {
             case "--selftest": o.selftest = true
             case "--restore-sensors": o.restoreSensors = true
             case "--no-hardware-sessions": o.noHardwareSessions = true
+            case "--simulate-sensors": o.simulateSensors = true
             case "--config-dir":
                 let p = value()
                 guard !p.isEmpty else { fail("--config-dir needs a path") }

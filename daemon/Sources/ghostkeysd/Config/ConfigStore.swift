@@ -47,6 +47,7 @@ final class ConfigStore {
     /// One-time move of the daemon's own files from `~/Library/Application Support/Ghostkeys/` into `daemon/`
     /// (only for the default location). Refuses to run while an older daemon still holds the old lock.
     /// Returns a summary, or nil if there was nothing to move.
+    @discardableResult
     static func migrateLegacyFiles() -> String? {
         guard isDefaultDirectory else { return nil }
         let fm = FileManager.default
@@ -132,6 +133,14 @@ final class ConfigStore {
     }
 
     struct LabeledSample: Codable { var label: String; var features: TapFeatures }
+
+    /// Labeled samples saved by the last calibration or feedback (empty if none).
+    func loadSamples() -> [LabeledSample] {
+        guard let data = try? Data(contentsOf: samplesURL) else { return [] }
+        return (try? JSONDecoder().decode([LabeledSample].self, from: data)) ?? []
+    }
+
+    var diagnosticsDirectory: URL { directory.appendingPathComponent("diagnostics", isDirectory: true) }
 
     /// Keeps the raw labeled calibration samples so a later version can retrain without asking the user again.
     func saveSamples(_ samples: [LabeledSample]) throws {

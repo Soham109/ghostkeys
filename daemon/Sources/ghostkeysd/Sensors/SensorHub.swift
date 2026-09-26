@@ -51,6 +51,55 @@ final class SensorHub: @unchecked Sendable {
     /// Upper end of the log scale for light normalization (lux). Bright office is ~500, daylight by a window ~3000.
     static let luxFullScale = 3000.0
 
+    /// Test mode (--simulate-sensors): no hardware at all. A timer produces resting-laptop motion (gravity plus a
+    /// little noise) at 800 Hz; light and lid report nothing.
+    private var simTimer: DispatchSourceTimer?
+    private let simLock = NSLock()
+    private var simTapAt: Double?
+
+    /// Test mode only: the next simulated samples carry a tap-like transient (decaying 180 Hz ring, 0.25 g).
+    func injectSimulatedTap() {
+        simLock.lock(); simTapAt = Clock.now() + 0.05; simLock.unlock()
+    }
+
+    func startSimulated(handlers: Handlers) {
+        self.handlers = handlers
+        present = [.accel, .gyro]
+        let q = DispatchQueue(label: "ghostkeys.sensors.sim", qos: .userInteractive)
+        let t = DispatchSource.makeTimerSource(queue: q)
+        var next = Clock.now()
+        var seed: UInt64 = 0x9E3779B97F4A7C15
+        func noise() -> Double {
+            seed = seed &* 6364136223846793005 &+ 1442695040888963407
+            return Double(Int64(bitPattern: seed >> 11) % 1000) / 1000 * 0.0006
+        }
+        t.schedule(deadline: .now(), repeating: .milliseconds(10))
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            let now = Clock.now()
+            while next <= now {
+                var s = IMUSample(t: next, a: SIMD3(noise(), noise(), -1 + noise()), g: SIMD3(noise() * 50, noise() * 50, noise() * 50))
+                self.simLock.lock(); let tapAt = self.simTapAt; self.simLock.unlock()
+                if let tapAt, next >= tapAt {
+                    let dt = next - tapAt
+                    if dt < 0.06 {
+                        let v = 0.25 * exp(-dt / 0.008) * sin(2 * .pi * 180 * dt)
+                        s.a += SIMD3(0.3 * v, 0.1 * v, v)
+                        s.g += SIMD3(20 * v, -10 * v, 5 * v)
+                    } else {
+                        self.simLock.lock(); self.simTapAt = nil; self.simLock.unlock()
+                    }
+                }
+                self.bump(.accel); self.bump(.gyro)
+                self.handlers.imu(s)
+                next += 1.0 / 800
+            }
+        }
+        t.resume()
+        simTimer = t
+        Log.info("sensors simulated: no hardware is touched")
+    }
+
     func start(handlers: Handlers) {
         self.handlers = handlers
         SPUDriverControl.shared.wakeMotion()
@@ -81,6 +130,8 @@ final class SensorHub: @unchecked Sendable {
     }
 
     func stop() {
+        simTimer?.cancel()
+        simTimer = nil
         for d in devices {
             IOHIDDeviceRegisterInputReportWithTimeStampCallback(d.hid, d.buffer, d.bufferSize, nil, nil)
             if let rl = runLoop { IOHIDDeviceUnscheduleFromRunLoop(d.hid, rl, CFRunLoopMode.defaultMode.rawValue) }

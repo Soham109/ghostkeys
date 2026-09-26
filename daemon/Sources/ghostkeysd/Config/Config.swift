@@ -11,6 +11,23 @@ struct Zone: Codable, Equatable, Sendable {
     var surface: String          // base, lid, edge-left, edge-right, front
     var rect: ZoneRect
     var color: String
+    /// Disabled zones are left out of the zone model (their taps are not classified) and never fire bindings.
+    var enabled: Bool = true
+
+    init(id: String, name: String, surface: String, rect: ZoneRect, color: String, enabled: Bool = true) {
+        self.id = id; self.name = name; self.surface = surface; self.rect = rect; self.color = color; self.enabled = enabled
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decodeIfPresent(String.self, forKey: .name) ?? id
+        surface = try c.decodeIfPresent(String.self, forKey: .surface) ?? "base"
+        rect = try c.decode(ZoneRect.self, forKey: .rect)
+        color = try c.decodeIfPresent(String.self, forKey: .color) ?? "#888888"
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+    }
+    private enum CodingKeys: String, CodingKey { case id, name, surface, rect, color, enabled }
 }
 
 /// Knob mode for a `pinch_hold` binding: while the pinch is held, the action fires once per `stepPx` of travel along
@@ -118,6 +135,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     var typingGateMs = 450.0
     var doubleWindowMs = 350.0
     var minConfidence = 0.8
+    /// A tap at this confidence may complete a double / triple in the same zone (see DetectionSettings).
+    var followUpConfidence = 0.5
     var hud = true
     var haptics = false
     var sound = SoundSettings()
@@ -132,13 +151,14 @@ struct AppSettings: Codable, Equatable, Sendable {
         typingGateMs = try c.decodeIfPresent(Double.self, forKey: .typingGateMs) ?? d.typingGateMs
         doubleWindowMs = try c.decodeIfPresent(Double.self, forKey: .doubleWindowMs) ?? d.doubleWindowMs
         minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence) ?? d.minConfidence
+        followUpConfidence = try c.decodeIfPresent(Double.self, forKey: .followUpConfidence) ?? d.followUpConfidence
         hud = try c.decodeIfPresent(Bool.self, forKey: .hud) ?? d.hud
         haptics = try c.decodeIfPresent(Bool.self, forKey: .haptics) ?? d.haptics
         sound = try c.decodeIfPresent(SoundSettings.self, forKey: .sound) ?? SoundSettings()
         camera = try c.decodeIfPresent(CameraSettings.self, forKey: .camera) ?? CameraSettings()
     }
 
-    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, hud, haptics, sound, camera }
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, hud, haptics, sound, camera }
 
     var detection: DetectionSettings {
         var s = DetectionSettings()
@@ -146,6 +166,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         s.typingGateMs = max(0, typingGateMs)
         s.doubleWindowMs = max(50, doubleWindowMs)
         s.minConfidence = min(1, max(0, minConfidence))
+        s.followUpConfidence = min(s.minConfidence, max(0, followUpConfidence))
         return s
     }
 }

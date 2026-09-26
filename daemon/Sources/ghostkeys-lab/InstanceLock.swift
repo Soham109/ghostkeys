@@ -10,15 +10,10 @@ enum LabInstanceLock {
 
     static func acquire() throws {
         guard fd < 0 else { return }
-        // Same directory rule as ghostkeysd: GHOSTKEYS_CONFIG_DIR, else ~/Library/Application Support/Ghostkeys/daemon.
-        let dir: URL
-        if let env = ProcessInfo.processInfo.environment["GHOSTKEYS_CONFIG_DIR"], !env.isEmpty {
-            dir = URL(fileURLWithPath: (env as NSString).expandingTildeInPath, isDirectory: true)
-        } else {
-            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-                ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-            dir = base.appendingPathComponent("Ghostkeys/daemon", isDirectory: true)
-        }
+        // The sensor lock is machine-wide: always the default daemon directory, like ghostkeysd (never --config-dir).
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+        let dir = base.appendingPathComponent("Ghostkeys/daemon", isDirectory: true)
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let path = dir.appendingPathComponent("daemon.lock").path
         let f = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)

@@ -8,7 +8,7 @@ import GhostkeysIntegrations
 /// Every piece of mutable state here is touched only on `core`.
 final class Daemon: @unchecked Sendable {
     static let version = "0.1.0"
-    static let streams: Set<String> = ["imu", "lid", "light", "taps", "air"]
+    static let streams: Set<String> = ["imu", "lid", "light", "taps", "air", "debug"]
 
     let options: Options
     let core = DispatchQueue(label: "ghostkeys.core", qos: .userInteractive)
@@ -31,6 +31,17 @@ final class Daemon: @unchecked Sendable {
 
     private var config: Config
     private let engine: TapEngine
+    /// Same detection with the input gates bypassed and no model: its candidates are every onset "before the gates",
+    /// which gives rejections a zone guess and feeds the debug stream.
+    private let shadow: TapEngine
+    private let diag = DiagnosticsRecorder()
+    private struct SeenCandidate { var t: Double; var features: TapFeatures; var zone: String; var confidence: Double; var outcome: String }
+    private var recentCandidates: [SeenCandidate] = []
+    private var lastAccepted: SeenCandidate?
+    private var feedbackTimes: [Double] = []
+    private var lastExport = -100.0
+    /// The recommendation from the last calibration, until applied or replaced.
+    private var pendingRecommendation: ZoneRecommendation?
     private let lidDetector = LidGestureDetector()
     private let lightDetector = LightGestureDetector()
     private var calibration: CalibrationSession?
@@ -65,6 +76,9 @@ final class Daemon: @unchecked Sendable {
         ZoneDefaults.warnIfStale()
         config = store.loadConfig(family: device.family)
         engine = TapEngine(settings: config.settings.detection)
+        shadow = TapEngine(settings: config.settings.detection)
+        shadow.bypassInputGates = true
+        shadow.tiltEnabled = false
         engine.model = store.loadModel()
         applyConfigToEngine()   // also sets the model's zone centres
         actions.isPaused = { [weak self] in self?.paused ?? true }
@@ -83,10 +97,11 @@ final class Daemon: @unchecked Sendable {
         server.onMessage = { [weak self] c, m in self?.handle(m, from: c) }
         try server.start()
 
-        hub.start(handlers: .init(
+        let handlers = SensorHub.Handlers(
             imu: { [weak self] s in self?.core.async { self?.onIMU(s) } },
             lid: { [weak self] a, t in self?.core.async { self?.onLid(a, t: t) } },
-            light: { [weak self] v, _, t in self?.core.async { self?.onLight(v, t: t) } }))
+            light: { [weak self] v, _, t in self?.core.async { self?.onLight(v, t: t) } })
+        if options.simulateSensors { hub.startSimulated(handlers: handlers) } else { hub.start(handlers: handlers) }
 
         let timer = DispatchSource.makeTimerSource(queue: core)
         timer.schedule(deadline: .now() + 5, repeating: 5)
@@ -142,7 +157,21 @@ final class Daemon: @unchecked Sendable {
         let capturing = calibration.map { $0.phase != .idle } ?? false
         engine.bypassInputGates = capturing
         let context = InputContext(secondsSinceKey: snap.key, secondsSinceMouse: snap.mouse, modifiers: snap.modifiers,
-                                   lidAngle: lidAngle, paused: capturing ? false : paused)
+                                   lidAngle: lidAngle, paused: capturing ? false : paused,
+                                   secondsSinceKeyUp: snap.keyUp, secondsSinceModifierChange: snap.modifierChange)
+
+        diag.record(s, sinceKey: snap.key, sinceMouse: snap.mouse, modifiers: snap.modifiers)
+        // Shadow pass first: every onset that survives the motion gate becomes a classified candidate.
+        var fresh: [SeenCandidate] = []
+        let shadowCtx = InputContext(secondsSinceKey: snap.key, secondsSinceMouse: snap.mouse, modifiers: snap.modifiers,
+                                     lidAngle: lidAngle, paused: false,
+                                     secondsSinceKeyUp: snap.keyUp, secondsSinceModifierChange: snap.modifierChange)
+        for e in shadow.ingest(s, context: shadowCtx) {
+            guard case .candidate(let f) = e else { continue }
+            let r = engine.model?.classify(f) ?? (zone: "none", confidence: 0, x: 0.5, y: 0.5)
+            fresh.append(SeenCandidate(t: f.t, features: f, zone: r.zone, confidence: r.confidence, outcome: "pending"))
+        }
+        func shadowIndex(_ t: Double) -> Int? { fresh.firstIndex { abs($0.t - t) < 1e-4 } }
 
         for event in engine.ingest(s, context: context) {
             switch event {
@@ -150,8 +179,24 @@ final class Daemon: @unchecked Sendable {
                 captureCandidate(f, now: now)
                 if sessions.tapCalibrating { sessions.tapCandidate(t: f.t) }
             case .rejected(let t, let reason):
-                server.broadcast(["type": "rejected", "t": Clock.protocolMs(t), "reason": reason.rawValue], stream: "taps")
+                var msg: [String: Any] = ["type": "rejected", "t": Clock.protocolMs(t), "reason": reason.rawValue]
+                if let i = shadowIndex(t) {
+                    fresh[i].outcome = reason.rawValue
+                    if engine.model != nil {        // the classifier's best guess, so the Sensors screen can show why
+                        msg["zone"] = fresh[i].zone
+                        msg["confidence"] = Self.r4(fresh[i].confidence)
+                    }
+                    msg["strength"] = Self.r4(fresh[i].features[.strength])
+                }
+                diag.note(t, "rejected \(reason.rawValue)" + ((msg["zone"] as? String).map { " zone=\($0)" } ?? ""))
+                server.broadcast(msg, stream: "taps")
             case .tap(let tap):
+                if let i = shadowIndex(tap.t) {
+                    fresh[i].outcome = "accepted"
+                    lastAccepted = fresh[i]
+                    lastAccepted?.zone = tap.zone
+                }
+                diag.note(tap.t, "tap zone=\(tap.zone) confidence=\(Self.r4(tap.confidence))")
                 let msg: [String: Any] = ["type": "tap", "t": Clock.protocolMs(tap.t), "zone": tap.zone, "confidence": tap.confidence,
                                           "x": tap.x, "y": tap.y, "strength": tap.strength, "source": "imu"]
                 // During a sound session the message may wait (at most 150 ms) for its tapType.
@@ -163,6 +208,19 @@ final class Daemon: @unchecked Sendable {
                 }
                 onGesture(g)
             }
+        }
+
+        if !fresh.isEmpty {
+            for c in fresh {
+                if c.outcome == "pending" { diag.note(c.t, "candidate zone=\(c.zone) (no decision: calibration or paused)") }
+                if server.hasSubscribers("debug") {
+                    server.broadcast(["type": "candidate", "t": Clock.protocolMs(c.t), "zone": engine.model == nil ? NSNull() : c.zone as Any,
+                                      "confidence": Self.r4(c.confidence), "strength": Self.r4(c.features[.strength]),
+                                      "outcome": c.outcome], stream: "debug")
+                }
+            }
+            recentCandidates.append(contentsOf: fresh)
+            if recentCandidates.count > 60 { recentCandidates.removeFirst(recentCandidates.count - 60) }
         }
 
         if now - lastIMUSentAt >= 1.0 / 60 - 0.0005, server.hasSubscribers("imu") {
@@ -209,6 +267,9 @@ final class Daemon: @unchecked Sendable {
         server.broadcast(msg)
         // No actions while calibrating: the user is tapping zones (or tap types) on purpose.
         guard calibration == nil, !sessions.tapCalibrating else { return }
+        // A disabled zone never fires (its taps are also left out of the model).
+        if let z = g.zone, disabledZones.contains(z) { return }
+        if g.zones.contains(where: { disabledZones.contains($0) }) { return }
         guard let binding = BindingResolver.resolve(g, bindings: config.bindings, app: app) else { return }
         let label = binding.label ?? binding.id
         // A pinch_hold binding with a knob fires per step of travel (see onAir), not when the hold begins.
@@ -329,8 +390,13 @@ final class Daemon: @unchecked Sendable {
         calibration = nil
         server.broadcast(["type": "calibration", "phase": "training"])
         let samples = cal.samples
+        let disabled = disabledZones
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let (model, report) = cal.trainer.train()
+            // Disabled zones are left out of the model; their samples stay in samples.json for later.
+            let trainer = Trainer()
+            for s in samples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
+            let (model, report) = trainer.train()
+            let rec = trainer.recommendedZones()
             guard let self else { return }
             do {
                 try self.store.saveModel(model, report: report)
@@ -341,8 +407,10 @@ final class Daemon: @unchecked Sendable {
             self.core.async {
                 self.engine.model = model
                 self.applyZoneCenters()
+                self.pendingRecommendation = rec
                 self.server.broadcast(["type": "calibration", "phase": "done", "accuracy": report.accuracy,
-                                       "overall": report.overall, "confusion": report.confusion, "labels": report.labels])
+                                       "overall": report.overall, "confusion": report.confusion, "labels": report.labels,
+                                       "recommendation": Self.recommendationJSON(rec)])
                 self.server.broadcast(self.status())
                 Log.info("calibration done: overall accuracy \(report.overall), labels \(report.labels)")
             }
@@ -408,6 +476,8 @@ final class Daemon: @unchecked Sendable {
             startNegativesCountdown(seconds: clamped)
         case "calibration_finish":
             finishCalibration(c)
+        case "calibration_apply_recommendation":
+            applyRecommendation(client: c)
         case "calibration_cancel":
             negativesTimer?.cancel(); negativesTimer = nil
             calibration = nil
@@ -420,7 +490,9 @@ final class Daemon: @unchecked Sendable {
             do {
                 let new = try JSONDecoder().decode(Config.self, from: data)
                 try store.save(new)
+                let disabledBefore = disabledZones
                 config = new
+                if disabledZones != disabledBefore { rebuildModel(reason: "enabled zones changed") }
                 applyConfigToEngine()
                 server.broadcast(configMessage())
                 server.broadcast(status())
@@ -476,6 +548,11 @@ final class Daemon: @unchecked Sendable {
             let msg: [String: Any] = ["type": "tap", "t": Clock.protocolMs(t), "zone": zone, "confidence": 0.95,
                                       "x": 0.9, "y": 0.3, "strength": 0.5, "source": "imu"]
             if !sessions.imuTap(t: t, zone: zone, message: msg) { server.broadcast(msg, stream: "taps") }
+            // Pretend the engine accepted it, with the features of a saved sample for that zone (for feedback_false tests).
+            if let sample = store.loadSamples().last(where: { $0.label == zone }) {
+                lastAccepted = SeenCandidate(t: t, features: TapFeatures(values: sample.features.values, t: t), zone: zone,
+                                             confidence: 0.95, outcome: "accepted")
+            }
             let g = GestureEvent(t: t, gesture: "tap", zone: zone, zones: [zone], modifiers: [], confidence: 0.95)
             if !sessions.holdTapGesture(t: t, zone: zone, release: { [weak self] in self?.onGesture(g) }) { onGesture(g) }
         case "sim_tap_type" where options.noHardwareSessions:
@@ -483,6 +560,24 @@ final class Daemon: @unchecked Sendable {
         case "sim_air" where options.noHardwareSessions:
             sessions.simulateAir(phase: (m["phase"] as? String) ?? "changed", dx: (m["dx"] as? NSNumber)?.doubleValue ?? 0,
                                  dy: (m["dy"] as? NSNumber)?.doubleValue ?? 0)
+        case "feedback_missed", "feedback_false":
+            guard admitFeedback() else { return sendError("\(type): at most one every 2 s and 20 per minute", to: c) }
+            if type == "feedback_missed" { feedbackMissed(zone: m["zone"] as? String, client: c) } else { feedbackFalse(client: c) }
+        case "diagnostics_export":
+            guard Clock.now() - lastExport >= 5 else { return sendError("diagnostics_export: at most one every 5 s", to: c) }
+            lastExport = Clock.now()
+            let url = store.diagnosticsDirectory.appendingPathComponent("\(Self.stamp()).gkrec")
+            do {
+                let n = try diag.export(to: url, seconds: DiagnosticsRecorder.seconds, deviceModel: device.model,
+                                        zones: config.zones.map(\.id))
+                DiagnosticsRecorder.prune(store.diagnosticsDirectory)
+                server.send(["type": "diagnostics", "path": url.path, "samples": n, "seconds": DiagnosticsRecorder.seconds], to: c)
+            } catch {
+                sendError("diagnostics_export: \(error)", to: c)
+            }
+        case "sim_spike" where options.noHardwareSessions:
+            // With simulated sensors the transient goes through the live detector too; otherwise only into the buffer.
+            if options.simulateSensors && (m["live"] as? Bool) == true { hub.injectSimulatedTap() } else { diag.injectSyntheticTap(ago: 0.5) }
         case "catalog_get":
             server.send(["type": "catalog", "catalog": catalog], to: c)
         case "sound_session_start":
@@ -510,6 +605,162 @@ final class Daemon: @unchecked Sendable {
         default:
             sendError("unknown message type: \(type)", to: c)
         }
+    }
+
+    // MARK: Feedback (missed and false taps)
+
+    private func admitFeedback() -> Bool {
+        let now = Clock.now()
+        feedbackTimes = feedbackTimes.filter { now - $0 < 60 }
+        guard feedbackTimes.count < 20, (feedbackTimes.last.map { now - $0 >= 2 } ?? true) else { return false }
+        feedbackTimes.append(now)
+        return true
+    }
+
+    /// "I just tapped <zone> and nothing happened": save the last 3 s, replay it offline with the input gates off, take
+    /// the best candidate the live detector did not accept, and add it to the training samples as that zone.
+    private func feedbackMissed(zone: String?, client c: WebSocketServer.Client) {
+        guard let zone, config.zones.contains(where: { $0.id == zone }) else {
+            return sendError("feedback_missed needs a zone from the config", to: c)
+        }
+        let accepted = recentCandidates.filter { $0.outcome == "accepted" }.map(\.t)
+        let found = diag.offlineCandidates(settings: engine.settings, model: engine.model, window: 3)
+            .filter { f in !accepted.contains { abs($0 - f.t) < 0.02 } }
+        // Prefer a candidate the classifier already placed in that zone; otherwise the strongest one.
+        let best = found.filter { $0.zone == zone }.max { $0.confidence < $1.confidence }
+            ?? found.max { $0.features[.strength] < $1.features[.strength] }
+        let why = best.flatMap { b in recentCandidates.first { abs($0.t - b.t) < 0.02 }?.outcome } ?? (best == nil ? nil : "not seen live")
+
+        let url = store.diagnosticsDirectory.appendingPathComponent("missed-\(zone)-\(Self.stamp()).gkrec")
+        var saved: String?
+        do {
+            let lastT = diag.samples(lastSeconds: 0).last?.t ?? Clock.now()
+            let seg = GkrecSegment(phase: "capture", zone: zone, start: lastT - 3, end: lastT, onsets: best.map { [$0.t] } ?? [],
+                                   discarded: false, endedBy: "feedback")
+            _ = try diag.export(to: url, seconds: 3, deviceModel: device.model, zones: config.zones.map(\.id), segments: [seg],
+                                notes: ["feedback_missed zone=\(zone)"])
+            DiagnosticsRecorder.prune(store.diagnosticsDirectory)
+            saved = url.path
+        } catch {
+            Log.error("could not save the missed-tap diagnostic: \(error)")
+        }
+
+        var reply: [String: Any] = ["type": "feedback", "kind": "missed", "zone": zone, "found": best != nil,
+                                    "diagnostic": saved ?? NSNull()]
+        if let best {
+            reply["candidate"] = ["t": Clock.protocolMs(best.t), "zone": engine.model == nil ? NSNull() : best.zone as Any,
+                                  "confidence": Self.r4(best.confidence), "strength": Self.r4(best.features[.strength]),
+                                  "droppedBecause": why ?? NSNull()]
+        }
+        guard let best else {
+            reply["retrained"] = false
+            reply["reason"] = "no tap-like onset in the last 3 s (the tap may have been too soft)"
+            return server.send(reply, to: c)
+        }
+        retrain(adding: best.features, label: zone, reply: reply, client: c)
+    }
+
+    /// The last accepted tap was not intended: add its features as "none" and retrain (nothing is undone).
+    private func feedbackFalse(client c: WebSocketServer.Client) {
+        guard let last = lastAccepted, Clock.now() - last.t < 60 else {
+            return server.send(["type": "feedback", "kind": "false", "retrained": false,
+                                "reason": "no accepted tap in the last 60 s"], to: c)
+        }
+        lastAccepted = nil
+        let reply: [String: Any] = ["type": "feedback", "kind": "false", "zone": last.zone, "t": Clock.protocolMs(last.t)]
+        retrain(adding: last.features, label: "none", reply: reply, client: c)
+    }
+
+    /// Adds one labeled sample to the saved training set and retrains in the background.
+    private func retrain(adding f: TapFeatures, label: String, reply base: [String: Any], client c: WebSocketServer.Client) {
+        var reply = base
+        var samples = store.loadSamples()
+        let labels = Set(samples.map(\.label))
+        guard !samples.isEmpty else {
+            reply["retrained"] = false; reply["reason"] = "not calibrated yet: calibrate first, then feedback refines it"
+            return server.send(reply, to: c)
+        }
+        guard label == "none" || labels.contains(label) else {
+            reply["retrained"] = false; reply["reason"] = "zone \(label) is not calibrated"
+            return server.send(reply, to: c)
+        }
+        samples.append(.init(label: label, features: TapFeatures(values: f.values, t: 0)))
+        let replyID = c.id
+        let disabled = disabledZones
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            let trainer = Trainer()
+            for s in samples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
+            let (model, report) = trainer.train()
+            var saveError: String?
+            do {
+                try self.store.saveModel(model, report: report)
+                try self.store.saveSamples(samples)
+            } catch { saveError = "\(error)" }
+            self.core.async {
+                self.engine.model = model
+                self.applyZoneCenters()
+                reply["retrained"] = saveError == nil
+                if let saveError { reply["reason"] = "could not save: \(saveError)" }
+                reply["counts"] = trainer.counts
+                reply["overall"] = Self.r4(report.overall)
+                Log.info("feedback \(reply["kind"] ?? "?"): added a \(label) sample; accuracy \(report.overall)")
+                if let client = self.server.clients[replyID] { self.server.send(reply, to: client) }
+                self.server.broadcast(self.status())
+            }
+        }
+    }
+
+    private var disabledZones: Set<String> { Set(config.zones.filter { !$0.enabled }.map(\.id)) }
+
+    static func recommendationJSON(_ r: ZoneRecommendation) -> [String: Any] {
+        ["keep": r.keep, "drop": r.drop, "merge": r.merge,
+         "expectedAccuracy": r.expectedAccuracy.mapValues { ($0 * 1000).rounded() / 1000 }]
+    }
+
+    /// Retrains from the saved samples without the disabled zones (their samples are kept on disk, not relabeled).
+    private func rebuildModel(reason: String, then done: ((CalibrationReport?) -> Void)? = nil) {
+        let samples = store.loadSamples()
+        guard !samples.isEmpty else { done?(nil); return }
+        let disabled = disabledZones
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let trainer = Trainer()
+            for s in samples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
+            let (model, report) = trainer.train()
+            guard let self else { return }
+            do { try self.store.saveModel(model, report: report) } catch { Log.error("could not save model: \(error)") }
+            self.core.async {
+                self.engine.model = model
+                self.applyZoneCenters()
+                Log.info("model rebuilt (\(reason)); zones \(report.labels.filter { $0 != "none" }), overall \(report.overall)")
+                self.server.broadcast(self.status())
+                done?(report)
+            }
+        }
+    }
+
+    /// `calibration_apply_recommendation`: disables the recommended drops in the config and retrains without them.
+    private func applyRecommendation(client c: WebSocketServer.Client) {
+        guard let rec = pendingRecommendation else { return sendError("no recommendation: finish a calibration first", to: c) }
+        var new = config
+        for i in new.zones.indices where rec.drop[new.zones[i].id] != nil { new.zones[i].enabled = false }
+        do { try store.save(new) } catch { return sendError("could not save config: \(error)", to: c) }
+        config = new
+        pendingRecommendation = nil
+        server.broadcast(configMessage())
+        rebuildModel(reason: "recommendation applied") { [weak self] report in
+            guard let self else { return }
+            var m: [String: Any] = ["type": "calibration", "phase": "recommendation_applied",
+                                    "disabled": rec.drop.keys.sorted(), "keep": rec.keep]
+            if let report { m["overall"] = report.overall; m["accuracy"] = report.accuracy; m["labels"] = report.labels }
+            self.server.broadcast(m)
+        }
+    }
+
+    private static func stamp() -> String {
+        let f = DateFormatter()
+        f.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return f.string(from: Date())
     }
 
     private func sendError(_ message: String, to c: WebSocketServer.Client) {
@@ -549,6 +800,7 @@ final class Daemon: @unchecked Sendable {
     private func applyConfigToEngine() {
         // The engine reads settings (sensitivity, gates, windows) on every sample, so this takes effect immediately.
         engine.settings = config.settings.detection
+        shadow.settings = config.settings.detection
         applyZoneCenters()
         engine.zonesNeedingMultiTap = config.zonesNeedingMultiTap
         Log.debug("zones needing multi-tap: \(config.zonesNeedingMultiTap.sorted())")
@@ -571,7 +823,8 @@ extension Daemon: SessionHost {
     var currentLidAngle: Double? { lidAngle }
     var deviceFamily: String { device.family }
     var typingActive: Bool {
-        input.snapshot(now: Clock.now()).key * 1000 < config.settings.typingGateMs
+        let s = input.snapshot(now: Clock.now())
+        return s.key * 1000 < config.settings.typingGateMs || s.keyUp < 0.15
     }
 
     func broadcast(_ message: [String: Any], stream: String?) { server.broadcast(message, stream: stream) }

@@ -16,6 +16,8 @@ final class InputMonitor: @unchecked Sendable {
     private var cachedAt: Double = -1
     private var keyIdle: Double = 99
     private var mouseIdle: Double = 99
+    private var keyUpIdle: Double = 99
+    private var modifierIdle: Double = 99
     private var modifiers: Set<String> = []
     private static let refreshInterval = 0.004
 
@@ -40,19 +42,21 @@ final class InputMonitor: @unchecked Sendable {
     }
 
     /// Returns (secondsSinceKey, secondsSinceMouse, modifiers) at time `now` (seconds, mach clock).
-    func snapshot(now: Double) -> (key: Double, mouse: Double, modifiers: Set<String>) {
+    func snapshot(now: Double) -> (key: Double, mouse: Double, modifiers: Set<String>, keyUp: Double, modifierChange: Double) {
         if cachedAt < 0 || now - cachedAt >= Self.refreshInterval || now < cachedAt {
             let src = CGEventSourceStateID.combinedSessionState
             keyIdle = CGEventSource.secondsSinceLastEventType(src, eventType: .keyDown)
             mouseIdle = min(CGEventSource.secondsSinceLastEventType(src, eventType: .mouseMoved),
                             CGEventSource.secondsSinceLastEventType(src, eventType: .leftMouseDown),
                             CGEventSource.secondsSinceLastEventType(src, eventType: .scrollWheel))
+            keyUpIdle = CGEventSource.secondsSinceLastEventType(src, eventType: .keyUp)
+            modifierIdle = CGEventSource.secondsSinceLastEventType(src, eventType: .flagsChanged)
             modifiers = Self.modifierNames(CGEventSource.flagsState(src))
             cachedAt = now
-            return (keyIdle, mouseIdle, modifiers)
+            return (keyIdle, mouseIdle, modifiers, keyUpIdle, modifierIdle)
         }
         let age = now - cachedAt
-        return (keyIdle + age, mouseIdle + age, modifiers)
+        return (keyIdle + age, mouseIdle + age, modifiers, keyUpIdle + age, modifierIdle + age)
     }
 
     static func modifierNames(_ flags: CGEventFlags) -> Set<String> {

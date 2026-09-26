@@ -58,7 +58,9 @@ final class SPUDriverControl: @unchecked Sendable {
     /// Microseconds between reports. 1250 gives about 797 Hz on M-series (1000 also caps there).
     static let motionInterval: Int32 = 1250
 
-    var originalsURL: URL { ConfigStore().directory.appendingPathComponent("spu-originals.json") }
+    /// Machine-wide (the sensors are): always in the default daemon directory, whatever --config-dir says, so a
+    /// crash of any instance is recovered by the next one.
+    var originalsURL: URL { ConfigStore.defaultDirectory.appendingPathComponent("spu-originals.json") }
 
     // MARK: Crash recovery
 

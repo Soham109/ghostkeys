@@ -31,9 +31,13 @@ The daemon keeps every file it owns in one directory:
   `~/Library/Application Support/Ghostkeys/` is the Electron app's own profile (`userData`); the daemon never writes there.
 - Override: `--config-dir <path>`, else the environment variable `GHOSTKEYS_CONFIG_DIR`. The lab tool follows the same
   rule for its lock.
-- Contents: `config.json` (+ `config.json.bak`, `config.json.bad`), `token`, `approved.json`, `spu-originals.json`
-  (only while sensor settings need restoring), `daemon.lock`, and `model/` (`zone-model.json`,
-  `calibration-report.json`, `samples.json`, `tap-types.json`, `tap-type-samples.json`, `*.bak`).
+- Contents: `config.json` (+ `config.json.bak`, `config.json.bad`), `token`, `approved.json`, `diagnostics/`, and
+  `model/` (`zone-model.json`, `calibration-report.json`, `samples.json`, `tap-types.json`, `tap-type-samples.json`,
+  `*.bak`).
+- Machine-wide, always in the default directory whatever `--config-dir` says (the sensors belong to the machine, not
+  to a config): `daemon.lock` (one daemon or lab session on the sensors at a time) and `spu-originals.json` (sensor
+  settings to restore after a crash). A daemon started with `--simulate-sensors` (test mode: synthetic motion data,
+  no hardware) takes no sensor lock; it only locks its own config directory.
 - Migration: with the default location, on first start a newer daemon moves exactly those entries (only those names)
   from `~/Library/Application Support/Ghostkeys/` into `daemon/`. `token` and `daemon.lock` are recreated rather than
   moved, an entry that already exists in `daemon/` is left in place, and the daemon refuses to start (exit 4) while an
@@ -68,8 +72,12 @@ The daemon only accepts WebSocket handshakes from the app, never from a browser 
 Laptop top view, normalized coordinates: x from 0 (left edge of the base) to 1 (right edge), y from 0 (hinge) to 1 (front lip).
 
 ```json
-{ "id": "right-grille", "name": "Right grille", "surface": "base", "rect": { "x": 0.88, "y": 0.08, "w": 0.1, "h": 0.45 }, "color": "#7C5CFF" }
+{ "id": "right-grille", "name": "Right grille", "surface": "base", "rect": { "x": 0.88, "y": 0.08, "w": 0.1, "h": 0.45 }, "color": "#7C5CFF", "enabled": true }
 ```
+
+`enabled` (default true): a disabled zone is left out of the zone model (its calibration samples stay on disk and come
+back when it is re-enabled) and never fires bindings. Changing it with `config_set` retrains the model from the saved
+samples.
 
 `surface` is one of `base`, `lid`, `edge-left`, `edge-right`, `front`. Zones are what the classifier learns: each calibrated zone
 is a class. The special class `none` means "rejected".
@@ -139,12 +147,31 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
   // trigger (active only): "request" (app asked) | "auto" (pinned app in settings). reason (on stop): "timeout" |
   // "requested" | "paused" | "app_changed" | "no_hand" | "lid_closed" | "error" (then "error": "...").
   // sound only: sonar (pilot tone playing), tapTypes (tap-type model loaded). simulated: true under --no-hardware-sessions.
-{ "type": "rejected", "t": 1234.5, "reason": "typing" }        // reason: typing | trackpad | motion | low_confidence | burst | paused
+{ "type": "rejected", "t": 1234.5, "reason": "typing", "zone": "right-grille", "confidence": 0.62, "strength": 1.4 }
+  // "taps" stream. reason: typing | trackpad | motion | low_confidence | burst | paused. zone / confidence: the
+  // classifier's best guess for the dropped tap (only when calibrated); strength: log10 of the peak in milli-g.
+  // A motion rejection has no features, so no zone / confidence / strength.
+{ "type": "candidate", "t": 1234.5, "zone": "right-grille", "confidence": 0.62, "strength": 1.4, "outcome": "typing" }
+  // "debug" stream: every tap onset the detector analysed, before the typing / trackpad / burst gates.
+  // outcome: "accepted" | a rejection reason | "pending" (calibrating or paused). zone is null until calibrated.
+{ "type": "feedback", "kind": "missed", "zone": "right-palm", "found": true, "retrained": true, "diagnostic": "<path>.gkrec",
+  "candidate": { "t": 1234.5, "zone": "right-palm", "confidence": 0.7, "strength": 1.2, "droppedBecause": "low_confidence" },
+  "counts": { "right-palm": 21, "none": 30 }, "overall": 0.94 }
+{ "type": "feedback", "kind": "false", "zone": "left-grille", "t": 1234.5, "retrained": true, "counts": { }, "overall": 0.95 }
+  // replies to feedback_missed / feedback_false, only to the requester. retrained false comes with "reason"
+  // (not calibrated yet, zone not calibrated, no onset found, no recent tap).
+{ "type": "diagnostics", "path": "<config dir>/diagnostics/20260926-181500-123.gkrec", "samples": 7970, "seconds": 10 }
 { "type": "gesture", "t": 1234.5, "gesture": "double", "zone": "right-grille", "zones": ["right-grille"], "modifiers": ["shift"], "confidence": 0.91, "app": "com.microsoft.Excel" }
 { "type": "action", "t": 1234.5, "bindingId": "b1", "label": "Volume up", "ok": true, "error": null }
 { "type": "calibration", "phase": "capturing", "zone": "left-palm", "count": 7, "target": 20 }
 { "type": "calibration", "phase": "negatives", "secondsLeft": 42 }
-{ "type": "calibration", "phase": "done", "accuracy": { "left-palm": 0.97 }, "overall": 0.95, "confusion": [[...]], "labels": ["..."] }
+{ "type": "calibration", "phase": "done", "accuracy": { "left-palm": 0.97 }, "overall": 0.95, "confusion": [[...]], "labels": ["..."],
+  "recommendation": { "keep": ["left-palm"], "drop": { "lid": "recognised 56% of the time (needs 80%)" },
+                      "merge": [["left-grille", "left-edge"]], "expectedAccuracy": { "left-palm": 0.97 } } }
+  // recommendation: zones to keep, zones to disable (with a plain reason), pairs that are mostly confused with each
+  // other (bind the same action to both instead of dropping), expected accuracy of the kept zones.
+{ "type": "calibration", "phase": "recommendation_applied", "disabled": ["lid"], "keep": ["left-palm"], "overall": 0.97,
+  "accuracy": { }, "labels": ["..."] }   // reply to calibration_apply_recommendation (a config message is sent too)
 { "type": "calibration", "phase": "taptype_capturing", "tapType": "knuckle", "count": 4, "target": 15, "types": ["fingertip", "knuckle", "nail"] }
   // tap-type calibration: make `target` taps of `tapType`; the daemon moves to the next type by itself.
   // "missed": true means the motion sensor felt a tap but the microphone heard no clear onset (not counted).
@@ -162,7 +189,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 ## App to daemon
 
 ```jsonc
-{ "type": "subscribe", "streams": ["imu", "lid", "light", "taps", "air"] }
+{ "type": "subscribe", "streams": ["imu", "lid", "light", "taps", "air", "debug"] }
 { "type": "unsubscribe", "streams": ["imu"] }
 { "type": "pause" }  { "type": "resume" }
 { "type": "calibration_start", "zones": ["left-palm", "right-palm"], "target": 20 }
@@ -170,6 +197,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "calibration_negatives", "seconds": 45 }          // user types/uses the trackpad; everything is labeled none
 { "type": "calibration_finish" }                             // train, save, reply with calibration done
 { "type": "calibration_cancel" }
+{ "type": "calibration_apply_recommendation" }  // disable the zones the last "done" recommended dropping, retrain without them
 { "type": "config_get" }
 { "type": "config_set", "config": { } }                      // daemon saves and replies with config
 { "type": "test_action", "action": { } }
@@ -184,10 +212,29 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "calibration_taptype_start", "types": ["fingertip", "knuckle", "nail"], "target": 15 }
   // needs an active sound session (extended to 120 s); taps are labeled in the order of `types`, target 3...50
 { "type": "calibration_taptype_cancel" }
+{ "type": "feedback_missed", "zone": "right-palm" }  // "I just tapped this zone and nothing happened"
+{ "type": "feedback_false" }                           // "the last accepted tap was not meant" (nothing is undone)
+{ "type": "diagnostics_export" }                       // write the last 10 s to <config dir>/diagnostics/*.gkrec
+  // Feedback: at most one every 2 s and 20 per minute. Export: at most one every 5 s. See "Feedback loop".
 // Test-only, accepted only when the daemon runs with --no-hardware-sessions (simulated sessions):
 // { "type": "sim_tap", "zone": "right-grille" }  { "type": "sim_tap_type", "tapType": "knuckle" }
 // { "type": "sim_air", "phase": "began|changed|ended", "dx": 0.05, "dy": 0 }
 ```
+
+## Feedback loop
+
+The daemon keeps the last 10 s of raw motion samples (with key / mouse idle times and modifiers) and of detector
+decisions in memory only. Nothing is written to disk unless the app asks.
+
+- `feedback_missed {zone}`: the last 3 s are saved as `diagnostics/missed-<zone>-<time>.gkrec` and replayed offline
+  with the typing / trackpad / burst gates off. The best candidate the live detector did not accept (one the
+  classifier already placed in that zone, else the strongest) is added to `model/samples.json` as that zone, and the
+  zone model is retrained from all saved samples. Only zones that were calibrated can gain samples.
+- `feedback_false`: the features of the last accepted tap (within 60 s) are added as `none`, and the model is retrained.
+  The action that tap triggered is not undone.
+- `diagnostics_export`: the last 10 s go to `diagnostics/<time>.gkrec`, the ghostkeys-lab recording format
+  (`ghostkeys-lab info|replay <file>`), with the detector's decisions in the header's `notes`. The folder keeps the
+  newest 50 recordings.
 
 ## Config file (`<config dir>/config.json`, default `~/Library/Application Support/Ghostkeys/daemon/config.json`)
 
@@ -204,12 +251,17 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
       "action": { "kind": "volume", "step": 2 }, "label": "Volume knob",
       "knob": { "axis": "y", "stepPx": 24, "inverse": { "kind": "volume", "step": -2 } } }
   ],
-  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "hud": true, "haptics": false,
+  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "followUpConfidence": 0.5,
+    "hud": true, "haptics": false,
     "sound":  { "enabled": false, "sessionSeconds": 30, "autoApps": [] },
     "camera": { "enabled": false, "sessionSeconds": 30, "autoApps": [], "deskMode": false } }
 }
 ```
 
+- `followUpConfidence` (0 to `minConfidence`): in a zone with a double / triple binding, a tap at this confidence may
+  complete a multi-tap whose other tap passed `minConfidence`; alone it never fires. Set equal to `minConfidence` to disable.
+- Typing gate: a tap is rejected as `typing` within `typingGateMs` of a key press, and also within 150 ms of any key
+  release (so the release of a key held longer than the gate cannot slip through).
 - `knob` (only on `pinch_hold` bindings): while the pinch is held, `action` runs once per `stepPx` of travel along
   `axis` (camera pixels at 640x480, so 24 px is 5% of the frame height). Positive travel is right (`x`) or up (`y`);
   travel the other way runs `inverse` if present. The hold itself does not fire the action. Steps go through the

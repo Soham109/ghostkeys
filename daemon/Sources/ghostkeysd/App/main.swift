@@ -22,11 +22,19 @@ Lifetime.installSignalHandlers()
 ConfigStore.configure(override: options.configDir)
 ConfigStore.migrateLegacyFiles()
 
-// One daemon at a time: two would fight over the sensor driver settings. Applies to every mode.
-InstanceLock.acquireOrExit(directory: ConfigStore().directory)
+// One daemon at a time on the sensors: the lock is machine-wide (default directory), whatever --config-dir says,
+// because two instances would fight over the sensor driver settings. A --simulate-sensors daemon never touches
+// hardware, so it only locks its own config directory.
+if options.simulateSensors {
+    InstanceLock.acquireOrExit(directory: ConfigStore.baseDirectory)
+} else {
+    try? FileManager.default.createDirectory(at: ConfigStore.defaultDirectory, withIntermediateDirectories: true,
+                                             attributes: [.posixPermissions: 0o700])
+    InstanceLock.acquireOrExit(directory: ConfigStore.defaultDirectory)
+}
 
 // A previous run that crashed or was SIGKILLed may have left the motion sensors on: undo that first.
-let recovered = SPUDriverControl.shared.recoverFromCrashedRun()
+let recovered = options.simulateSensors ? nil : SPUDriverControl.shared.recoverFromCrashedRun()
 
 if options.restoreSensors {
     print(recovered ?? "nothing to restore: no sensor settings were left behind")
