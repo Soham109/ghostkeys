@@ -326,3 +326,24 @@
     fill: var(--signal);
   }
 }
+
+/* First launch: the contour draws itself, then keys fade in with a 4 ms stagger, then the zones. */
+.laptop-map .drawing .draw {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: draw-line 1400ms var(--ease-inout) forwards;
+}
+.laptop-map .drawing .keys rect,
+.laptop-map .drawing > :not(.draw):not(defs):not(.keys) {
+  animation: fade-in 400ms var(--ease-out) both;
+  animation-delay: calc(900ms + var(--i, 20) * 4ms);
+}
+.laptop-map.drawing-in .zone,
+.laptop-map.drawing-in .zone-index {
+  animation: fade-in 500ms var(--ease-out) 1500ms both;
+}
+@keyframes draw-line {
+  to {
+    stroke-dashoffset: 0;
+  }
+}

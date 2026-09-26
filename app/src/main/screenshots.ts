@@ -30,9 +30,14 @@ export const SHOTS = [
   'live-notices',
   'live-session',
   'library-layouts',
+  'live-feed-enter',
+  'first-launch-draw',
   'command-palette',
   'service-offline'
 ] as const
+
+/** Shots captured mid-animation: grab the frame right away. */
+const MID_ANIMATION = new Set<string>(['live-feed-enter'])
 
 const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -62,9 +67,10 @@ export async function runScreenshots(opts: {
     if (only && !only.includes(name)) continue
     try {
       await main.webContents.executeJavaScript(`window.__gk.shot(${JSON.stringify(name)})`, true)
-      await wait(120)
+      const mid = MID_ANIMATION.has(name)
+      await wait(mid ? 70 : 120)
       main.webContents.invalidate()
-      await wait(120)
+      await wait(mid ? 30 : 120)
       const img = await main.webContents.capturePage()
       writeFileSync(join(outDir, `${name}.png`), img.toPNG())
       console.log(`[screenshots] ${name}.png`)

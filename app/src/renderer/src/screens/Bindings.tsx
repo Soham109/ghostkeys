@@ -10,14 +10,15 @@ import { appName } from '@/lib/apps'
 import { conflictsFor, triggerKey, whereText } from '@/lib/bindings'
 import { ensureActionApproved } from '@/lib/approval'
 import { cn, uid } from '@/lib/utils'
-import { PageHeader, Empty } from '@/components/Page'
+import { PageHeader, Empty, ScrollBody } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input, ProTag, Switch } from '@/components/ui/controls'
-import { Confirm, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger } from '@/components/ui/overlays'
+import { Confirm } from '@/components/ui/overlays'
 import { BindingEditor, PRO_GESTURES } from '@/components/bindings/BindingEditor'
 import { PresetLibrary } from '@/components/bindings/PresetLibrary'
 import { ApprovalTag } from '@/components/bindings/ApprovalBadge'
 import { PRO_KINDS } from '@/components/bindings/ActionForm'
+import { AppIcon } from '@/components/AppIcon'
 
 function freshBinding(config: Config, seed?: Partial<Binding>, zoneId?: string): Binding {
   const base: Binding = {
@@ -124,6 +125,21 @@ export function BindingsScreen(): React.JSX.Element {
     if (approved !== b.action) setDraft((c) => ({ ...c, bindings: c.bindings.map((x) => (x.id === b.id ? { ...x, action: approved } : x)) }))
     if (!client.send({ type: 'test_action', action: approved })) toast('Could not reach the helper')
   }
+  const rowMenu = async (b: Binding): Promise<void> => {
+    const id = await window.gk.contextMenu([
+      { id: 'edit', label: 'Edit' },
+      { id: 'test', label: 'Test' },
+      { id: 'toggle', label: b.enabled ? 'Turn Off' : 'Turn On' },
+      { id: 'duplicate', label: 'Duplicate' },
+      { type: 'separator' },
+      { id: 'delete', label: 'Delete…' }
+    ])
+    if (id === 'edit') openEditor(b, false)
+    else if (id === 'test') void test(b)
+    else if (id === 'toggle') setDraft((c) => ({ ...c, bindings: c.bindings.map((x) => (x.id === b.id ? { ...x, enabled: !x.enabled } : x)) }))
+    else if (id === 'duplicate') setDraft((c) => ({ ...c, bindings: [...c.bindings, { ...structuredClone(b), id: uid('b'), enabled: false }] }))
+    else if (id === 'delete') setConfirmDelete(b)
+  }
   const pickPreset = (p: Preset): void => {
     useStore.setState({ presetsOpen: false })
     openEditor(freshBinding(draft, { action: structuredClone(p.action), label: p.name, app: p.app ?? '*' }), true)
@@ -164,7 +180,7 @@ export function BindingsScreen(): React.JSX.Element {
         }
       />
 
-      <div className="fade-bottom min-h-0 flex-1 overflow-y-auto pb-24 shadow-[0_-1px_0_var(--hairline)]">
+      <ScrollBody className="fade-bottom pb-24">
         <div className={cn(GRID, 'sticky top-0 z-10 h-8 bg-bg px-6 pt-2 shadow-[0_1px_0_var(--hairline)]')}>
           <span className="tag-mono text-ink-3">Zone</span>
           <span className="tag-mono text-ink-3">When</span>
@@ -198,6 +214,7 @@ export function BindingsScreen(): React.JSX.Element {
           layers.map((layer) => (
             <section key={layer} aria-label={appName(layer)}>
               <div className="flex h-10 items-end gap-2 px-6 pb-2">
+                <AppIcon bundleId={layer} className="mb-px size-3.5" />
                 <h2 className="label-mono text-ink-2">{appName(layer)}</h2>
                 {layer !== '*' && <ProTag feature="Per-app layers" />}
               </div>
@@ -222,6 +239,10 @@ export function BindingsScreen(): React.JSX.Element {
                           transition={{ duration: 0.2 }}
                           className={cn(GRID, 'group h-12 cursor-default px-6 shadow-[0_1px_0_var(--hairline)] hover:bg-fill')}
                           onClick={() => openEditor(b, false)}
+                          onContextMenu={(e) => {
+                            e.preventDefault()
+                            void rowMenu(b)
+                          }}
                         >
                           <span className="num text-[11px] tracking-[0.04em] text-ink-3">{indexText(b, draft)}</span>
                           <div className="min-w-0">
@@ -247,21 +268,9 @@ export function BindingsScreen(): React.JSX.Element {
                               <Button variant="text" size="sm" aria-label={`Test ${b.label}`} onClick={() => void test(b)}>
                                 Test
                               </Button>
-                              <Menu>
-                                <MenuTrigger asChild>
-                                  <Button variant="text" size="sm" aria-label={`More for ${b.label}`}>
-                                    &middot;&middot;&middot;
-                                  </Button>
-                                </MenuTrigger>
-                                <MenuContent align="end">
-                                  <MenuItem onSelect={() => openEditor(b, false)}>Edit</MenuItem>
-                                  <MenuItem onSelect={() => setDraft((c) => ({ ...c, bindings: [...c.bindings, { ...structuredClone(b), id: uid('b'), enabled: false }] }))}>
-                                    Duplicate
-                                  </MenuItem>
-                                  <MenuSeparator />
-                                  <MenuItem onSelect={() => setConfirmDelete(b)}>Delete</MenuItem>
-                                </MenuContent>
-                              </Menu>
+                              <Button variant="text" size="sm" aria-label={`More for ${b.label}`} aria-haspopup="menu" onClick={() => void rowMenu(b)}>
+                                &middot;&middot;&middot;
+                              </Button>
                             </span>
                           </div>
                           <span className="flex justify-end" onClick={(e) => e.stopPropagation()}>
@@ -279,7 +288,7 @@ export function BindingsScreen(): React.JSX.Element {
             </section>
           ))
         )}
-      </div>
+      </ScrollBody>
 
       <BindingEditor
         open={editorOpen}

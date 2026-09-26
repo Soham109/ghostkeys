@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { motion } from 'motion/react'
+import { motion, useReducedMotion } from 'motion/react'
 import { useStore, type Route } from '@/lib/store'
 import { client } from '@/lib/client'
 import { cn } from '@/lib/utils'
@@ -13,17 +13,36 @@ export const NAV: { route: Route; label: string }[] = [
   { route: 'settings', label: 'Settings' }
 ]
 
-/** A dot that lights in --signal for a moment whenever a tap is felt. */
+/** A dot that lights in --signal for a moment whenever a tap is felt, and breathes slowly when idle. */
+export const IDLE_MS = 30_000
+
 function TouchDot({ state }: { state: 'on' | 'paused' | 'off' }): React.JSX.Element {
   const [pulse, setPulse] = React.useState(0)
-  React.useEffect(() => client.on('tap', () => setPulse((p) => p + 1)), [])
+  const [idle, setIdle] = React.useState(false)
+  const reduce = useReducedMotion()
+  React.useEffect(() => {
+    let timer = setTimeout(() => setIdle(true), IDLE_MS)
+    const off = client.on('tap', () => {
+      setPulse((p) => p + 1)
+      setIdle(false)
+      clearTimeout(timer)
+      timer = setTimeout(() => setIdle(true), IDLE_MS)
+    })
+    return () => {
+      off()
+      clearTimeout(timer)
+    }
+  }, [])
+  const breathe = idle && state === 'on' && !reduce
   return (
-    <span className="relative inline-flex size-1.5">
-      <span
+    <span className="relative inline-flex size-1.5" data-idle={breathe ? '' : undefined}>
+      <motion.span
         className={cn(
           'absolute inset-0 rounded-full',
           state === 'on' ? 'bg-ink-2' : state === 'paused' ? 'shadow-[inset_0_0_0_1px_var(--ink-3)]' : 'bg-ink-3/50'
         )}
+        animate={breathe ? { opacity: [1, 0.6, 1] } : { opacity: 1 }}
+        transition={breathe ? { duration: 4, repeat: Infinity, ease: 'easeInOut' } : { duration: 0.16 }}
       />
       {pulse > 0 && (
         <motion.span

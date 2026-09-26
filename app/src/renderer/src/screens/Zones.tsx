@@ -230,7 +230,7 @@ export function ZonesScreen(): React.JSX.Element {
           </>
         }
       />
-      <div className="flex min-h-0 flex-1 shadow-[0_-1px_0_var(--hairline)]">
+      <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
           <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(60% 55% at 50% 48%, var(--light-behind), transparent 70%)' }} />
           <div className="relative min-h-0 flex-1 px-8 pt-6 pb-4">
@@ -255,6 +255,21 @@ export function ZonesScreen(): React.JSX.Element {
                 <li key={z.id} role="option" aria-selected={z.id === selected}>
                   <button
                     onClick={() => setSelected(z.id === selected ? null : z.id)}
+                    onContextMenu={async (e) => {
+                      e.preventDefault()
+                      setSelected(z.id)
+                      const id = await window.gk.contextMenu([
+                        { id: 'reset', label: 'Reset Position' },
+                        { type: 'separator' },
+                        { id: 'delete', label: 'Delete Zone' }
+                      ])
+                      if (id === 'delete') deleteZone(z)
+                      else if (id === 'reset') {
+                        const d = defaultZones(family).find((x) => x.id === z.id)
+                        if (d) setDraft((c) => ({ ...c, zones: c.zones.map((x) => (x.id === z.id ? { ...x, surface: d.surface, rect: d.rect } : x)) }))
+                        else toast('This zone has no default position')
+                      }
+                    }}
                     className={cn(
                       'flex h-8 w-full items-center gap-2.5 px-4 text-left shadow-[0_1px_0_var(--hairline)] transition-colors duration-150',
                       z.id === selected ? 'bg-fill-active' : 'hover:bg-fill-hover'

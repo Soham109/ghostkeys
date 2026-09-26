@@ -5,10 +5,12 @@ import { COMMON_APPS, appName } from '@/lib/apps'
 import type { SessionSettings, Settings } from '@shared/protocol'
 import type { ThemeMode } from '@shared/ipc'
 import { FAMILY_LABEL } from '@shared/protocol'
-import { PageHeader } from '@/components/Page'
+import { PageHeader, ScrollBody } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Input, ProTag, Segmented, Slider, Switch } from '@/components/ui/controls'
 import { Menu, MenuContent, MenuItem, MenuTrigger } from '@/components/ui/overlays'
+import { AppIcon } from '@/components/AppIcon'
+import { previewTapSound } from '@/lib/sound'
 
 function Row({ title, desc, children, htmlFor, pro }: { title: string; desc?: React.ReactNode; children: React.ReactNode; htmlFor?: string; pro?: boolean }): React.JSX.Element {
   return (
@@ -75,7 +77,8 @@ function AutoApps({ value, onChange }: { value: string[]; onChange: (v: string[]
   return (
     <div className="flex max-w-[300px] flex-wrap items-center justify-end gap-x-3 gap-y-1">
       {value.map((id) => (
-        <button key={id} className="text-[12px] text-ink-2 hover:text-ink hover:line-through" title={`Remove ${appName(id)}`} onClick={() => onChange(value.filter((x) => x !== id))}>
+        <button key={id} className="flex items-center gap-1.5 text-[12px] text-ink-2 hover:text-ink hover:line-through" title={`Remove ${appName(id)}`} onClick={() => onChange(value.filter((x) => x !== id))}>
+          <AppIcon bundleId={id} className="size-3.5" />
           {appName(id)}
         </button>
       ))}
@@ -88,6 +91,7 @@ function AutoApps({ value, onChange }: { value: string[]; onChange: (v: string[]
         <MenuContent align="end" className="max-h-72 overflow-y-auto">
           {COMMON_APPS.filter((a) => !value.includes(a.id)).map((a) => (
             <MenuItem key={a.id} onSelect={() => onChange([...value, a.id])}>
+              <AppIcon bundleId={a.id} />
               {a.name}
             </MenuItem>
           ))}
@@ -197,7 +201,7 @@ export function SettingsScreen(): React.JSX.Element {
   return (
     <>
       <PageHeader title="Settings" />
-      <div className="fade-bottom min-h-0 flex-1 overflow-y-auto shadow-[0_-1px_0_var(--hairline)]">
+      <ScrollBody className="fade-bottom">
         <div className="mx-auto max-w-[640px] px-6 pb-20">
           <Section label="Detection">
             {s && (
@@ -256,6 +260,16 @@ export function SettingsScreen(): React.JSX.Element {
                 </Row>
                 <Row title="Haptic tick" desc="A light trackpad click confirms each gesture." htmlFor="haptics">
                   <Switch id="haptics" checked={s.haptics} onCheckedChange={(haptics) => set({ haptics })} />
+                </Row>
+                <Row title="Tap sound" desc="A soft, low thump from this Mac when a tap is felt." htmlFor="tapsound">
+                  <Switch
+                    id="tapsound"
+                    checked={!!info?.prefs.tapSound}
+                    onCheckedChange={(tapSound) => {
+                      void setPrefs({ tapSound })
+                      if (tapSound) previewTapSound()
+                    }}
+                  />
                 </Row>
               </>
             )}
@@ -412,7 +426,7 @@ export function SettingsScreen(): React.JSX.Element {
             </dl>
           </section>
         </div>
-      </div>
+      </ScrollBody>
     </>
   )
 }

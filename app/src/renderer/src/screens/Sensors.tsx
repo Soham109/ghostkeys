@@ -357,7 +357,7 @@ export function SensorsScreen(): React.JSX.Element {
           </span>
         }
       />
-      <div className="flex min-h-0 flex-1 flex-col shadow-[0_-1px_0_var(--hairline)]">
+      <div className="flex min-h-0 flex-1 flex-col">
         <section className="flex min-h-0 flex-1 flex-col px-6 pt-4 pb-2" aria-label="Accelerometer">
           <div className="flex items-center justify-between pb-1">
             <h2 className="label-mono">Accelerometer {hello && !hello.sensors.imu && '(not found)'}</h2>

@@ -4,6 +4,7 @@ import { COMMON_APPS, appName } from '@/lib/apps'
 import { cn } from '@/lib/utils'
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/overlays'
 import { Chevron, Tick } from '../ui/glyphs'
+import { AppIcon } from '../AppIcon'
 
 /** "Everywhere" or a specific app, picked from common apps or typed as a bundle id. */
 export function AppPicker({ value, onChange }: { value: string; onChange: (id: string) => void }): React.JSX.Element {
@@ -26,6 +27,7 @@ export function AppPicker({ value, onChange }: { value: string; onChange: (id: s
           title={value === '*' ? 'Every app' : value}
           className="flex h-7 w-full items-center justify-between gap-2 rounded-[6px] bg-fill px-2.5 text-left text-[13px] shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-fill-hover"
         >
+          <AppIcon bundleId={value} />
           <span className="truncate">{appName(value)}</span>
           <Chevron className="ml-auto size-3 shrink-0 text-ink-3" />
         </button>
@@ -53,7 +55,10 @@ export function AppPicker({ value, onChange }: { value: string; onChange: (id: s
             )}
             {COMMON_APPS.map((a) => (
               <Command.Item key={a.id} value={`${a.name} ${a.id}`} onSelect={() => pick(a.id)} className={cn(item)} title={a.id}>
-                <span className="truncate">{a.name}</span>
+                <span className="flex min-w-0 items-center gap-2">
+                  <AppIcon bundleId={a.id} />
+                  <span className="truncate">{a.name}</span>
+                </span>
                 {value === a.id && <Tick />}
               </Command.Item>
             ))}

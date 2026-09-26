@@ -58,7 +58,28 @@ function useGlobalKeys(): void {
       }
     }
     window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
+    // The native menu bar owns these shortcuts when it exists; its commands arrive here.
+    const offMenu = window.gk.onMenu((cmd) => {
+      const s = useStore.getState()
+      if (cmd.startsWith('go:')) {
+        const r = cmd.slice(3) as (typeof ROUTES)[number]
+        if (ROUTES.includes(r)) useStore.setState({ onboarding: false, route: r, paletteOpen: false })
+      } else if (cmd === 'new-binding') {
+        s.navigate('bindings')
+        useStore.setState({ editingBinding: 'new' })
+      } else if (cmd === 'library') {
+        s.navigate('bindings')
+        useStore.setState({ presetsOpen: true })
+      } else if (cmd === 'save') {
+        if (isDirty(s)) void s.saveDraft()
+      } else if (cmd === 'palette') useStore.setState({ paletteOpen: !s.paletteOpen })
+      else if (cmd === 'tour') useStore.setState({ onboarding: true, onboardingStep: 0 })
+      else if (cmd === 'pause-toggle') s.setPaused(!s.status?.paused)
+    })
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      offMenu()
+    }
   }, [])
 }
 

@@ -48,6 +48,32 @@ interface Mark {
 }
 
 let rippleSeq = 0
+
+// The drawing draws itself once, on the very first launch (and again when re-armed, e.g. for a screenshot).
+const DRAWN_KEY = 'gk.drawn'
+let drawPending = (() => {
+  try {
+    return localStorage.getItem(DRAWN_KEY) !== '1'
+  } catch {
+    return false
+  }
+})()
+export function armDrawIn(): void {
+  drawPending = true
+}
+export function skipDrawIn(): void {
+  drawPending = false
+}
+function takeDrawIn(): boolean {
+  if (!drawPending) return false
+  drawPending = false
+  try {
+    localStorage.setItem(DRAWN_KEY, '1')
+  } catch {
+    // fine: it may draw again next time
+  }
+  return true
+}
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 
 function useSvgScale(ref: React.RefObject<SVGSVGElement | null>, vbW: number, vbH: number): number {
@@ -76,7 +102,7 @@ export function normalizeRect(surface: Surface, r: Rect): Rect {
 
 // ---------------------------------------------------------------- static drawing
 
-const Chassis = React.memo(function Chassis({ layout, pxUnit }: { layout: Layout; pxUnit: number }): React.JSX.Element {
+const Chassis = React.memo(function Chassis({ layout, pxUnit, drawIn }: { layout: Layout; pxUnit: number; drawIn: boolean }): React.JSX.Element {
   const { spec, surfaces, corner } = layout
   const base = surfaces.base
   const lid = surfaces.lid
@@ -171,7 +197,7 @@ const Chassis = React.memo(function Chassis({ layout, pxUnit }: { layout: Layout
   }
 
   return (
-    <g className="chassis">
+    <g className={drawIn ? 'chassis drawing' : 'chassis'}>
       <defs>
         {/* Speaker perforation on a hex offset, not a square grid. */}
         <pattern id="grille-hex" width={3.6} height={6.24} patternUnits="userSpaceOnUse">
@@ -180,8 +206,8 @@ const Chassis = React.memo(function Chassis({ layout, pxUnit }: { layout: Layout
         </pattern>
       </defs>
 
-      <path d={lidD} className="contour" fill="var(--bg-sunken)" />
-      <path d={displayD} className="detail" />
+      <path d={lidD} className="contour draw" pathLength={1} fill="var(--bg-sunken)" />
+      <path d={displayD} className="detail draw" pathLength={1} />
       <path d={`M ${camX} ${camY} h ${camW} v 5 q 0 5 -5 5 h ${-(camW - 10)} q -5 0 -5 -5 Z`} className="detail" fill="var(--bg-sunken)" />
       <circle cx={camX + camW / 2} cy={camY + 5} r={1.8} className="detail" />
       {/* ambient light sensor, beside the camera */}
@@ -193,7 +219,7 @@ const Chassis = React.memo(function Chassis({ layout, pxUnit }: { layout: Layout
       {/* hinge: a solid line between the two barrels */}
       <line x1={base.x + corner + 12} x2={base.x + base.w - corner - 12} y1={layout.hingeY} y2={layout.hingeY} className="detail" />
 
-      <path d={baseD} className="contour" fill="var(--bg)" />
+      <path d={baseD} className="contour draw" pathLength={1} fill="var(--bg)" />
 
       {spec.grilles?.map((g, i) => {
         const r = toSvg(layout, 'base', g)
@@ -203,7 +229,7 @@ const Chassis = React.memo(function Chassis({ layout, pxUnit }: { layout: Layout
       <rect x={kbWell.x} y={kbWell.y} width={kbWell.w} height={kbWell.h} rx={6} className="detail" />
       <g className="keys">
         {keys.map((k, i) => (
-          <rect key={i} x={k.x} y={k.y} width={k.w} height={k.h} rx={2.4} />
+          <rect key={i} x={k.x} y={k.y} width={k.w} height={k.h} rx={2.4} style={drawIn ? ({ '--i': i } as React.CSSProperties) : undefined} />
         ))}
         <rect x={touchId.x} y={touchId.y} width={touchId.w} height={touchId.h} rx={2.4} />
       </g>
@@ -288,6 +314,7 @@ export function LaptopMap({
   overlay
 }: LaptopMapProps): React.JSX.Element {
   const layout = React.useMemo(() => layoutFor(family), [family])
+  const [drawIn] = React.useState(takeDrawIn)
   const svgRef = React.useRef<SVGSVGElement>(null)
   const pxUnit = useSvgScale(svgRef, layout.vbW, layout.vbH)
   const reduce = useReducedMotion()
@@ -446,7 +473,7 @@ export function LaptopMap({
     <svg
       ref={svgRef}
       viewBox={`0 0 ${layout.vbW} ${layout.vbH}`}
-      className={cn('laptop-map block h-full w-full overflow-visible', className)}
+      className={cn('laptop-map block h-full w-full overflow-visible', drawIn && 'drawing-in', className)}
       preserveAspectRatio="xMidYMid meet"
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
@@ -455,7 +482,7 @@ export function LaptopMap({
       role="group"
       aria-label="Top-down drawing of your MacBook with its zones"
     >
-      <Chassis layout={layout} pxUnit={pxUnit} />
+      <Chassis layout={layout} pxUnit={pxUnit} drawIn={drawIn} />
 
       {zones.map((zone, index) => {
         const nr = normalizeRect(zone.surface, zone.rect)

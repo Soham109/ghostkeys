@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
 import type { Library } from '../shared/library'
 import type { AppMessage, DaemonMessage } from '../shared/protocol'
-import type { AppInfo, AppPrefs, ConnState, DaemonState, GhostkeysBridge, HudPayload } from '../shared/ipc'
+import type { AppInfo, AppPrefs, ConnState, DaemonState, GhostkeysBridge, HudPayload, MenuCommand } from '../shared/ipc'
 
 function on<T>(channel: string, cb: (v: T) => void): () => void {
   const listener = (_e: IpcRendererEvent, v: T): void => cb(v)
@@ -23,6 +23,9 @@ const bridge: GhostkeysBridge = {
   reconnect: () => ipcRenderer.send('daemon-reconnect'),
   setLicense: (key) => ipcRenderer.invoke('set-license', key) as ReturnType<GhostkeysBridge['setLicense']>,
   pricing: () => ipcRenderer.invoke('pricing') as Promise<unknown>,
+  appIcon: (bundleId) => ipcRenderer.invoke('app-icon', bundleId) as Promise<string | null>,
+  contextMenu: (items) => ipcRenderer.invoke('context-menu', items) as Promise<string | null>,
+  onMenu: (cb) => on<MenuCommand>('menu', cb),
   approve: (actions, context) => ipcRenderer.invoke('approve', actions, context) as Promise<(string | null)[] | null>
 }
 

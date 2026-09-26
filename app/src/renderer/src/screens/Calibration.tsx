@@ -617,7 +617,7 @@ export function CalibrationScreen(): React.JSX.Element {
   return (
     <>
       <PageHeader title="Calibration" actions={<Stepper step={step} />} />
-      <div className="flex min-h-0 flex-1 flex-col shadow-[0_-1px_0_var(--hairline)]">
+      <div className="flex min-h-0 flex-1 flex-col">
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={step === 'training' ? 'results' : step}

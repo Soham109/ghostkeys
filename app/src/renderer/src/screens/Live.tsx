@@ -93,12 +93,13 @@ function FeedRow({ item, config, now }: { item: FeedItem; config: Config; now: n
   const idx = g.gesture === 'sequence' ? null : zoneNumber(config, g.zone)
   const seq = g.gesture === 'sequence' ? (g.zones ?? []).map((z) => String(zoneNumber(config, z) ?? 0).padStart(2, '0')).join('→') : null
   return (
+    // The row grows from 0 to 32pt while it fades in, so the rows below are pushed down, never overlapped.
     <motion.li
-      layout="position"
-      initial={{ opacity: 0, y: -8 }}
-      animate={{ opacity: 1, y: 0 }}
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: 32 }}
+      exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
-      className="flex h-8 items-center gap-2.5 px-4 shadow-[0_1px_0_var(--hairline)]"
+      className="flex items-center gap-2.5 overflow-hidden px-4 shadow-[0_1px_0_var(--hairline)]"
       title={`${g.gesture === 'sequence' ? 'Sequence' : zoneless ? '' : (config.zones.find((z) => z.id === g.zone)?.name ?? '')}${g.app ? ` in ${appName(g.app)}` : ''}`}
     >
       {seq ? (
@@ -220,7 +221,7 @@ export function LiveScreen(): React.JSX.Element {
     <>
       <PageHeader title="Live" subtitle={line} />
       <Notices />
-      <div className="flex min-h-0 flex-1 shadow-[0_-1px_0_var(--hairline)]">
+      <div className="flex min-h-0 flex-1">
         <div className="relative flex min-w-0 flex-1 flex-col">
           <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(60% 55% at 50% 45%, var(--light-behind), transparent 70%)' }} />
           <div className="relative min-h-0 flex-1 px-8 pt-6 pb-2">

@@ -37,7 +37,27 @@ export interface AppPrefs {
   showWindowOnLaunch: boolean
   /** Offline license key (see shared/license.ts). */
   licenseKey?: string | null
+  /** A soft tick when a tap is felt. Off by default. */
+  tapSound?: boolean
 }
+
+export interface ContextItem {
+  id?: string
+  label?: string
+  type?: 'separator'
+  enabled?: boolean
+  accelerator?: string
+}
+
+/** Commands from the native menu bar, handled by the window. */
+export type MenuCommand =
+  | 'new-binding'
+  | 'save'
+  | 'palette'
+  | 'library'
+  | 'tour'
+  | 'pause-toggle'
+  | `go:${string}`
 
 export interface HudPayload {
   id: number
@@ -67,4 +87,9 @@ export interface GhostkeysBridge {
   setLicense(key: string | null): Promise<{ license: LicenseState; error: string | null }>
   /** docs/pricing/features.json, copied into the app at build time. */
   pricing(): Promise<unknown>
+  /** The app's icon as a data URL (NSWorkspace, via app.getFileIcon), or null. */
+  appIcon(bundleId: string): Promise<string | null>
+  /** Shows a native context menu at the pointer; resolves to the chosen item's id. */
+  contextMenu(items: ContextItem[]): Promise<string | null>
+  onMenu(cb: (cmd: MenuCommand) => void): () => void
 }

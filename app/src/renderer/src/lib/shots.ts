@@ -2,7 +2,8 @@
 import { useStore } from './store'
 import { client } from './client'
 import { useWizard } from '@/screens/Calibration'
-import type { Binding, TapMsg } from '@shared/protocol'
+import type { Binding, GestureMsg, TapMsg } from '@shared/protocol'
+import { armDrawIn, skipDrawIn } from '@/components/laptop/LaptopMap'
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 
@@ -269,6 +270,21 @@ const SHOTS: Record<string, () => Promise<void>> = {
     document.querySelector('[aria-label="License"]')?.scrollIntoView({ block: 'start' })
     await sleep(300)
   },
+  'live-feed-enter': async () => {
+    useStore.getState().navigate('live')
+    await waitFor(() => useStore.getState().feed.length >= 6, 8000)
+    await sleep(900)
+    // A new gesture arrives; the capture lands mid-animation (see screenshots.ts).
+    const g: GestureMsg = { type: 'gesture', t: dnow(), gesture: 'triple', zone: 'left-palm', zones: ['left-palm'], modifiers: [], confidence: 0.95, app: null }
+    client.inject(g)
+  },
+  'first-launch-draw': async () => {
+    useStore.getState().navigate('sensors')
+    await sleep(200)
+    armDrawIn()
+    useStore.getState().navigate('live')
+    await sleep(560)
+  },
   'command-palette': async () => {
     useStore.getState().navigate('live')
     await sleep(300)
@@ -282,6 +298,7 @@ const SHOTS: Record<string, () => Promise<void>> = {
 }
 
 export function installShots(): void {
+  skipDrawIn()
   window.__gk = {
     summary: () => {
       const s = useStore.getState()

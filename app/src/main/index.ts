@@ -7,6 +7,7 @@ import { DaemonSupervisor } from './daemon'
 import { DaemonBridge } from './bridge'
 import { runScreenshots } from './screenshots'
 import { runSelfTest } from './selftest'
+import { registerNativeIpc } from './native'
 import { loadLibrary } from './library'
 import { DEFAULT_PORT, GESTURE_LABEL, ZONELESS_GESTURES, type AppMessage, type DaemonMessage, type SimpleAction } from '@shared/protocol'
 import { APPROVAL_KINDS, approvalPayload, approvalText } from '@shared/approval'
@@ -444,6 +445,7 @@ if (!gotLock) {
   void app.whenReady().then(async () => {
     prefs = loadPrefs()
     nativeTheme.themeSource = prefs.theme
+    registerNativeIpc(() => mainWindow)
     if (SCREENSHOT) app.dock?.hide()
     if (process.platform === 'darwin' && !app.isPackaged && !SCREENSHOT) {
       app.dock?.setIcon(join(RES_DIR, 'icon.png'))

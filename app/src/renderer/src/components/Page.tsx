@@ -53,3 +53,17 @@ export function Empty({ title, children, action }: { title: string; children?: R
     </div>
   )
 }
+
+/** A scrolling body whose top hairline appears only once content scrolls under the header (like Mail and Notes). */
+export const ScrollBody = React.forwardRef<HTMLDivElement, { className?: string; children: React.ReactNode }>(function ScrollBody({ className, children }, ref) {
+  const [scrolled, setScrolled] = React.useState(false)
+  return (
+    <div
+      ref={ref}
+      onScroll={(e) => setScrolled(e.currentTarget.scrollTop > 0)}
+      className={cn('min-h-0 flex-1 overflow-y-auto transition-shadow duration-150', scrolled ? 'shadow-[inset_0_1px_0_var(--hairline)]' : 'shadow-none', className)}
+    >
+      {children}
+    </div>
+  )
+})
