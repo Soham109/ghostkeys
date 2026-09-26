@@ -31,6 +31,8 @@ final class SessionCoordinator {
     private let soundTimer: SessionTimer
     private let airTimer: SessionTimer
     private var soundError: String?
+    /// The mic session serves either kind: "sonar" is the sound session with SonarField (stereo tones) on.
+    private var micKind: SessionTimer.Kind = .sound
     private var airError: String?
 
     // Recent IMU taps: knuckle gestures take the zone of the tap they came from; desk touches need IMU contact.
@@ -56,12 +58,12 @@ final class SessionCoordinator {
         soundTimer = SessionTimer(kind: .sound, queue: queue)
         airTimer = SessionTimer(kind: .air, queue: queue)
 
-        soundTimer.onExpire = { [weak self] in self?.stopSound(reason: "timeout") }
+        soundTimer.onExpire = { [weak self] in self?.stopMic(reason: "timeout") }
         airTimer.onExpire = { [weak self] in self?.stopAir(reason: "timeout") }
         soundTimer.onTick = { [weak self] left in
             guard let self else { return }
             self.sound.tick()
-            if left % 5 == 0 { self.report(.sound) }
+            if left % 5 == 0 { self.report(self.micKind) }
         }
         airTimer.onTick = { [weak self] left in
             guard let self else { return }
@@ -74,6 +76,10 @@ final class SessionCoordinator {
         sound.onGesture = { [weak self] g in self?.soundGesture(g) }
         sound.onTapType = { [weak self] onset, type in self?.tapTypeArrived(onset: onset, type: type) }
         sound.onCalibrationSample = { [weak self] label, ok in self?.tapCalibrationSample(label: label, captured: ok) }
+        sound.onAir = { [weak self] m in
+            guard let self, self.sound.running else { return }
+            self.host?.deliverAir(m)
+        }
         air.onOutput = { [weak self] o in self?.airOutput(o) }
         air.onStopped = { [weak self] reason in
             guard let self, self.airTimer.active else { return }
@@ -94,10 +100,11 @@ final class SessionCoordinator {
         guard !host.isPaused else { return fail(.sound, "paused", client) }
         let cfg = host.currentConfig
         let seconds = clampSeconds(requested ?? cfg.settings.sound.sessionSeconds)
-        if sound.running {                        // extend
+        if sound.running {                        // extend (a sonar session already does everything sound does)
             soundTimer.begin(seconds: seconds, reason: soundTimer.reason ?? "request")
-            return report(.sound)
+            return report(micKind)
         }
+        micKind = .sound
         let wantSonar = cfg.hasBinding(for: Config.waveGestures)
         if let err = sound.start(wantSonar: wantSonar, userInitiated: client != nil) {
             soundError = err
@@ -108,14 +115,51 @@ final class SessionCoordinator {
         report(.sound)
     }
 
-    func stopSound(reason: String) {
+    /// Stops the mic session whichever kind it is.
+    func stopMic(reason: String) {
+        if micKind == .sonar { stopSonar(reason: reason) } else { stopSound(reason: reason) }
+    }
+
+    // MARK: Sonar (SonarField: stereo pilots on the built-in speakers)
+
+    func startSonar(seconds requested: Double?, client: WebSocketServer.Client?) {
+        guard let host else { return }
+        guard !host.isPaused else { return fail(.sonar, "paused", client) }
+        let cfg = host.currentConfig
+        // The tones never play unless the user turned sonar on in settings, even when the app asks.
+        guard cfg.settings.sonar.enabled else { return fail(.sonar, "sonar is off (settings.sonar.enabled)", client) }
+        let seconds = clampSeconds(requested ?? cfg.settings.sonar.sessionSeconds)
+        if sound.running && micKind == .sonar {
+            soundTimer.begin(seconds: seconds, reason: soundTimer.reason ?? "request")
+            return report(.sonar)
+        }
+        if sound.running { stopSound(reason: "switched_to_sonar") }     // restart the mic session in sonar mode
+        if let err = sound.start(wantSonar: false, userInitiated: client != nil, sonarField: true) {
+            return fail(.sonar, err, client)
+        }
+        micKind = .sonar
+        soundTimer.begin(seconds: seconds, reason: client != nil ? "request" : "auto")
+        report(.sonar)
+    }
+
+    func stopSonar(reason: String) {
+        guard micKind == .sonar, soundTimer.active || sound.running else { return }
+        stopSound(reason: reason, kind: .sonar)
+        micKind = .sound
+    }
+
+    /// Typing and IMU motion: hold SonarField detection off (no-op unless a sonar session runs).
+    func suppressSonar(until: Double) { sound.suppressSonar(until: until) }
+
+    func stopSound(reason: String, kind: SessionTimer.Kind? = nil) {
+        if kind == nil && micKind == .sonar { return stopSonar(reason: reason) }
         guard soundTimer.active || sound.running else { return }
         if tapCal != nil { cancelTapCalibration(reason: "sound session ended (\(reason))") }
         sound.stop()
         soundTimer.end()
         flushHeldTaps()
         releaseAllHeldGestures()
-        report(.sound, reason: reason)
+        report(kind ?? .sound, reason: reason)
     }
 
     func startAir(seconds requested: Double?, camera: String?, client: WebSocketServer.Client?) {
@@ -159,12 +203,12 @@ final class SessionCoordinator {
     }
 
     func stopAll(reason: String) {
-        stopSound(reason: reason)
+        stopMic(reason: reason)
         stopAir(reason: reason)
     }
 
     /// Current state of both sessions, for a newly connected client.
-    func stateMessages() -> [[String: Any]] { [message(.sound, reason: nil), message(.air, reason: nil)] }
+    func stateMessages() -> [[String: Any]] { [message(.sound, reason: nil), message(.sonar, reason: nil), message(.air, reason: nil)] }
 
     // MARK: Automatic sessions (pinned apps)
 
@@ -172,12 +216,16 @@ final class SessionCoordinator {
         guard let host, !host.isPaused else { return }
         let cfg = host.currentConfig
         // Leaving a pinned app ends the automatic session it started.
-        if soundTimer.isAuto || soundTimer.reason == "auto" { stopSound(reason: "app_changed") }
+        if soundTimer.isAuto || soundTimer.reason == "auto" { stopMic(reason: "app_changed") }
         if airTimer.isAuto || airTimer.reason == "auto" { stopAir(reason: "app_changed") }
         guard let id = bundleID else { return }
         if cfg.settings.sound.enabled, cfg.settings.sound.autoApps.contains(id),
            cfg.hasBinding(for: Config.soundGestures, app: id), !sound.running {
             startSound(seconds: nil, client: nil)
+        }
+        if cfg.settings.sonar.enabled, cfg.settings.sonar.autoApps.contains(id),
+           cfg.hasBinding(for: Config.sonarGestures, app: id), !(sound.running && micKind == .sonar) {
+            startSonar(seconds: nil, client: nil)
         }
         if cfg.settings.camera.enabled, cfg.settings.camera.autoApps.contains(id),
            cfg.hasBinding(for: Config.cameraGestures, app: id), !air.running {
@@ -337,11 +385,22 @@ final class SessionCoordinator {
             return
         }
         var zone: String?
-        if g.name == "knock_knuckle" {
-            zone = recentTaps.min { abs($0.t - g.time) < abs($1.t - g.time) }.flatMap { abs($0.t - g.time) < 0.1 ? $0.zone : nil }
-        }
         var extra = g.extra
         extra["source"] = "sound"
+        if g.name == "knock_knuckle" {
+            zone = recentTaps.min { abs($0.t - g.time) < abs($1.t - g.time) }.flatMap { abs($0.t - g.time) < 0.1 ? $0.zone : nil }
+        } else if Config.sonarGestures.contains(g.name) {
+            extra["source"] = "sonar"
+            if g.name.hasPrefix("finger_slide") {
+                // Finger slides happen on the surface: the grille on that side (if the Mac has one).
+                if let side = g.extra["side"] as? String {
+                    let grille = "\(side)-grille"
+                    zone = host.currentConfig.zones.contains { $0.id == grille } ? grille : nil
+                }
+            } else {
+                zone = "air"      // push, pull, sweeps: in the air above the keyboard
+            }
+        }
         host.deliverGesture(name: g.name, t: g.time, zone: zone, confidence: g.confidence, extra: extra)
     }
 
@@ -364,14 +423,19 @@ final class SessionCoordinator {
     private func clampSeconds(_ s: Double) -> Double { max(1, min(Self.maxSeconds, s.isFinite ? s : 30)) }
 
     private func message(_ kind: SessionTimer.Kind, reason: String?) -> [String: Any] {
-        let timer = kind == .sound ? soundTimer : airTimer
-        let simulated = kind == .sound ? sound.simulate : air.simulate
-        var m: [String: Any] = ["type": "session", "kind": kind.rawValue, "active": timer.active,
-                                "secondsLeft": timer.secondsLeft]
+        let isMic = kind != .air
+        let timer = isMic ? soundTimer : airTimer
+        let simulated = isMic ? sound.simulate : air.simulate
+        // The mic timer belongs to whichever kind (sound or sonar) is running.
+        let active = timer.active && (!isMic || micKind == kind)
+        var m: [String: Any] = ["type": "session", "kind": kind.rawValue, "active": active,
+                                "secondsLeft": active ? timer.secondsLeft : 0]
         if simulated { m["simulated"] = true }
         if let reason { m["reason"] = reason }
-        if timer.active { m["trigger"] = timer.reason ?? "request" }
-        if kind == .sound && timer.active { m["sonar"] = sound.sonarOn; m["tapTypes"] = sound.tapTypesOn }
+        if active { m["trigger"] = timer.reason ?? "request" }
+        if isMic && active {
+            m["sonar"] = sound.sonarOn; m["tapTypes"] = sound.tapTypesOn; m["sonarField"] = sound.sonarFieldOn
+        }
         return m
     }
 
@@ -410,5 +474,14 @@ extension SessionCoordinator {
         if phase == "began" {
             airOutput(.gesture(name: "pinch_hold", t: t, confidence: 0.9, extra: ["hand": "right", "x": 0.5, "y": 0.5]))
         }
+    }
+}
+
+extension SessionCoordinator {
+    /// Test hooks (simulated sessions only): SonarField output as if the processor had produced it.
+    func simulateSonar(gesture: String?, air: [String: Any]?, side: String?, distanceMm: Double?) {
+        guard sound.simulate, sound.running, micKind == .sonar else { return }
+        if let gesture { sound.simulate(gesture: gesture, side: side, distanceMm: distanceMm) }
+        if let air { sound.simulate(air: air) }
     }
 }

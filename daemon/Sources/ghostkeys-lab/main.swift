@@ -15,6 +15,8 @@ ghostkeys-lab: collect real tap data and measure detection accuracy
   export  FILE.gkrec --csv DIR
   live    [--seconds N] [--model model.json] [--sensitivity 0.5] [--no-lab-onsets]
   synth   --out FILE.gkrec [--zones ..] [--reps 20] [--negatives 45] [--rest 20] [--seed 7] [--noise 0.0015] [--hz 797]
+  sonar-bench [--seconds 15]   one-time check of the stereo sonar on this Mac: plays two inaudible tones on the
+                               built-in speakers and records the mic, only after you type the consent phrase
 """
 
 let argv = Array(CommandLine.arguments.dropFirst())
@@ -31,6 +33,7 @@ do {
     case "export": try runExport(args)
     case "live": try runLive(args)
     case "synth": try runSynth(args)
+    case "sonar-bench": try runSonarBench(args)
     default:
         print("unknown command \(cmd)\n\n\(usage)")
         exit(1)

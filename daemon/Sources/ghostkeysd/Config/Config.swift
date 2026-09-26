@@ -41,6 +41,16 @@ struct KnobSpec: Codable, Equatable, Sendable {
     var stepFraction: Double { max(1, stepPx) / (axis == "y" ? 480 : 640) }
 }
 
+/// Slider mode for continuous sonar gestures (`hover_level`, `finger_slide`): the action fires once per `stepMm` of
+/// hand (or finger) travel. `relative`: every step of movement counts, like a knob (up = `action`, down = `inverse`).
+/// `absolute`: the output follows the position since the gesture began, so moving back to the start undoes the
+/// steps, and a gesture that ends cancelled (typing, interference) is undone.
+struct SliderSpec: Codable, Equatable, Sendable {
+    var mode: String          // "absolute" | "relative"
+    var stepMm: Double
+    var inverse: JSONValue?
+}
+
 struct Binding: Codable, Equatable, Sendable {
     var id: String
     var enabled: Bool
@@ -52,6 +62,7 @@ struct Binding: Codable, Equatable, Sendable {
     var action: JSONValue
     var label: String?
     var knob: KnobSpec?
+    var slider: SliderSpec?
 
     init(id: String, enabled: Bool, gesture: String, zone: String?, zones: [String]? = nil, modifiers: [String] = [],
          app: String = "*", action: JSONValue, label: String?) {
@@ -72,6 +83,10 @@ struct Binding: Codable, Equatable, Sendable {
         action = try c.decodeIfPresent(JSONValue.self, forKey: .action) ?? .object([:])
         label = try c.decodeIfPresent(String.self, forKey: .label)
         knob = try c.decodeIfPresent(KnobSpec.self, forKey: .knob)
+        slider = try c.decodeIfPresent(SliderSpec.self, forKey: .slider)
+        if let s = slider, !["absolute", "relative"].contains(s.mode) || !s.stepMm.isFinite || s.stepMm < 1 {
+            throw DecodingError.dataCorruptedError(forKey: .slider, in: c, debugDescription: "slider needs mode absolute|relative and stepMm >= 1")
+        }
         if let k = knob, !["x", "y"].contains(k.axis) || !k.stepPx.isFinite || k.stepPx <= 0 {
             throw DecodingError.dataCorruptedError(forKey: .knob, in: c, debugDescription: "knob needs axis x|y and stepPx > 0")
         }
@@ -89,9 +104,10 @@ struct Binding: Codable, Equatable, Sendable {
         try c.encode(action, forKey: .action)
         try c.encode(label, forKey: .label)
         try c.encodeIfPresent(knob, forKey: .knob)
+        try c.encodeIfPresent(slider, forKey: .slider)
     }
 
-    private enum CodingKeys: String, CodingKey { case id, enabled, gesture, zone, zones, modifiers, app, action, label, knob }
+    private enum CodingKeys: String, CodingKey { case id, enabled, gesture, zone, zones, modifiers, app, action, label, knob, slider }
 }
 
 /// Optional sound mode (GhostkeysAcoustics). Off by default; the mic opens only in short sessions.
@@ -99,6 +115,23 @@ struct SoundSettings: Codable, Equatable, Sendable {
     var enabled = false
     var sessionSeconds = 30.0
     /// Bundle ids where a session starts by itself when the app comes to the front (needs a sound binding too).
+    var autoApps: [String] = []
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        sessionSeconds = try c.decodeIfPresent(Double.self, forKey: .sessionSeconds) ?? 30
+        autoApps = try c.decodeIfPresent([String].self, forKey: .autoApps) ?? []
+    }
+    private enum CodingKeys: String, CodingKey { case enabled, sessionSeconds, autoApps }
+}
+
+/// Optional stereo sonar (GhostkeysAcoustics SonarField): two inaudible tones on the built-in speakers plus the mic.
+/// Off by default; the tones never play unless this is enabled.
+struct SonarSettings: Codable, Equatable, Sendable {
+    var enabled = false
+    var sessionSeconds = 30.0
     var autoApps: [String] = []
 
     init() {}
@@ -141,6 +174,7 @@ struct AppSettings: Codable, Equatable, Sendable {
     var haptics = false
     var sound = SoundSettings()
     var camera = CameraSettings()
+    var sonar = SonarSettings()
 
     init() {}
 
@@ -156,9 +190,10 @@ struct AppSettings: Codable, Equatable, Sendable {
         haptics = try c.decodeIfPresent(Bool.self, forKey: .haptics) ?? d.haptics
         sound = try c.decodeIfPresent(SoundSettings.self, forKey: .sound) ?? SoundSettings()
         camera = try c.decodeIfPresent(CameraSettings.self, forKey: .camera) ?? CameraSettings()
+        sonar = try c.decodeIfPresent(SonarSettings.self, forKey: .sonar) ?? SonarSettings()
     }
 
-    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, hud, haptics, sound, camera }
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, hud, haptics, sound, camera, sonar }
 
     var detection: DetectionSettings {
         var s = DetectionSettings()
@@ -193,6 +228,10 @@ struct Config: Codable, Equatable, Sendable {
 
     static let soundGestures: Set<String> = ["knock_knuckle", "rub", "rub_left", "rub_right", "wave_toward", "wave_away", "wave_sweep"]
     static let waveGestures: Set<String> = ["wave_toward", "wave_away", "wave_sweep"]
+    /// SonarField gestures (discrete ones, plus the continuous hover_level / finger_slide that `slider` bindings use).
+    static let sonarGestures: Set<String> = ["push", "pull", "sweep_left", "sweep_right", "finger_slide_left",
+                                             "finger_slide_right", "finger_slide_up", "finger_slide_down",
+                                             "hover_level", "finger_slide"]
     static let cameraGestures: Set<String> = ["air_tap", "pinch_hold", "pinch_drag_left", "pinch_drag_right", "pinch_drag_up",
                                               "pinch_drag_down", "palm_swipe_left", "palm_swipe_right", "circle_cw", "circle_ccw"]
 

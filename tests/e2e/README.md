@@ -36,6 +36,8 @@ the machine, not to a config.
 | `{ "type": "sim_tap", "zone": "right-grille" }` | an accepted IMU tap and its `tap` gesture (bindings, limiter, knuckle hold) |
 | `{ "type": "sim_tap_type", "tapType": "knuckle" }` | the sound classifier's verdict for the last held tap |
 | `{ "type": "sim_air", "phase": "began", "dx": 0.05, "dy": 0 }` | a `pinch_hold` event from the camera (knob bindings) |
+| `{ "type": "sim_sonar", "gesture": "push", "side": "left" }` | a SonarField gesture (needs a running `sonar` session, which needs `settings.sonar.enabled`) |
+| `{ "type": "sim_sonar", "air": { "gesture": "hover_level", "phase": "changed", "displacementMm": 40 } }` | a continuous sonar value (slider bindings) |
 
 With these, a full zone calibration (`calibration_start`, `calibration_zone`, a few `sim_spike` with `live: true`,
 `calibration_finish`), recommendations, merges and the feedback loop can all be exercised without anyone touching

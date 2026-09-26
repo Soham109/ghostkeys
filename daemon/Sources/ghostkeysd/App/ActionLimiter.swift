@@ -11,7 +11,7 @@ struct ActionLimiter {
     static let slowGestureCooldown = 1.5
     static let slowGestures: Set<String> = ["cover", "cover_hold", "lid_nudge", "tilt_left", "tilt_right",
                                             "rub", "rub_left", "rub_right", "wave_toward", "wave_away", "wave_sweep",
-                                            "palm_swipe_left", "palm_swipe_right"]
+                                            "palm_swipe_left", "palm_swipe_right", "sweep_left", "sweep_right", "push", "pull"]
     static let perSecond = 5
     static let perMinute = 60
 

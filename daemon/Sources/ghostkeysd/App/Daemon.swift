@@ -27,6 +27,11 @@ final class Daemon: @unchecked Sendable {
     private var sessions: SessionCoordinator!
     /// pinch_hold knob in progress: the binding and the travel accumulated since the last step.
     private var knob: (binding: Binding, spec: KnobSpec, travel: Double)?
+    /// hover_level / finger_slide slider in progress (see SliderSpec).
+    private struct SliderState { var binding: Binding; var spec: SliderSpec; var gesture: String; var applied = 0
+                                 var travel = 0.0; var last = 0.0 }
+    private var slider: SliderState?
+    private var lastSonarSuppress = 0.0
     private lazy var catalog: Any = (try? JSONSerialization.jsonObject(with: Data(IntegrationCatalog.json.utf8))) ?? [:]
 
     private var config: Config
@@ -161,6 +166,15 @@ final class Daemon: @unchecked Sendable {
                                    secondsSinceKeyUp: snap.keyUp, secondsSinceModifierChange: snap.modifierChange)
 
         diag.record(s, sinceKey: snap.key, sinceMouse: snap.mouse, modifiers: snap.modifiers)
+        // SonarField: typing (the typing gate) and laptop motion or bumps (|a| away from 1 g, or any rotation) make
+        // Doppler and phase noise; keep sonar detection off for 0.45 s after each.
+        let aMag = (s.a * s.a).sum().squareRoot(), gMag = (s.g * s.g).sum().squareRoot()
+        if snap.key * 1000 < config.settings.typingGateMs || snap.keyUp < 0.15 || abs(aMag - 1) > 0.05 || gMag > 15 {
+            if s.t - lastSonarSuppress > 0.05 {
+                lastSonarSuppress = s.t
+                sessions.suppressSonar(until: s.t + 0.45)
+            }
+        }
         // Shadow pass first: every onset that survives the motion gate becomes a classified candidate.
         var fresh: [SeenCandidate] = []
         let shadowCtx = InputContext(secondsSinceKey: snap.key, secondsSinceMouse: snap.mouse, modifiers: snap.modifiers,
@@ -277,6 +291,11 @@ final class Daemon: @unchecked Sendable {
             knob = (binding, spec, 0)
             return
         }
+        // A continuous sonar gesture with a slider fires per step of travel (see onAir), not when it begins.
+        if let spec = binding.slider, g.gesture == "hover_level" || g.gesture == "finger_slide" {
+            slider = SliderState(binding: binding, spec: spec, gesture: g.gesture)
+            return
+        }
         switch limiter.admit(bindingId: binding.id, gesture: g.gesture, now: Clock.now()) {
         case .ok: break
         case .cooldown:
@@ -292,8 +311,75 @@ final class Daemon: @unchecked Sendable {
     }
 
     /// Continuous camera messages: forwarded to `air` subscribers and, for pinch_hold, drive an active knob.
+    /// One step of a knob or slider: runs `action` (positive) or `inverse`, through the knob limiter (never pauses).
+    @discardableResult
+    private func fireStep(_ b: Binding, positive: Bool, inverse: JSONValue?) -> Bool {
+        guard let action = positive ? b.action : inverse else { return false }
+        let id = b.id + (positive ? "" : "#inverse")
+        guard limiter.admitKnobStep(bindingId: id, now: Clock.now()) else { return false }
+        runAction(action, bindingId: id, label: (b.label ?? b.id) + (positive ? " +" : " -"), t: Clock.now(), maxAge: 0.3)
+        return true
+    }
+
+    /// hover_level / finger_slide: start a slider at `began` (through the normal gesture path, so bindings, app and
+    /// modifiers resolve as usual), then step it on every change.
+    private func onSliderAir(_ msg: [String: Any], gesture: String, phase: String) {
+        if phase == "began" {
+            slider = nil
+            var zone: String? = "air"
+            if gesture == "finger_slide", let side = msg["side"] as? String {
+                zone = config.zones.contains { $0.id == "\(side)-grille" } ? "\(side)-grille" : nil
+            }
+            var extra: [String: Any] = ["source": "sonar"]
+            if let side = msg["side"] { extra["side"] = side }
+            let t = (msg["t"] as? Double).map { Clock.start + $0 / 1000 } ?? Clock.now()
+            onGesture(GestureEvent(t: t, gesture: gesture, zone: zone, zones: zone.map { [$0] } ?? [],
+                                   modifiers: InputMonitor.currentModifiers(), confidence: msg["confidence"] as? Double ?? 0.9),
+                      extra: extra)
+            return
+        }
+        guard var s = slider, s.gesture == gesture else { return }
+        // Hover: displacement since began (positive = hand raised). Finger slide: dyMm (positive = toward the hinge).
+        let measure = gesture == "hover_level" ? (msg["displacementMm"] as? Double ?? 0) : (msg["dyMm"] as? Double ?? 0)
+        if phase == "ended" {
+            // absolute mode: a cancelled gesture (typing, interference) was not meant, so undo what it did.
+            if s.spec.mode == "absolute", (msg["cancelled"] as? Bool) == true, s.applied != 0, !paused {
+                let undoPositive = s.applied < 0
+                for _ in 0..<min(abs(s.applied), 16) { fireStep(s.binding, positive: undoPositive, inverse: s.spec.inverse) }
+            }
+            slider = nil
+            return
+        }
+        guard !paused else { return }
+        let step = s.spec.stepMm
+        var fired = 0
+        if s.spec.mode == "absolute" {
+            let target = Int((measure / step).rounded(.towardZero))
+            while s.applied != target && fired < 8 {
+                let up = target > s.applied
+                if fireStep(s.binding, positive: up, inverse: s.spec.inverse) { s.applied += up ? 1 : -1 }
+                else if (up ? s.binding.action : s.spec.inverse) == nil { s.applied += up ? 1 : -1 }   // no action that way
+                else { break }                                                                             // limiter: retry later
+                fired += 1
+            }
+        } else {
+            s.travel += measure - s.last
+            while abs(s.travel) >= step && fired < 8 {
+                let up = s.travel > 0
+                s.travel -= up ? step : -step
+                fireStep(s.binding, positive: up, inverse: s.spec.inverse)
+                fired += 1
+            }
+        }
+        s.last = measure
+        slider = s
+    }
+
     private func onAir(_ msg: [String: Any]) {
         server.broadcast(msg, stream: "air")
+        if let g = msg["gesture"] as? String, g == "hover_level" || g == "finger_slide", let phase = msg["phase"] as? String {
+            return onSliderAir(msg, gesture: g, phase: phase)
+        }
         guard (msg["gesture"] as? String) == "pinch_hold", let phase = msg["phase"] as? String else { return }
         if phase == "ended" || phase == "began" && knob != nil { knob = nil; if phase == "ended" { return } }
         guard phase == "changed", var k = knob, !paused else { return }
@@ -586,6 +672,19 @@ final class Daemon: @unchecked Sendable {
             sessions.startSound(seconds: (m["seconds"] as? NSNumber)?.doubleValue, client: c)
         case "sound_session_stop":
             sessions.stopSound(reason: "requested")
+        case "sonar_session_start":
+            sessions.startSonar(seconds: (m["seconds"] as? NSNumber)?.doubleValue, client: c)
+        case "sonar_session_stop":
+            sessions.stopSonar(reason: "requested")
+        case "sim_sonar" where options.noHardwareSessions:
+            // Test-only: SonarField output. {"gesture": "push", "side": "left"} or {"air": {...air message fields...}}
+            var air = m["air"] as? [String: Any]
+            if air != nil {
+                air!["type"] = "air"; air!["source"] = "sonar"
+                if air!["t"] == nil { air!["t"] = Clock.protocolMs(Clock.now()) }
+            }
+            sessions.simulateSonar(gesture: m["gesture"] as? String, air: air, side: m["side"] as? String,
+                                   distanceMm: (m["distanceMm"] as? NSNumber)?.doubleValue)
         case "air_session_start":
             sessions.startAir(seconds: (m["seconds"] as? NSNumber)?.doubleValue, camera: m["camera"] as? String, client: c)
         case "air_session_stop":

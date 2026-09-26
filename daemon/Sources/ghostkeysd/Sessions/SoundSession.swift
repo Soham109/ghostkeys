@@ -15,6 +15,10 @@ final class SoundSession {
     private var session: AcousticSession?
     private var processor: SoundModeProcessor?
     private var pilot: PilotToneGenerator?
+    private var stereo: StereoPilotGenerator?
+    /// SonarField mode (stereo pilots, hover / push / pull / sweep / finger slides).
+    private(set) var sonarFieldOn = false
+    private var lastSuppress = 0.0
     private var lastRenew = 0.0
     private(set) var sonarOn = false
     private(set) var tapTypesOn = false
@@ -27,6 +31,8 @@ final class SoundSession {
     var onCalibrationSample: (_ label: String, _ captured: Bool) -> Void = { _, _ in }
 
     var onGesture: (Gesture) -> Void = { _ in }
+    /// Continuous SonarField values (hover_level, finger_slide), as `air` message fields.
+    var onAir: ([String: Any]) -> Void = { _ in }
     /// onset (Clock seconds) and tap type name, or nil if the sound was not classified.
     var onTapType: (_ onset: Double, _ type: String?) -> Void = { _, _ in }
 
@@ -52,11 +58,12 @@ final class SoundSession {
 
     /// Opens the microphone. `userInitiated` must be true for anything that could show the permission prompt.
     /// Returns an error message, or nil on success.
-    func start(wantSonar: Bool, userInitiated: Bool) -> String? {
+    func start(wantSonar: Bool, userInitiated: Bool, sonarField: Bool = false) -> String? {
         guard !running else { return nil }
         let classifier = (try? Data(contentsOf: tapModelURL)).flatMap { try? JSONDecoder().decode(TapTypeClassifier.self, from: $0) }
         var opts = SoundModeProcessor.Options()
-        opts.sonar = wantSonar
+        opts.sonar = wantSonar && !sonarField        // SonarField replaces the single pilot
+        opts.sonarField = sonarField
         opts.tapTypes = classifier != nil
         let proc = SoundModeProcessor(options: opts, tapClassifier: classifier)
         tapTypesOn = classifier != nil
@@ -64,6 +71,7 @@ final class SoundSession {
         if simulate {
             processor = proc
             sonarOn = wantSonar
+            sonarFieldOn = sonarField
             Log.info("sound session started (simulated: no microphone opened)")
             return nil
         }
@@ -82,7 +90,20 @@ final class SoundSession {
         session = s
         processor = proc
         sonarOn = false
-        if wantSonar {
+        sonarFieldOn = false
+        MicMarker.set(true)
+        if sonarField {
+            // The generator enforces its own limits (-30 dBFS combined, built-in speakers only, 60 s, 10 s cooldown).
+            let g = StereoPilotGenerator()
+            do {
+                try s.startStereoPilots(g)
+                stereo = g
+                sonarFieldOn = true
+                lastRenew = Clock.now()
+            } catch {
+                Log.info("sonar tones refused, running without sonar: \(error)")
+            }
+        } else if wantSonar {
             // The generator enforces its own limits (-30 dBFS, built-in speaker only, 60 s, 10 s cooldown).
             let g = PilotToneGenerator()
             do {
@@ -99,9 +120,12 @@ final class SoundSession {
     }
 
     func stop() {
-        session?.stop()           // also stops the pilot tone immediately
+        if session != nil { MicMarker.set(false) }
+        session?.stop()           // also stops the pilot tones immediately
         session = nil
         pilot = nil
+        stereo = nil
+        sonarFieldOn = false
         processor?.reset()
         processor = nil
         sonarOn = false
@@ -110,6 +134,13 @@ final class SoundSession {
 
     /// Keep the pilot tone alive in long sessions (the generator stops itself after 60 s otherwise).
     func tick() {
+        if let stereo, let session, sonarFieldOn, Clock.now() - lastRenew > 30 {
+            if stereo.renew() { lastRenew = Clock.now() } else {
+                session.stopPilotTone(immediately: true)
+                sonarFieldOn = false
+                Log.info("sonar stopped: output is no longer the built-in speakers")
+            }
+        }
         guard let pilot, let session, sonarOn, Clock.now() - lastRenew > 30 else { return }
         if pilot.renew() {
             lastRenew = Clock.now()
@@ -125,6 +156,28 @@ final class SoundSession {
         processor?.noteTapOnset(imuTime: t)
     }
 
+    /// Typing and laptop motion make Doppler and phase noise: hold SonarField detection off until `until`
+    /// (called at most every 50 ms).
+    func suppressSonar(until: Double) {
+        guard sonarFieldOn, let processor, until - lastSuppress > 0.05 else { return }
+        lastSuppress = until
+        processor.suppressSonar(until: until)
+    }
+
+    /// Test hook (simulated sessions): feed a SonarField event as if the processor had produced it.
+    func simulate(gesture name: String, side: String?, distanceMm: Double?) {
+        guard simulate, running else { return }
+        var extra: [String: Any] = [:]
+        if let side { extra["side"] = side }
+        if let distanceMm { extra["distanceMm"] = distanceMm }
+        onGesture(Gesture(name: name, time: Clock.now(), confidence: 0.9, extra: extra))
+    }
+
+    func simulate(air: [String: Any]) {
+        guard simulate, running else { return }
+        onAir(air)
+    }
+
     private func process(_ chunk: AcousticSession.Chunk) {
         guard let processor, session != nil else { return }
         let events = processor.process(chunk.samples, time: chunk.time)
@@ -135,9 +188,21 @@ final class SoundSession {
                 var extra: [String: Any] = [:]
                 if let d = g.duration { extra["duration"] = (d * 1000).rounded() / 1000 }
                 if let s = g.speedProxy { extra["speed"] = (s * 1000).rounded() / 1000 }
+                if let side = g.side { extra["side"] = side.rawValue }
+                if let mm = g.distanceMm { extra["distanceMm"] = (mm * 10).rounded() / 10 }
                 onGesture(Gesture(name: g.name, time: g.time, confidence: g.confidence, extra: extra))
             case .tapClassified(let onset, let c):
                 onTapType(onset, c.type?.rawValue)
+            case .air(let a):
+                var m: [String: Any] = ["type": "air", "t": Clock.protocolMs(a.time), "gesture": a.kind.rawValue,
+                                        "phase": a.phase.rawValue, "value": (a.value * 1000).rounded() / 1000,
+                                        "displacementMm": (a.displacementMm * 10).rounded() / 10,
+                                        "confidence": (a.confidence * 1000).rounded() / 1000, "source": "sonar"]
+                if let s = a.side { m["side"] = s.rawValue }
+                if let dx = a.dxMm { m["dxMm"] = (dx * 10).rounded() / 10 }
+                if let dy = a.dyMm { m["dyMm"] = (dy * 10).rounded() / 10 }
+                if a.cancelled { m["cancelled"] = true }
+                onAir(m)
             default:
                 break
             }
@@ -236,5 +301,21 @@ extension SoundSession {
             out[i] = 0.5 * env * y
         }
         return out
+    }
+}
+
+/// `<default daemon dir>/mic.active` exists (with the daemon's pid) while a real microphone session is open, so
+/// `ghostkeys-lab sonar-bench` can refuse to run at the same time. Removed on stop and at exit.
+enum MicMarker {
+    static var url: URL { ConfigStore.defaultDirectory.appendingPathComponent("mic.active") }
+    /// At exit: remove the marker if this process wrote it.
+    static func clearIfOurs() {
+        guard let s = try? String(contentsOf: url, encoding: .utf8),
+              Int32(s.trimmingCharacters(in: .whitespacesAndNewlines)) == getpid() else { return }
+        try? FileManager.default.removeItem(at: url)
+    }
+    static func set(_ on: Bool) {
+        if on { try? "\(getpid())\n".write(to: url, atomically: true, encoding: .utf8) }
+        else { try? FileManager.default.removeItem(at: url) }
     }
 }

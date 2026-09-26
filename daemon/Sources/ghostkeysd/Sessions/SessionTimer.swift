@@ -3,7 +3,7 @@ import Foundation
 /// Shared bookkeeping for a short hardware session (mic or camera): deadline, reason, periodic ticks.
 /// Used only on the daemon's core queue.
 final class SessionTimer {
-    enum Kind: String { case sound, air }
+    enum Kind: String { case sound, air, sonar }
 
     let kind: Kind
     private let queue: DispatchQueue

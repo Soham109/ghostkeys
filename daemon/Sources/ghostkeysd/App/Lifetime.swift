@@ -40,6 +40,7 @@ enum Lifetime {
         Log.info("\(reason); shutting down")
         SPUDriverControl.shared.restore()
         ProcessRunner.killAll()
+        MicMarker.clearIfOurs()
         exit(code)
     }
 

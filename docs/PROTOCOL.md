@@ -36,7 +36,8 @@ The daemon keeps every file it owns in one directory:
   `*.bak`).
 - Machine-wide, always in the default directory whatever `--config-dir` says (the sensors belong to the machine, not
   to a config): `daemon.lock` (one daemon or lab session on the sensors at a time) and `spu-originals.json` (sensor
-  settings to restore after a crash). A daemon started with `--simulate-sensors` (test mode: synthetic motion data,
+  settings to restore after a crash), and `mic.active` (the pid of a daemon whose microphone session is open;
+  `ghostkeys-lab sonar-bench` refuses to run while it names a live process). A daemon started with `--simulate-sensors` (test mode: synthetic motion data,
   no hardware) takes no sensor lock; it only locks its own config directory.
 - Migration: with the default location, on first start a newer daemon moves exactly those entries (only those names)
   from `~/Library/Application Support/Ghostkeys/` into `daemon/`. `token` and `daemon.lock` are recreated rather than
@@ -106,6 +107,22 @@ Optional sound mode (GhostkeysAcoustics, mic sessions only):
 | `rub` / `rub_left` / `rub_right` | fingertip rub or swipe on a palm rest or grille; left/right only when direction confidence >= 0.7 |
 | `wave_toward` / `wave_away` / `wave_sweep` | hand movement above the keyboard, via an inaudible 20 kHz pilot tone (built-in speakers only) |
 
+Optional stereo sonar (GhostkeysAcoustics SonarField, `sonar` sessions only: two inaudible tones, 19.5 kHz left and
+20.25 kHz right, -30 dBFS combined, built-in speakers only). Discrete gestures carry `side` ("left" | "right") and
+`distanceMm` where meaningful, and `source: "sonar"`:
+
+| gesture | zone | meaning |
+| --- | --- | --- |
+| `push` / `pull` | `air` | quick hand motion down toward / up away from a speaker; `side` says which |
+| `sweep_left` / `sweep_right` | `air` | hand passed across above the keyboard, right to left / left to right |
+| `finger_slide_left` / `_right` / `_up` / `_down` | the grille on that side (`left-grille` / `right-grille`), none if the Mac has no grilles | a finger slid while touching (confirmed by friction sound); up = toward the hinge |
+
+Continuous sonar values arrive as `air` messages (below): `hover_level` (a hand raised or lowered above one speaker;
+`value` = displacement / 150 mm, -1...1, positive = raised; `displacementMm` since `began`) and `finger_slide`
+(`dxMm` positive right, `dyMm` positive toward the hinge, `value` = dyMm / 40 mm). An `ended` with `cancelled: true`
+was abandoned (typing, interference, contact). The daemon holds sonar detection off for 0.45 s after every keystroke
+(the typing gate) and whenever the motion sensor feels the laptop move or get bumped.
+
 Optional camera add-on (GhostkeysVision, camera sessions only), sent with `"zone": "air"` plus `hand`, `x`, `y`:
 
 | gesture | meaning |
@@ -140,10 +157,14 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
   // tapType: "fingertip" | "knuckle" | "nail", only while a sound session with a tap-type model runs (the message may
   // then arrive up to 150 ms late, while the sound is classified).
 { "type": "air", "t": 1234.5, "gesture": "pinch_hold", "phase": "changed", "hand": "right", "x": 0.5, "y": 0.4, "dx": 0.0, "dy": -0.004, "confidence": 0.9 }
-  // "air" stream: continuous camera gestures (pinch_hold with dx/dy, two_hand_zoom with scale, point with x/y);
+  // "air" stream: continuous camera gestures (pinch_hold with dx/dy, two_hand_zoom with scale, point with x/y) and
+  // sonar ones (hover_level with side/value/displacementMm, finger_slide with dxMm/dyMm/value; source "sonar");
   // phase: began | changed | ended. Discrete camera gestures arrive as "gesture" messages with zone "air" plus hand/x/y.
 { "type": "session", "kind": "sound", "active": true, "secondsLeft": 30, "trigger": "request", "sonar": false, "tapTypes": true }
-  // kind: "sound" | "air". Sent on start, stop, every 5 s while active, and to each new client on connect.
+  // kind: "sound" | "sonar" | "air". Sent on start, stop, every 5 s while active, and to each new client on connect.
+  // "sonar" is the microphone session with SonarField on (stereo tones); it also does everything "sound" does. There
+  // is one microphone session at a time: sonar_session_start restarts a running sound session in sonar mode, and a
+  // sound_session_start during a sonar session just extends it. sonarField: the stereo tones are actually playing.
   // trigger (active only): "request" (app asked) | "auto" (pinned app in settings). reason (on stop): "timeout" |
   // "requested" | "paused" | "app_changed" | "no_hand" | "lid_closed" | "error" (then "error": "...").
   // sound only: sonar (pilot tone playing), tapTypes (tap-type model loaded). simulated: true under --no-hardware-sessions.
@@ -221,6 +242,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "sound_session_stop" }
 { "type": "air_session_start", "camera": "front", "seconds": 30 }  // camera: "front" | "desk_view" (desk_view needs settings.camera.deskMode)
 { "type": "air_session_stop" }
+{ "type": "sonar_session_start", "seconds": 30 }             // needs settings.sonar.enabled; mic (orange dot) + two inaudible tones, max 120 s
+{ "type": "sonar_session_stop" }
 { "type": "calibration_taptype_start", "types": ["fingertip", "knuckle", "nail"], "target": 15 }
   // needs an active sound session (extended to 120 s); taps are labeled in the order of `types`, target 3...50
 { "type": "calibration_taptype_cancel" }
@@ -231,6 +254,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 // Test-only, accepted only when the daemon runs with --no-hardware-sessions (simulated sessions):
 // { "type": "sim_tap", "zone": "right-grille" }  { "type": "sim_tap_type", "tapType": "knuckle" }
 // { "type": "sim_air", "phase": "began|changed|ended", "dx": 0.05, "dy": 0 }
+// { "type": "sim_sonar", "gesture": "push", "side": "left" }  { "type": "sim_sonar", "air": { "gesture": "hover_level", "phase": "changed", "displacementMm": 40 } }
 ```
 
 ## Feedback loop
@@ -266,10 +290,21 @@ decisions in memory only. Nothing is written to disk unless the app asks.
   "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "followUpConfidence": 0.5,
     "hud": true, "haptics": false,
     "sound":  { "enabled": false, "sessionSeconds": 30, "autoApps": [] },
-    "camera": { "enabled": false, "sessionSeconds": 30, "autoApps": [], "deskMode": false } }
+    "camera": { "enabled": false, "sessionSeconds": 30, "autoApps": [], "deskMode": false },
+    "sonar":  { "enabled": false, "sessionSeconds": 30, "autoApps": [] } }
 }
 ```
 
+- `slider` (only on `hover_level` / `finger_slide` bindings, zone `air` for hover): `{ "mode": "absolute" |
+  "relative", "stepMm": 20, "inverse": { action } }`. While the gesture lasts, `action` runs once per `stepMm` of travel
+  up (hover: hand raised; finger slide: toward the hinge) and `inverse` once per step down. `relative`: every step of
+  movement counts, like a knob. `absolute`: the output follows the position since the gesture began, so moving back to
+  the start undoes the steps, and a gesture that ends `cancelled` is undone. The start of the gesture fires nothing.
+  Steps go through the same limits as `knob` steps (dropped, never auto-pausing). Example: hover above a speaker to
+  change the volume smoothly: `"action": { "kind": "volume", "step": 2 }, "slider": { "mode": "absolute", "stepMm": 20,
+  "inverse": { "kind": "volume", "step": -2 } }`.
+- `settings.sonar`: like `settings.sound`, but the tones never play unless `enabled` is true, even when the app sends
+  `sonar_session_start`. Pets and some people can hear 19 to 20 kHz; keep sessions short and say so in the UI.
 - `followUpConfidence` (0 to `minConfidence`): in a zone with a double / triple binding, a tap at this confidence may
   complete a multi-tap whose other tap passed `minConfidence`; alone it never fires. Set equal to `minConfidence` to disable.
 - Typing gate: a tap is rejected as `typing` within `typingGateMs` of a key press, and also within 150 ms of any key

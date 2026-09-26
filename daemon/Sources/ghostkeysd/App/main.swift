@@ -11,6 +11,7 @@ _ = Clock.start
 // Sensor driver settings are put back however we leave: normal exit, SIGINT/SIGTERM/SIGHUP, parent death, or exit()
 // anywhere. Crashes and SIGKILL are covered by spu-originals.json, restored on the next start or --restore-sensors.
 atexit {
+    MicMarker.clearIfOurs()
     SPUDriverControl.shared.restore()
     ProcessRunner.killAll()
 }
