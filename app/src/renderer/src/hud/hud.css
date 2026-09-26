@@ -1,0 +1,48 @@
+html,
+body {
+  background: transparent !important;
+}
+/* Screenshot backdrop: a stand-in for the desktop so the pill can be judged in context. */
+html[data-backdrop] body {
+  background:
+    radial-gradient(120% 140% at 30% 0%, #3a3f4a 0%, #1c1f26 55%, #121418 100%) !important;
+}
+.hud-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 36px;
+  padding: 0 16px 0 14px;
+  border-radius: 999px;
+  background: rgb(22 22 24 / 0.86);
+  box-shadow:
+    inset 0 0 0 1px rgb(255 255 255 / 0.08),
+    0 10px 30px -8px rgb(0 0 0 / 0.5);
+  color: #ededef;
+  font-size: 13px;
+  white-space: nowrap;
+  -webkit-backdrop-filter: blur(24px) saturate(1.4);
+  backdrop-filter: blur(24px) saturate(1.4);
+}
+.hud-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #ff5b1f;
+  box-shadow: 0 0 10px #ff5b1f;
+}
+.hud-dot.is-error {
+  background: #8a8a90;
+  box-shadow: none;
+}
+.hud-title {
+  font-weight: 500;
+}
+.hud-sep {
+  width: 1px;
+  height: 12px;
+  background: rgb(255 255 255 / 0.16);
+}
+.hud-detail {
+  color: #b4b4ba;
+}

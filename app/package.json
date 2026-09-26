@@ -1,0 +1,62 @@
+{
+  "name": "ghostkeys",
+  "productName": "Ghostkeys",
+  "version": "0.1.0",
+  "description": "Turns the blank parts of your MacBook into controls.",
+  "main": "./out/main/index.js",
+  "private": true,
+  "scripts": {
+    "dev": "node scripts/sync-assets.mjs && electron-vite dev",
+    "dev:mock": "node scripts/dev-mock.mjs",
+    "mock": "tsx scripts/mock-daemon.ts",
+    "build": "node scripts/sync-assets.mjs && electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "tsc -p tsconfig.node.json --noEmit && tsc -p tsconfig.web.json --noEmit && tsc -p tsconfig.scripts.json --noEmit",
+    "lint": "eslint .",
+    "icons": "node scripts/gen-icons.mjs",
+    "screenshots": "pnpm build && node scripts/screenshots.mjs",
+    "build:mac": "pnpm build && electron-builder --mac --dir --arm64"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "cmdk": "^1.1.1",
+    "geist": "^1.7.2",
+    "lucide-react": "^1.48.0",
+    "motion": "^13.4.4",
+    "radix-ui": "^1.6.7",
+    "react": "^19",
+    "react-dom": "^19",
+    "sonner": "^2.0.8",
+    "tailwind-merge": "^3.7.0",
+    "uplot": "^1.6.32",
+    "ws": "^8.22.0",
+    "zustand": "^5.0.15"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9",
+    "@tailwindcss/vite": "^4",
+    "@types/node": "^22",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.1",
+    "@vitejs/plugin-react": "5.2.0",
+    "electron": "^44",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5",
+    "eslint": "^9",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^7"
+  }
+}
