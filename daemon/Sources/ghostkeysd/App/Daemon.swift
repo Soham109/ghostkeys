@@ -2,12 +2,13 @@ import Foundation
 import AppKit
 import ApplicationServices
 import GhostkeysDetection
+import GhostkeysIntegrations
 
 /// Wires sensors, detection, the WebSocket server, config, calibration and actions together.
 /// Every piece of mutable state here is touched only on `core`.
 final class Daemon: @unchecked Sendable {
     static let version = "0.1.0"
-    static let streams: Set<String> = ["imu", "lid", "light", "taps"]
+    static let streams: Set<String> = ["imu", "lid", "light", "taps", "air"]
 
     let options: Options
     let core = DispatchQueue(label: "ghostkeys.core", qos: .userInteractive)
@@ -22,6 +23,9 @@ final class Daemon: @unchecked Sendable {
     private var limiter = ActionLimiter()
     private var pausedReason: String?          // "user" or "rate_limit" while paused
     private var lastPermissionPrompt = -100.0
+    /// Optional sound (mic) and air (camera) sessions. Off unless the app asks or the user pinned an app.
+    private var sessions: SessionCoordinator!
+    private lazy var catalog: Any = (try? JSONSerialization.jsonObject(with: Data(IntegrationCatalog.json.utf8))) ?? [:]
 
     private var config: Config
     private let engine: TapEngine
@@ -61,11 +65,14 @@ final class Daemon: @unchecked Sendable {
         engine.model = store.loadModel()
         applyConfigToEngine()   // also sets the model's zone centres
         actions.isPaused = { [weak self] in self?.paused ?? true }
+        sessions = SessionCoordinator(queue: core, simulate: options.noHardwareSessions,
+                                      modelDirectory: store.modelDirectory, host: self)
     }
 
     // MARK: Lifecycle
 
     func start() throws {
+        input.onActivate = { [weak self] id in self?.core.async { self?.sessions.frontmostChanged(to: id) } }
         input.start()
         lastAccessibility = AXIsProcessTrusted()
 
@@ -141,8 +148,10 @@ final class Daemon: @unchecked Sendable {
             case .rejected(let t, let reason):
                 server.broadcast(["type": "rejected", "t": Clock.protocolMs(t), "reason": reason.rawValue], stream: "taps")
             case .tap(let tap):
-                server.broadcast(["type": "tap", "t": Clock.protocolMs(tap.t), "zone": tap.zone, "confidence": tap.confidence,
-                                  "x": tap.x, "y": tap.y, "strength": tap.strength], stream: "taps")
+                let msg: [String: Any] = ["type": "tap", "t": Clock.protocolMs(tap.t), "zone": tap.zone, "confidence": tap.confidence,
+                                          "x": tap.x, "y": tap.y, "strength": tap.strength, "source": "imu"]
+                // During a sound session the message may wait (at most 150 ms) for its tapType.
+                if !sessions.imuTap(t: tap.t, zone: tap.zone, message: msg) { server.broadcast(msg, stream: "taps") }
             case .gesture(let g):
                 onGesture(g)
             }
@@ -162,6 +171,7 @@ final class Daemon: @unchecked Sendable {
             lastLidSent = angle
             server.broadcast(["type": "lid", "t": Clock.protocolMs(t), "angle": angle], stream: "lid")
         }
+        sessions.lidChanged(angle: angle)
         if let g = lidDetector.ingest(angle: angle, t: t) { onGesture(g, fillModifiers: true) }
     }
 
@@ -175,7 +185,8 @@ final class Daemon: @unchecked Sendable {
 
     // MARK: Gestures and bindings
 
-    private func onGesture(_ g0: GestureEvent, fillModifiers: Bool = false) {
+    /// `extra`: fields added to the gesture message (camera: hand, x, y; sound/camera: source).
+    private func onGesture(_ g0: GestureEvent, fillModifiers: Bool = false, extra: [String: Any] = [:]) {
         var g = g0
         if fillModifiers && g.modifiers.isEmpty { g.modifiers = InputMonitor.currentModifiers() }
         if paused {
@@ -183,9 +194,11 @@ final class Daemon: @unchecked Sendable {
             return
         }
         let app = input.frontmostBundleID
-        server.broadcast(["type": "gesture", "t": Clock.protocolMs(g.t), "gesture": g.gesture, "zone": g.zone ?? NSNull(),
-                          "zones": g.zones, "modifiers": g.modifiers.sorted(), "confidence": g.confidence,
-                          "app": app ?? NSNull()])
+        var msg: [String: Any] = ["type": "gesture", "t": Clock.protocolMs(g.t), "gesture": g.gesture, "zone": g.zone ?? NSNull(),
+                                  "zones": g.zones, "modifiers": g.modifiers.sorted(), "confidence": g.confidence,
+                                  "app": app ?? NSNull()]
+        for (k, v) in extra where msg[k] == nil { msg[k] = v }
+        server.broadcast(msg)
         // No actions while calibrating: the user is tapping zones on purpose.
         guard calibration == nil else { return }
         guard let binding = BindingResolver.resolve(g, bindings: config.bindings, app: app) else { return }
@@ -210,6 +223,7 @@ final class Daemon: @unchecked Sendable {
         Log.info("action rate limit tripped (\(why)); pausing")
         paused = true
         pausedReason = "rate_limit"
+        sessions.stopAll(reason: "paused")
         server.broadcast(status())
     }
 
@@ -304,6 +318,7 @@ final class Daemon: @unchecked Sendable {
         server.send(hello(), to: c)
         server.send(status(), to: c)
         server.send(configMessage(), to: c)
+        for m in sessions.stateMessages() { server.send(m, to: c) }
     }
 
     private func handle(_ m: [String: Any], from c: WebSocketServer.Client) {
@@ -327,6 +342,7 @@ final class Daemon: @unchecked Sendable {
         case "pause":
             paused = true
             pausedReason = "user"
+            sessions.stopAll(reason: "paused")
             server.broadcast(status())
         case "resume":
             paused = false
@@ -409,6 +425,16 @@ final class Daemon: @unchecked Sendable {
             } catch {
                 sendError("revoke_action: \(error)", to: c)
             }
+        case "catalog_get":
+            server.send(["type": "catalog", "catalog": catalog], to: c)
+        case "sound_session_start":
+            sessions.startSound(seconds: (m["seconds"] as? NSNumber)?.doubleValue, client: c)
+        case "sound_session_stop":
+            sessions.stopSound(reason: "requested")
+        case "air_session_start":
+            sessions.startAir(seconds: (m["seconds"] as? NSNumber)?.doubleValue, camera: m["camera"] as? String, client: c)
+        case "air_session_stop":
+            sessions.stopAir(reason: "requested")
         case "request_permission":
             guard (m["which"] as? String) == "accessibility" else { return sendError("unknown permission", to: c) }
             // The system prompt must not be spammable.
@@ -438,8 +464,11 @@ final class Daemon: @unchecked Sendable {
         let p = hub.present
         return ["type": "hello", "version": Self.version,
                 "device": ["model": device.model, "chip": device.chip, "family": device.family],
-                "sensors": ["imu": p.contains(.accel), "gyro": p.contains(.gyro), "lid": p.contains(.lid), "light": p.contains(.light)],
-                "permissions": ["accessibility": AXIsProcessTrusted()]]
+                // sound / camera: the hardware exists (checked without opening the mic or camera).
+                "sensors": ["imu": p.contains(.accel), "gyro": p.contains(.gyro), "lid": p.contains(.lid), "light": p.contains(.light),
+                            "sound": SessionCoordinator.soundHardware, "camera": SessionCoordinator.cameraHardware],
+                "permissions": ["accessibility": AXIsProcessTrusted(),
+                                "microphone": SoundSession.permission, "camera": AirSession.permission]]
     }
 
     private func status() -> [String: Any] {
@@ -475,4 +504,25 @@ final class Daemon: @unchecked Sendable {
     }
 
     private static func r4(_ v: Double) -> Double { (v * 10000).rounded() / 10000 }
+}
+
+// MARK: - Session host
+
+extension Daemon: SessionHost {
+    var currentConfig: Config { config }
+    var isPaused: Bool { paused }
+    var currentLidAngle: Double? { lidAngle }
+    var deviceFamily: String { device.family }
+    var typingActive: Bool {
+        input.snapshot(now: Clock.now()).key * 1000 < config.settings.typingGateMs
+    }
+
+    func broadcast(_ message: [String: Any], stream: String?) { server.broadcast(message, stream: stream) }
+    func send(_ message: [String: Any], to client: WebSocketServer.Client) { server.send(message, to: client) }
+
+    func deliverGesture(name: String, t: Double, zone: String?, confidence: Double, extra: [String: Any]) {
+        let g = GestureEvent(t: t, gesture: name, zone: zone, zones: zone.map { [$0] } ?? [],
+                             modifiers: InputMonitor.currentModifiers(), confidence: confidence)
+        onGesture(g, extra: extra)
+    }
 }

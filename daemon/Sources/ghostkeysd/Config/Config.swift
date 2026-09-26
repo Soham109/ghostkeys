@@ -60,6 +60,42 @@ struct Binding: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey { case id, enabled, gesture, zone, zones, modifiers, app, action, label }
 }
 
+/// Optional sound mode (GhostkeysAcoustics). Off by default; the mic opens only in short sessions.
+struct SoundSettings: Codable, Equatable, Sendable {
+    var enabled = false
+    var sessionSeconds = 30.0
+    /// Bundle ids where a session starts by itself when the app comes to the front (needs a sound binding too).
+    var autoApps: [String] = []
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        sessionSeconds = try c.decodeIfPresent(Double.self, forKey: .sessionSeconds) ?? 30
+        autoApps = try c.decodeIfPresent([String].self, forKey: .autoApps) ?? []
+    }
+    private enum CodingKeys: String, CodingKey { case enabled, sessionSeconds, autoApps }
+}
+
+/// Optional camera add-on (GhostkeysVision). Off by default; the camera runs only in short sessions.
+struct CameraSettings: Codable, Equatable, Sendable {
+    var enabled = false
+    var sessionSeconds = 30.0
+    var autoApps: [String] = []
+    /// Experimental Desk View mode (fingertips on the deck). Only used when true.
+    var deskMode = false
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? false
+        sessionSeconds = try c.decodeIfPresent(Double.self, forKey: .sessionSeconds) ?? 30
+        autoApps = try c.decodeIfPresent([String].self, forKey: .autoApps) ?? []
+        deskMode = try c.decodeIfPresent(Bool.self, forKey: .deskMode) ?? false
+    }
+    private enum CodingKeys: String, CodingKey { case enabled, sessionSeconds, autoApps, deskMode }
+}
+
 struct AppSettings: Codable, Equatable, Sendable {
     var sensitivity = 0.5
     var typingGateMs = 450.0
@@ -67,6 +103,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     var minConfidence = 0.8
     var hud = true
     var haptics = false
+    var sound = SoundSettings()
+    var camera = CameraSettings()
 
     init() {}
 
@@ -79,9 +117,11 @@ struct AppSettings: Codable, Equatable, Sendable {
         minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence) ?? d.minConfidence
         hud = try c.decodeIfPresent(Bool.self, forKey: .hud) ?? d.hud
         haptics = try c.decodeIfPresent(Bool.self, forKey: .haptics) ?? d.haptics
+        sound = try c.decodeIfPresent(SoundSettings.self, forKey: .sound) ?? SoundSettings()
+        camera = try c.decodeIfPresent(CameraSettings.self, forKey: .camera) ?? CameraSettings()
     }
 
-    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, hud, haptics }
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, hud, haptics, sound, camera }
 
     var detection: DetectionSettings {
         var s = DetectionSettings()
@@ -112,6 +152,16 @@ struct Config: Codable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey { case version, zones, bindings, settings }
+
+    static let soundGestures: Set<String> = ["knock_knuckle", "rub", "rub_left", "rub_right", "wave_toward", "wave_away", "wave_sweep"]
+    static let waveGestures: Set<String> = ["wave_toward", "wave_away", "wave_sweep"]
+    static let cameraGestures: Set<String> = ["air_tap", "pinch_hold", "pinch_drag_left", "pinch_drag_right", "pinch_drag_up",
+                                              "pinch_drag_down", "palm_swipe_left", "palm_swipe_right", "circle_cw", "circle_ccw"]
+
+    /// Enabled bindings whose gesture is in `gestures` and that apply to `app` (or to every app).
+    func hasBinding(for gestures: Set<String>, app: String? = nil) -> Bool {
+        bindings.contains { $0.enabled && gestures.contains($0.gesture) && ($0.app == "*" || app == nil || $0.app == app) }
+    }
 
     /// Gestures that need the engine to wait for more taps before reporting a single tap.
     static let multiTapGestures: Set<String> = ["double", "triple", "rhythm"]

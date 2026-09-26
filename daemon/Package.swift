@@ -8,7 +8,7 @@ let package = Package(
         // Pure logic, no hardware: features, classifier, calibration, gesture grammar. Unit tested.
         .target(name: "GhostkeysDetection"),
         // The daemon: sensors (IOKit), WebSocket server, actions, config.
-        .executableTarget(name: "ghostkeysd", dependencies: ["GhostkeysDetection"]),
+        .executableTarget(name: "ghostkeysd", dependencies: ["GhostkeysDetection", "GhostkeysIntegrations", "GhostkeysAcoustics", "GhostkeysVision"]),
         // Optional sound mode: knuckle vs fingertip, rubs and swipes by friction sound, hand waves by inaudible sonar.
         .target(name: "GhostkeysAcoustics", exclude: ["README.md"]),
         // Optional camera add-on (M4/M5 Desk View): hand tracking, pinches, air gestures.

@@ -3,7 +3,8 @@ import GhostkeysDetection
 
 enum BindingResolver {
     /// Gestures that are not tied to a tap zone.
-    static let zonelessGestures: Set<String> = ["lid_nudge", "cover", "cover_hold", "tilt_left", "tilt_right"]
+    static let zonelessGestures: Set<String> = ["lid_nudge", "cover", "cover_hold", "tilt_left", "tilt_right",
+                                                "rub", "rub_left", "rub_right", "wave_toward", "wave_away", "wave_sweep"]
 
     /// The enabled binding for this gesture: same gesture, same zone (both zones in order for `sequence`), exactly the
     /// same set of held modifiers, and an app that matches. A binding for the frontmost app wins over "*".

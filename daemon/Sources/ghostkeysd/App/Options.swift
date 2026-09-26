@@ -8,9 +8,10 @@ struct Options {
     var selftest = false
     var parentPID: Int32?
     var restoreSensors = false
+    var noHardwareSessions = false
 
     static let usage = """
-    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors]
+    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors] [--no-hardware-sessions]
       --port N          WebSocket port on 127.0.0.1 (default 47823)
       --parent-pid PID  exit (restoring the sensors) when this process ends; the parent process is always watched too
       --verbose         debug logging to stderr
@@ -18,6 +19,7 @@ struct Options {
       --dump-imu S      print S seconds of motion samples as CSV to stdout, then exit
       --selftest        open the sensors for 3 s, print rates, lid angle and light, exit 0 (ok) or 1
       --restore-sensors restore sensor settings left behind by a crashed run, then exit
+      --no-hardware-sessions  simulate sound/camera sessions (state and timers only; never opens the mic or camera)
     """
 
     static func parse(_ args: [String]) -> Options {
@@ -44,6 +46,7 @@ struct Options {
                 o.dumpIMUSeconds = s
             case "--selftest": o.selftest = true
             case "--restore-sensors": o.restoreSensors = true
+            case "--no-hardware-sessions": o.noHardwareSessions = true
             case "--help", "-h":
                 print(usage); exit(0)
             default:

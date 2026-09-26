@@ -9,6 +9,8 @@ final class InputMonitor: @unchecked Sendable {
     private let lock = NSLock()
     private var frontmost: String?
     private var observer: NSObjectProtocol?
+    /// Called on the main queue when another app comes to the front (bundle id).
+    var onActivate: ((String?) -> Void)?
 
     // Cache (only touched from the caller's serial queue).
     private var cachedAt: Double = -1
@@ -28,6 +30,7 @@ final class InputMonitor: @unchecked Sendable {
             let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
             let id = app?.bundleIdentifier ?? NSWorkspace.shared.frontmostApplication?.bundleIdentifier
             self?.lock.lock(); self?.frontmost = id; self?.lock.unlock()
+            self?.onActivate?(id)
         }
     }
 

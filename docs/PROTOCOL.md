@@ -115,6 +115,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "error", "message": "..." }
 { "type": "approved", "hash": "<64 hex>", "kind": "shell" }  // reply to approve_action, only to the requester
 { "type": "revoked", "hash": "<64 hex>", "found": true }     // reply to revoke_action, only to the requester
+{ "type": "catalog", "catalog": { "apps": [...], "commands": [...], "unsupported": { } } }  // reply to catalog_get
 ```
 
 ## App to daemon
@@ -134,6 +135,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "request_permission", "which": "accessibility" }   // daemon calls AXIsProcessTrustedWithOptions(prompt: true)
 { "type": "approve_action", "action": { "kind": "shell", "command": "..." } }  // only after the user confirmed natively
 { "type": "revoke_action", "hash": "<64 hex>" }              // or { "action": { ... } }
+{ "type": "catalog_get" }                                    // daemon replies { "type": "catalog", "catalog": IntegrationCatalog.json }
 ```
 
 ## Config file (`~/Library/Application Support/Ghostkeys/config.json`)

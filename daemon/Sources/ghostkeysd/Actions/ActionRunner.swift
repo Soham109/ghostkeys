@@ -1,6 +1,7 @@
 import Foundation
 import AppKit
 import CoreGraphics
+import GhostkeysIntegrations
 
 /// Runs binding actions (PROTOCOL.md "Action kinds") on a background serial queue.
 /// Callers must only invoke `run` for a detected gesture or an explicit test_action, and never while paused;
@@ -101,6 +102,12 @@ final class ActionRunner: @unchecked Sendable {
             guard WindowActions.appOps.contains(a["op"]?.string ?? "") else { throw ActionError("unknown app op") }
         case "system":
             guard Self.systemOps.contains(a["op"]?.string ?? "") else { throw ActionError("unknown system op") }
+        case "integration":
+            let app = a["app"]?.string ?? "", command = a["command"]?.string ?? ""
+            if let why = IntegrationCatalog.unsupported["\(app)/\(command)"] { throw ActionError("unsupported: \(why)") }
+            guard IntegrationCatalog.command(app: app, command: command) != nil else {
+                throw ActionError("unknown integration: \(app)/\(command)")
+            }
         default:
             throw ActionError("unknown action kind: \(kind)")
         }
@@ -153,6 +160,8 @@ final class ActionRunner: @unchecked Sendable {
             try onMain { try WindowActions.app(a["op"]!.string!) }
         case "system":
             try system(a["op"]!.string!)
+        case "integration":
+            try integration(a)
         default:
             throw ActionError("unknown action kind: \(kind)")
         }
@@ -210,6 +219,33 @@ final class ActionRunner: @unchecked Sendable {
         }
         let r = ProcessRunner.run("/usr/bin/open", args, timeout: 10)
         if r.status != 0 { throw ActionError("open failed with status \(r.status)") }
+    }
+
+    /// Runs a GhostkeysIntegrations command, then posts its followUpKeys like keystroke actions.
+    private func integration(_ a: JSONValue) throws {
+        let app = a["app"]!.string!, command = a["command"]!.string!
+        let args = IntegrationArgs.strings(from: (a["args"]?.any as? [String: Any]) ?? [:])
+        let done = DispatchSemaphore(value: 0)
+        nonisolated(unsafe) var outcome: Result<IntegrationResult, IntegrationError>?
+        Task.detached {
+            outcome = await IntegrationRunner.shared.execute(app: app, command: command, args: args)
+            done.signal()
+        }
+        // The runner bounds every script with its own timeout; this is a backstop so the action queue never hangs.
+        guard done.wait(timeout: .now() + 30) == .success, let outcome else {
+            throw ActionError("integration \(app)/\(command) timed out")
+        }
+        switch outcome {
+        case .failure(let e):
+            throw ActionError("integration \(app)/\(command): \(e)")
+        case .success(let r):
+            for k in r.followUpKeys {
+                guard let code = KeyCodes.code(for: k.key) else { throw ActionError("integration asked for unknown key \(k.key)") }
+                try EventPoster.keystroke(code, flags: KeyCodes.flags(k.modifiers))
+                usleep(15_000)
+            }
+            Log.debug("integration \(app)/\(command) done (\(r.followUpKeys.count) keys, output \(r.output.count) chars)")
+        }
     }
 
     static let systemOps: Set<String> = ["lock", "sleep-display", "screenshot", "screenshot-area", "dnd-toggle",
@@ -297,6 +333,7 @@ final class ActionRunner: @unchecked Sendable {
             if let v = a[f]?.string, !(kind == "media" && f == "command") { parts.append("\(f): \(v.count) chars") }
         }
         if let steps = a["steps"]?.array { parts.append("\(steps.count) steps") }
+        if kind == "integration" { parts.append("\(a["app"]?.string ?? "?")/\(a["command"]?.string ?? "?")") }
         return parts.joined(separator: " ")
     }
 }

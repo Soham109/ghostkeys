@@ -156,6 +156,8 @@ final class IMUStream: @unchecked Sendable {
 
     /// Wakes the drivers and starts the run loop thread. Throws if no accelerometer could be opened.
     func start() throws {
+        // Never fight ghostkeysd over the drivers: take the daemon's own lock first.
+        try LabInstanceLock.acquire()
         openLog += DriverControl.shared.wakeMotion()
         let ready = DispatchSemaphore(value: 0)
         var opened = Set<Int>()

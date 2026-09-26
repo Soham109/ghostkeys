@@ -2,14 +2,16 @@ import Foundation
 
 /// Action rate limits (SAFETY_AUDIT H5). Used only on the daemon's core queue.
 /// - Per binding: a cooldown after each run (300 ms; 1500 ms for cover, cover_hold, lid_nudge and tilt gestures) and at
-///   most one run waiting or in progress.
+///   most one run waiting or in progress. Sound gestures (rub, wave) and palm swipes also use 1500 ms.
 /// - Globally: at most 5 actions per second and 60 per minute. Tripping a global limit auto-pauses the daemon.
 struct ActionLimiter {
     enum Verdict: Equatable { case ok, cooldown, tripped(String) }
 
     static let defaultCooldown = 0.300
     static let slowGestureCooldown = 1.5
-    static let slowGestures: Set<String> = ["cover", "cover_hold", "lid_nudge", "tilt_left", "tilt_right"]
+    static let slowGestures: Set<String> = ["cover", "cover_hold", "lid_nudge", "tilt_left", "tilt_right",
+                                            "rub", "rub_left", "rub_right", "wave_toward", "wave_away", "wave_sweep",
+                                            "palm_swipe_left", "palm_swipe_right"]
     static let perSecond = 5
     static let perMinute = 60
 
