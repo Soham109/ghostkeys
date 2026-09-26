@@ -1,0 +1,302 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ghostkeys.local/presets/schema.json",
+  "title": "Ghostkeys presets",
+  "description": "Schema for presets/library.json and presets/layouts/*.json. Mirrors the action kinds and field names in docs/PROTOCOL.md exactly. Kept in lockstep with the protocol: change one, check the other.",
+
+  "$defs": {
+    "modifier": {
+      "type": "string",
+      "enum": ["shift", "control", "option", "command", "fn"]
+    },
+
+    "noDashString": {
+      "type": "string",
+      "not": { "pattern": "[–—]" },
+      "description": "A string that must never contain an em dash (—) or en dash (–)."
+    },
+
+    "windowOp": {
+      "type": "string",
+      "enum": ["left", "right", "top", "bottom", "maximize", "center", "next-display", "minimize", "fullscreen"]
+    },
+    "appOp": {
+      "type": "string",
+      "enum": ["hide", "quit", "switch-next", "switch-previous"]
+    },
+    "systemOp": {
+      "type": "string",
+      "enum": ["lock", "sleep-display", "screenshot", "screenshot-area", "dnd-toggle", "mission-control", "launchpad", "show-desktop"]
+    },
+    "mediaCommand": {
+      "type": "string",
+      "enum": ["playpause", "next", "previous"]
+    },
+
+    "simpleAction": {
+      "description": "Any action kind except macro. Macro steps are drawn from these.",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "keystroke" },
+            "key": { "type": "string", "minLength": 1 },
+            "modifiers": { "type": "array", "items": { "$ref": "#/$defs/modifier" } }
+          },
+          "required": ["kind", "key", "modifiers"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "volume" },
+            "step": { "type": "number" }
+          },
+          "required": ["kind", "step"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": { "kind": { "const": "mute" } },
+          "required": ["kind"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "media" },
+            "command": { "$ref": "#/$defs/mediaCommand" }
+          },
+          "required": ["kind", "command"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "brightness" },
+            "step": { "type": "number" }
+          },
+          "required": ["kind", "step"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "open" },
+            "target": { "$ref": "#/$defs/noDashString" }
+          },
+          "required": ["kind", "target"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "description": "Runs in /bin/zsh -lc with a 10 second timeout. Must never modify or delete files, use sudo, or touch the network.",
+          "properties": {
+            "kind": { "const": "shell" },
+            "command": { "$ref": "#/$defs/noDashString" }
+          },
+          "required": ["kind", "command"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "applescript" },
+            "source": { "$ref": "#/$defs/noDashString" }
+          },
+          "required": ["kind", "source"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "shortcut" },
+            "name": { "$ref": "#/$defs/noDashString" }
+          },
+          "required": ["kind", "name"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "text" },
+            "text": { "$ref": "#/$defs/noDashString" }
+          },
+          "required": ["kind", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "clipboard" },
+            "text": { "$ref": "#/$defs/noDashString" }
+          },
+          "required": ["kind", "text"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "window" },
+            "op": { "$ref": "#/$defs/windowOp" }
+          },
+          "required": ["kind", "op"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "app" },
+            "op": { "$ref": "#/$defs/appOp" }
+          },
+          "required": ["kind", "op"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "system" },
+            "op": { "$ref": "#/$defs/systemOp" }
+          },
+          "required": ["kind", "op"],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "macroStep": {
+      "description": "A simple action, optionally carrying delayMs to wait before it runs.",
+      "allOf": [
+        { "$ref": "#/$defs/simpleAction" },
+        {
+          "type": "object",
+          "properties": { "delayMs": { "type": "number", "minimum": 0 } }
+        }
+      ]
+    },
+
+    "action": {
+      "description": "Any action kind, including macro. Exactly the kinds in docs/PROTOCOL.md.",
+      "oneOf": [
+        { "$ref": "#/$defs/simpleAction" },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "macro" },
+            "steps": {
+              "type": "array",
+              "items": { "$ref": "#/$defs/macroStep" },
+              "minItems": 1,
+              "maxItems": 50
+            }
+          },
+          "required": ["kind", "steps"],
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "requirement": {
+      "type": "string",
+      "oneOf": [
+        { "const": "accessibility" },
+        { "pattern": "^automation:[A-Za-z0-9.\\-]+$" }
+      ]
+    },
+
+    "preset": {
+      "type": "object",
+      "description": "One entry in library.json.",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+        "title": { "$ref": "#/$defs/noDashString", "minLength": 1 },
+        "subtitle": { "$ref": "#/$defs/noDashString", "minLength": 1 },
+        "category": { "type": "string", "minLength": 1 },
+        "keywords": { "type": "array", "items": { "$ref": "#/$defs/noDashString" } },
+        "action": { "$ref": "#/$defs/action" },
+        "destructive": { "type": "boolean" },
+        "requires": { "type": "array", "items": { "$ref": "#/$defs/requirement" } },
+        "apps": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "verify": {
+          "type": "boolean",
+          "description": "True when the shortcut could not be independently confirmed and should be checked before shipping."
+        }
+      },
+      "required": ["id", "title", "subtitle", "category", "keywords", "action", "destructive", "requires", "apps"],
+      "additionalProperties": false
+    },
+
+    "libraryFile": {
+      "type": "object",
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "presets": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/preset" }
+        }
+      },
+      "required": ["version", "presets"],
+      "additionalProperties": false
+    },
+
+    "gesture": {
+      "type": "string",
+      "enum": ["tap", "double", "triple", "sequence", "rhythm", "lid_nudge", "cover", "cover_hold", "tilt_left", "tilt_right"]
+    },
+
+    "zoneId": {
+      "type": "string",
+      "description": "One of the PROTOCOL.md default zone ids, or a custom zone id defined by the user's own device.",
+      "enum": ["left-palm", "right-palm", "left-grille", "right-grille", "top-strip", "left-edge", "right-edge", "lid"]
+    },
+
+    "binding": {
+      "type": "object",
+      "description": "Matches the Config.bindings entry shape in docs/PROTOCOL.md exactly, plus an optional presetId back-reference into library.json.",
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
+        "gesture": { "$ref": "#/$defs/gesture" },
+        "zone": {
+          "oneOf": [{ "$ref": "#/$defs/zoneId" }, { "type": "null" }]
+        },
+        "zones": {
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/zoneId" }, "minItems": 2, "maxItems": 2 },
+            { "type": "null" }
+          ]
+        },
+        "modifiers": { "type": "array", "items": { "$ref": "#/$defs/modifier" } },
+        "app": { "type": "string", "minLength": 1, "description": "\"*\" for everywhere, or a bundle id." },
+        "action": { "$ref": "#/$defs/action" },
+        "label": { "$ref": "#/$defs/noDashString", "minLength": 1 },
+        "presetId": { "type": "string", "description": "Optional id of the library.json preset this binding's action was drawn from." }
+      },
+      "required": ["id", "enabled", "gesture", "zone", "zones", "modifiers", "app", "action", "label"],
+      "additionalProperties": false
+    },
+
+    "layoutFile": {
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" },
+        "name": { "$ref": "#/$defs/noDashString", "minLength": 1 },
+        "description": { "$ref": "#/$defs/noDashString", "minLength": 1 },
+        "bindings": {
+          "type": "array",
+          "minItems": 8,
+          "maxItems": 14,
+          "items": { "$ref": "#/$defs/binding" }
+        }
+      },
+      "required": ["id", "name", "description", "bindings"],
+      "additionalProperties": false
+    }
+  },
+
+  "oneOf": [{ "$ref": "#/$defs/libraryFile" }, { "$ref": "#/$defs/layoutFile" }]
+}

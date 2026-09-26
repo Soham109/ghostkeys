@@ -1,0 +1,229 @@
+{
+  "id": "presenter-keynote-powerpoint",
+  "name": "Presenter (Keynote/PowerPoint)",
+  "description": "Start and drive a slideshow without reaching for a clicker: play, advance, go back and blank the screen, bound for both Keynote and PowerPoint. Muting and Do Not Disturb are one double tap away before you start.",
+  "bindings": [
+    {
+      "id": "b1",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "left-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "mute"
+      },
+      "label": "Mute or unmute",
+      "presetId": "vol-mute"
+    },
+    {
+      "id": "b2",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "system",
+        "op": "dnd-toggle"
+      },
+      "label": "Toggle Do Not Disturb",
+      "presetId": "sys-dnd-toggle"
+    },
+    {
+      "id": "b3",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.apple.iWork.Keynote",
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "label": "Play presentation",
+      "presetId": "kn-play"
+    },
+    {
+      "id": "b4",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.Powerpoint",
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Start presentation",
+      "presetId": "pp-present-from-start"
+    },
+    {
+      "id": "b5",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.apple.iWork.Keynote",
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "label": "Play from current slide",
+      "presetId": "kn-play-from-current"
+    },
+    {
+      "id": "b6",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.Powerpoint",
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "label": "Present from current slide",
+      "presetId": "pp-present-from-current"
+    },
+    {
+      "id": "b7",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.apple.iWork.Keynote",
+      "action": {
+        "kind": "keystroke",
+        "key": "down",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "label": "Next slide",
+      "presetId": "kn-next-slide"
+    },
+    {
+      "id": "b8",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.Powerpoint",
+      "action": {
+        "kind": "keystroke",
+        "key": "down",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "label": "Next slide",
+      "presetId": "pp-next-slide"
+    },
+    {
+      "id": "b9",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.apple.iWork.Keynote",
+      "action": {
+        "kind": "keystroke",
+        "key": "up",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "label": "Previous slide",
+      "presetId": "kn-prev-slide"
+    },
+    {
+      "id": "b10",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.Powerpoint",
+      "action": {
+        "kind": "keystroke",
+        "key": "up",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "label": "Previous slide",
+      "presetId": "pp-prev-slide"
+    },
+    {
+      "id": "b11",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.apple.iWork.Keynote",
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": []
+      },
+      "label": "Blank the screen to black",
+      "presetId": "kn-black-screen"
+    },
+    {
+      "id": "b12",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.Powerpoint",
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": []
+      },
+      "label": "Blank the screen to black",
+      "presetId": "pp-black-screen"
+    },
+    {
+      "id": "b13",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "brightness",
+        "step": 1
+      },
+      "label": "Brightness up",
+      "presetId": "bright-up"
+    }
+  ]
+}

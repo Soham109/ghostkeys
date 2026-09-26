@@ -1,0 +1,242 @@
+{
+  "id": "developer-cursor-vscode",
+  "name": "Developer (Cursor/VS Code)",
+  "description": "Editor shortcuts bound twice, once for VS Code and once for Cursor, so the same gesture works no matter which one is frontmost. Volume, undo and locking the screen stay global.",
+  "bindings": [
+    {
+      "id": "b1",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "left-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "keystroke",
+        "key": "z",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Undo",
+      "presetId": "wr-undo"
+    },
+    {
+      "id": "b2",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "media",
+        "command": "playpause"
+      },
+      "label": "Play or pause",
+      "presetId": "media-play-pause"
+    },
+    {
+      "id": "b3",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.VSCode",
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "label": "Command palette",
+      "presetId": "vc-command-palette"
+    },
+    {
+      "id": "b4",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.todesktop.230313mzl4w4u92",
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "label": "Command palette",
+      "presetId": "vc-command-palette"
+    },
+    {
+      "id": "b5",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "system",
+        "op": "show-desktop"
+      },
+      "label": "Show desktop",
+      "presetId": "sys-show-desktop"
+    },
+    {
+      "id": "b6",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.VSCode",
+      "action": {
+        "kind": "keystroke",
+        "key": "`",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "label": "Toggle terminal",
+      "presetId": "vc-toggle-terminal"
+    },
+    {
+      "id": "b7",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.todesktop.230313mzl4w4u92",
+      "action": {
+        "kind": "keystroke",
+        "key": "`",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "label": "Toggle terminal",
+      "presetId": "vc-toggle-terminal"
+    },
+    {
+      "id": "b8",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.VSCode",
+      "action": {
+        "kind": "keystroke",
+        "key": "f12",
+        "modifiers": []
+      },
+      "label": "Go to definition",
+      "presetId": "vc-go-to-definition"
+    },
+    {
+      "id": "b9",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.todesktop.230313mzl4w4u92",
+      "action": {
+        "kind": "keystroke",
+        "key": "f12",
+        "modifiers": []
+      },
+      "label": "Go to definition",
+      "presetId": "vc-go-to-definition"
+    },
+    {
+      "id": "b10",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "volume",
+        "step": 6
+      },
+      "label": "Volume up",
+      "presetId": "vol-up"
+    },
+    {
+      "id": "b11",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "volume",
+        "step": -6
+      },
+      "label": "Volume down",
+      "presetId": "vol-down"
+    },
+    {
+      "id": "b12",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.microsoft.VSCode",
+      "action": {
+        "kind": "keystroke",
+        "key": "/",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Toggle line comment",
+      "presetId": "vc-comment-line"
+    },
+    {
+      "id": "b13",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.todesktop.230313mzl4w4u92",
+      "action": {
+        "kind": "keystroke",
+        "key": "/",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Toggle line comment",
+      "presetId": "vc-comment-line"
+    },
+    {
+      "id": "b14",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "lid",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "system",
+        "op": "lock"
+      },
+      "label": "Lock screen",
+      "presetId": "sys-lock"
+    }
+  ]
+}

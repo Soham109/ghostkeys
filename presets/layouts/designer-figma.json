@@ -1,0 +1,216 @@
+{
+  "id": "designer-figma",
+  "name": "Designer (Figma)",
+  "description": "Tool switching, zoom and view controls for Figma, kept off the palm rests except for undo and redo, with a screen capture for grabbing references.",
+  "bindings": [
+    {
+      "id": "b1",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "left-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "z",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Undo",
+      "presetId": "fg-undo"
+    },
+    {
+      "id": "b2",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "z",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "label": "Redo",
+      "presetId": "fg-redo"
+    },
+    {
+      "id": "b3",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "1",
+        "modifiers": [
+          "shift"
+        ]
+      },
+      "label": "Zoom to fit",
+      "presetId": "fg-zoom-to-fit"
+    },
+    {
+      "id": "b4",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "0",
+        "modifiers": [
+          "shift"
+        ]
+      },
+      "label": "Zoom to 100%",
+      "presetId": "fg-zoom-100"
+    },
+    {
+      "id": "b5",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "shift"
+        ]
+      },
+      "label": "Toggle rulers",
+      "presetId": "fg-toggle-rulers"
+    },
+    {
+      "id": "b6",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Present",
+      "presetId": "fg-present"
+    },
+    {
+      "id": "b7",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": []
+      },
+      "label": "Pen tool",
+      "presetId": "fg-pen-tool"
+    },
+    {
+      "id": "b8",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "a",
+        "modifiers": []
+      },
+      "label": "Frame tool",
+      "presetId": "fg-frame-tool"
+    },
+    {
+      "id": "b9",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "g",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Group selection",
+      "presetId": "fg-group"
+    },
+    {
+      "id": "b10",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "left-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "c",
+        "modifiers": []
+      },
+      "label": "Comment tool",
+      "presetId": "fg-comment-tool"
+    },
+    {
+      "id": "b11",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "lid",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.figma.Desktop",
+      "action": {
+        "kind": "keystroke",
+        "key": "k",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "label": "Create component",
+      "presetId": "fg-component"
+    },
+    {
+      "id": "b12",
+      "enabled": true,
+      "gesture": "cover",
+      "zone": null,
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "system",
+        "op": "screenshot-area"
+      },
+      "label": "Screenshot of an area",
+      "presetId": "sys-screenshot-area"
+    }
+  ]
+}

@@ -1,0 +1,5745 @@
+{
+  "version": 1,
+  "presets": [
+    {
+      "id": "media-play-pause",
+      "title": "Play or pause",
+      "subtitle": "Toggles playback in whatever app is currently playing.",
+      "category": "Media",
+      "keywords": [
+        "music",
+        "pause",
+        "play",
+        "spacebar"
+      ],
+      "action": {
+        "kind": "media",
+        "command": "playpause"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "media-next-track",
+      "title": "Next track",
+      "subtitle": "Skips to the next track.",
+      "category": "Media",
+      "keywords": [
+        "music",
+        "skip",
+        "forward"
+      ],
+      "action": {
+        "kind": "media",
+        "command": "next"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "media-prev-track",
+      "title": "Previous track",
+      "subtitle": "Goes back to the previous track.",
+      "category": "Media",
+      "keywords": [
+        "music",
+        "back",
+        "rewind"
+      ],
+      "action": {
+        "kind": "media",
+        "command": "previous"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "media-open-music",
+      "title": "Open Music",
+      "subtitle": "Opens the Music app.",
+      "category": "Media",
+      "keywords": [
+        "apple music",
+        "launch"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Music"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "media-open-spotify",
+      "title": "Open Spotify",
+      "subtitle": "Opens Spotify.",
+      "category": "Media",
+      "keywords": [
+        "launch"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Spotify"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "media-open-podcasts",
+      "title": "Open Podcasts",
+      "subtitle": "Opens the Podcasts app.",
+      "category": "Media",
+      "keywords": [
+        "launch"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Podcasts"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "media-music-repeat",
+      "title": "Music: toggle repeat",
+      "subtitle": "Toggles repeat for the current playlist in Music.",
+      "category": "Media",
+      "keywords": [
+        "loop"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Music"
+      ]
+    },
+    {
+      "id": "media-music-shuffle",
+      "title": "Music: toggle shuffle",
+      "subtitle": "Toggles shuffle in Music.",
+      "category": "Media",
+      "keywords": [
+        "random"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "s",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Music"
+      ]
+    },
+    {
+      "id": "media-music-miniplayer",
+      "title": "Music: toggle MiniPlayer",
+      "subtitle": "Switches Music into the compact MiniPlayer view.",
+      "category": "Media",
+      "keywords": [
+        "mini player",
+        "compact"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "3",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Music"
+      ],
+      "verify": true
+    },
+    {
+      "id": "media-spotify-playpause",
+      "title": "Spotify: play or pause",
+      "subtitle": "Controls Spotify directly via AppleScript instead of the system media key.",
+      "category": "Media",
+      "keywords": [
+        "spotify"
+      ],
+      "action": {
+        "kind": "applescript",
+        "source": "tell application \"Spotify\" to playpause"
+      },
+      "destructive": false,
+      "requires": [
+        "automation:com.spotify.client"
+      ],
+      "apps": [
+        "com.spotify.client"
+      ]
+    },
+    {
+      "id": "media-spotify-next",
+      "title": "Spotify: next track",
+      "subtitle": "Skips to the next track in Spotify.",
+      "category": "Media",
+      "keywords": [
+        "spotify",
+        "skip"
+      ],
+      "action": {
+        "kind": "applescript",
+        "source": "tell application \"Spotify\" to next track"
+      },
+      "destructive": false,
+      "requires": [
+        "automation:com.spotify.client"
+      ],
+      "apps": [
+        "com.spotify.client"
+      ]
+    },
+    {
+      "id": "media-spotify-prev",
+      "title": "Spotify: previous track",
+      "subtitle": "Goes back a track in Spotify.",
+      "category": "Media",
+      "keywords": [
+        "spotify",
+        "back"
+      ],
+      "action": {
+        "kind": "applescript",
+        "source": "tell application \"Spotify\" to previous track"
+      },
+      "destructive": false,
+      "requires": [
+        "automation:com.spotify.client"
+      ],
+      "apps": [
+        "com.spotify.client"
+      ]
+    },
+    {
+      "id": "vol-up",
+      "title": "Volume up",
+      "subtitle": "Raises output volume.",
+      "category": "Volume & Display",
+      "keywords": [
+        "sound",
+        "loud"
+      ],
+      "action": {
+        "kind": "volume",
+        "step": 6
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "vol-down",
+      "title": "Volume down",
+      "subtitle": "Lowers output volume.",
+      "category": "Volume & Display",
+      "keywords": [
+        "sound",
+        "quiet"
+      ],
+      "action": {
+        "kind": "volume",
+        "step": -6
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "vol-up-fine",
+      "title": "Volume up, fine",
+      "subtitle": "Raises output volume by a small step.",
+      "category": "Volume & Display",
+      "keywords": [
+        "sound",
+        "small"
+      ],
+      "action": {
+        "kind": "volume",
+        "step": 2
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "vol-down-fine",
+      "title": "Volume down, fine",
+      "subtitle": "Lowers output volume by a small step.",
+      "category": "Volume & Display",
+      "keywords": [
+        "sound",
+        "small"
+      ],
+      "action": {
+        "kind": "volume",
+        "step": -2
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "vol-mute",
+      "title": "Mute or unmute",
+      "subtitle": "Toggles system output mute.",
+      "category": "Volume & Display",
+      "keywords": [
+        "silence",
+        "sound"
+      ],
+      "action": {
+        "kind": "mute"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "bright-up",
+      "title": "Brightness up",
+      "subtitle": "Raises display brightness.",
+      "category": "Volume & Display",
+      "keywords": [
+        "screen",
+        "display"
+      ],
+      "action": {
+        "kind": "brightness",
+        "step": 1
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "bright-down",
+      "title": "Brightness down",
+      "subtitle": "Lowers display brightness.",
+      "category": "Volume & Display",
+      "keywords": [
+        "screen",
+        "display"
+      ],
+      "action": {
+        "kind": "brightness",
+        "step": -1
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "display-sleep",
+      "title": "Sleep display",
+      "subtitle": "Turns the display off without sleeping the whole Mac.",
+      "category": "Volume & Display",
+      "keywords": [
+        "screen off",
+        "lock"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "sleep-display"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "night-shift-toggle",
+      "title": "Toggle Night Shift",
+      "subtitle": "Runs a Shortcut named \"Toggle Night Shift\". Create that Shortcut first in the Shortcuts app.",
+      "category": "Volume & Display",
+      "keywords": [
+        "warm",
+        "blue light"
+      ],
+      "action": {
+        "kind": "shortcut",
+        "name": "Toggle Night Shift"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "quick-hush",
+      "title": "Quick hush",
+      "subtitle": "Drops the volume hard and mutes, for when a call rings out of nowhere.",
+      "category": "Volume & Display",
+      "keywords": [
+        "emergency",
+        "silence"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "volume",
+            "step": -40
+          },
+          {
+            "kind": "mute",
+            "delayMs": 150
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-left",
+      "title": "Window to left half",
+      "subtitle": "Snaps the frontmost window to the left half of the screen.",
+      "category": "Window",
+      "keywords": [
+        "snap",
+        "tile"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "left"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-right",
+      "title": "Window to right half",
+      "subtitle": "Snaps the frontmost window to the right half of the screen.",
+      "category": "Window",
+      "keywords": [
+        "snap",
+        "tile"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "right"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-top",
+      "title": "Window to top half",
+      "subtitle": "Snaps the frontmost window to the top half.",
+      "category": "Window",
+      "keywords": [
+        "snap",
+        "tile"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "top"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-bottom",
+      "title": "Window to bottom half",
+      "subtitle": "Snaps the frontmost window to the bottom half.",
+      "category": "Window",
+      "keywords": [
+        "snap",
+        "tile"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "bottom"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-maximize",
+      "title": "Fill the screen",
+      "subtitle": "Expands the frontmost window to fill the screen.",
+      "category": "Window",
+      "keywords": [
+        "zoom",
+        "full"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "maximize"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-center",
+      "title": "Center window",
+      "subtitle": "Centers the frontmost window without resizing it.",
+      "category": "Window",
+      "keywords": [
+        "middle"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "center"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-next-display",
+      "title": "Move to next display",
+      "subtitle": "Moves the frontmost window to the next display.",
+      "category": "Window",
+      "keywords": [
+        "monitor",
+        "external"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "next-display"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-minimize",
+      "title": "Minimize window",
+      "subtitle": "Minimizes the frontmost window to the Dock.",
+      "category": "Window",
+      "keywords": [
+        "dock"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "minimize"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-fullscreen",
+      "title": "Toggle full screen",
+      "subtitle": "Toggles full screen for the frontmost window.",
+      "category": "Window",
+      "keywords": [
+        "maximize",
+        "zoom"
+      ],
+      "action": {
+        "kind": "window",
+        "op": "fullscreen"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-left-then-display",
+      "title": "Left half, next display",
+      "subtitle": "Snaps left, then immediately throws the window to the next display.",
+      "category": "Window",
+      "keywords": [
+        "snap",
+        "monitor"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "window",
+            "op": "left"
+          },
+          {
+            "kind": "window",
+            "op": "next-display",
+            "delayMs": 200
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-right-then-display",
+      "title": "Right half, next display",
+      "subtitle": "Snaps right, then immediately throws the window to the next display.",
+      "category": "Window",
+      "keywords": [
+        "snap",
+        "monitor"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "window",
+            "op": "right"
+          },
+          {
+            "kind": "window",
+            "op": "next-display",
+            "delayMs": 200
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "win-show-desktop",
+      "title": "Show desktop",
+      "subtitle": "Pushes all windows aside to reveal the desktop.",
+      "category": "Window",
+      "keywords": [
+        "hide all",
+        "desktop"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "show-desktop"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "space-mission-control",
+      "title": "Mission Control",
+      "subtitle": "Shows all open windows and spaces.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "overview",
+        "expose"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "mission-control"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "space-launchpad",
+      "title": "Launchpad",
+      "subtitle": "Shows Launchpad.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "apps grid"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "launchpad"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "space-show-desktop",
+      "title": "Show desktop",
+      "subtitle": "Pushes windows aside to reveal the desktop.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "desktop"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "show-desktop"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "space-move-left",
+      "title": "Move a space left",
+      "subtitle": "Switches to the desktop space on the left.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "desktop",
+        "switch"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "left",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "space-move-right",
+      "title": "Move a space right",
+      "subtitle": "Switches to the desktop space on the right.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "desktop",
+        "switch"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "right",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "space-app-expose",
+      "title": "App windows (Exposé)",
+      "subtitle": "Shows all windows of the current app.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "expose",
+        "windows"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "down",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "space-desktop-1",
+      "title": "Switch to Desktop 1",
+      "subtitle": "Jumps straight to Desktop 1. Turn this shortcut on in System Settings, Keyboard, Keyboard Shortcuts, Mission Control first, it is off by default.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "desktop",
+        "jump"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "1",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "space-desktop-2",
+      "title": "Switch to Desktop 2",
+      "subtitle": "Jumps straight to Desktop 2. Needs the same Mission Control shortcut enabled as Desktop 1.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "desktop",
+        "jump"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "2",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "space-desktop-3",
+      "title": "Switch to Desktop 3",
+      "subtitle": "Jumps straight to Desktop 3. Needs the same Mission Control shortcut enabled as Desktop 1.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "desktop",
+        "jump"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "3",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "space-quick-note",
+      "title": "Quick Note",
+      "subtitle": "Opens a new Quick Note. The key is the Globe or fn key plus Q.",
+      "category": "Spaces & Desktop",
+      "keywords": [
+        "note",
+        "capture"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "q",
+        "modifiers": [
+          "fn"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "sys-lock",
+      "title": "Lock screen",
+      "subtitle": "Locks the screen immediately.",
+      "category": "System",
+      "keywords": [
+        "security"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "lock"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-sleep-display",
+      "title": "Sleep display",
+      "subtitle": "Turns the display off.",
+      "category": "System",
+      "keywords": [
+        "screen off"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "sleep-display"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-screenshot",
+      "title": "Screenshot",
+      "subtitle": "Takes a full-screen screenshot.",
+      "category": "System",
+      "keywords": [
+        "capture"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "screenshot"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-screenshot-area",
+      "title": "Screenshot of an area",
+      "subtitle": "Lets you drag a region to capture.",
+      "category": "System",
+      "keywords": [
+        "capture",
+        "region"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "screenshot-area"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-dnd-toggle",
+      "title": "Toggle Do Not Disturb",
+      "subtitle": "Turns Focus or Do Not Disturb on or off.",
+      "category": "System",
+      "keywords": [
+        "focus",
+        "quiet"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "dnd-toggle"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-mission-control",
+      "title": "Mission Control",
+      "subtitle": "Shows all open windows and spaces.",
+      "category": "System",
+      "keywords": [
+        "overview"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "mission-control"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-launchpad",
+      "title": "Launchpad",
+      "subtitle": "Shows Launchpad.",
+      "category": "System",
+      "keywords": [
+        "apps grid"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "launchpad"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-show-desktop",
+      "title": "Show desktop",
+      "subtitle": "Pushes windows aside to reveal the desktop.",
+      "category": "System",
+      "keywords": [
+        "desktop"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "show-desktop"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-spotlight",
+      "title": "Open Spotlight",
+      "subtitle": "Opens Spotlight search.",
+      "category": "System",
+      "keywords": [
+        "search",
+        "find"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "space",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-emoji-picker",
+      "title": "Character viewer",
+      "subtitle": "Opens the emoji and symbol picker.",
+      "category": "System",
+      "keywords": [
+        "emoji",
+        "symbols"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "space",
+        "modifiers": [
+          "control",
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-force-quit-dialog",
+      "title": "Force Quit dialog",
+      "subtitle": "Opens the Force Quit Applications window. You still choose and confirm inside it.",
+      "category": "System",
+      "keywords": [
+        "unresponsive",
+        "crash"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "escape",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sys-screenshot-clipboard",
+      "title": "Screenshot to clipboard",
+      "subtitle": "Captures the full screen straight to the clipboard, no file saved.",
+      "category": "System",
+      "keywords": [
+        "capture",
+        "paste"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "3",
+        "modifiers": [
+          "control",
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-switch-next",
+      "title": "Switch to next app",
+      "subtitle": "Cycles to the next running app.",
+      "category": "Apps",
+      "keywords": [
+        "cycle",
+        "tab"
+      ],
+      "action": {
+        "kind": "app",
+        "op": "switch-next"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-switch-prev",
+      "title": "Switch to previous app",
+      "subtitle": "Cycles to the previous running app.",
+      "category": "Apps",
+      "keywords": [
+        "cycle",
+        "tab"
+      ],
+      "action": {
+        "kind": "app",
+        "op": "switch-previous"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-hide",
+      "title": "Hide frontmost app",
+      "subtitle": "Hides the app that is currently in front.",
+      "category": "Apps",
+      "keywords": [
+        "hide"
+      ],
+      "action": {
+        "kind": "app",
+        "op": "hide"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-quit",
+      "title": "Quit frontmost app",
+      "subtitle": "Quits the app that is currently in front. This closes all its windows.",
+      "category": "Apps",
+      "keywords": [
+        "close",
+        "exit"
+      ],
+      "action": {
+        "kind": "app",
+        "op": "quit"
+      },
+      "destructive": true,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-open-finder",
+      "title": "Open Finder",
+      "subtitle": "Opens or activates Finder.",
+      "category": "Apps",
+      "keywords": [
+        "files"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Finder"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-open-mail",
+      "title": "Open Mail",
+      "subtitle": "Opens or activates Mail.",
+      "category": "Apps",
+      "keywords": [
+        "email"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Mail"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-open-calendar",
+      "title": "Open Calendar",
+      "subtitle": "Opens or activates Calendar.",
+      "category": "Apps",
+      "keywords": [
+        "schedule"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Calendar"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-open-notes",
+      "title": "Open Notes",
+      "subtitle": "Opens or activates Notes.",
+      "category": "Apps",
+      "keywords": [
+        "notes"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Notes"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-open-messages",
+      "title": "Open Messages",
+      "subtitle": "Opens or activates Messages.",
+      "category": "Apps",
+      "keywords": [
+        "chat",
+        "imessage"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Messages"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "app-open-reminders",
+      "title": "Open Reminders",
+      "subtitle": "Opens or activates Reminders.",
+      "category": "Apps",
+      "keywords": [
+        "todo",
+        "tasks"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "Reminders"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "br-new-tab",
+      "title": "New tab",
+      "subtitle": "Opens a new tab.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-close-tab",
+      "title": "Close tab",
+      "subtitle": "Closes the current tab.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "w",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-reopen-tab",
+      "title": "Reopen closed tab",
+      "subtitle": "Reopens the last closed tab.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-next-tab",
+      "title": "Next tab",
+      "subtitle": "Moves to the tab on the right.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "]",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-prev-tab",
+      "title": "Previous tab",
+      "subtitle": "Moves to the tab on the left.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "[",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-back",
+      "title": "Back",
+      "subtitle": "Goes back a page.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "[",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-forward",
+      "title": "Forward",
+      "subtitle": "Goes forward a page.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "]",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-reload",
+      "title": "Reload page",
+      "subtitle": "Reloads the current page.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-hard-reload",
+      "title": "Hard reload",
+      "subtitle": "Reloads the page and bypasses the cache. Chromium browsers only.",
+      "category": "Browser",
+      "keywords": [
+        "cache",
+        "chrome",
+        "arc"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-address-bar",
+      "title": "Focus address bar",
+      "subtitle": "Selects the address bar so you can type a URL or search.",
+      "category": "Browser",
+      "keywords": [
+        "url",
+        "search"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "l",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-new-window",
+      "title": "New window",
+      "subtitle": "Opens a new browser window.",
+      "category": "Browser",
+      "keywords": [
+        "safari",
+        "chrome",
+        "arc",
+        "web"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-private-window",
+      "title": "New private window",
+      "subtitle": "Opens a new private or incognito window.",
+      "category": "Browser",
+      "keywords": [
+        "incognito",
+        "private"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-find",
+      "title": "Find on page",
+      "subtitle": "Opens find-on-page search.",
+      "category": "Browser",
+      "keywords": [
+        "search"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-zoom-in",
+      "title": "Zoom in",
+      "subtitle": "Increases page zoom.",
+      "category": "Browser",
+      "keywords": [
+        "zoom"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "=",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-zoom-out",
+      "title": "Zoom out",
+      "subtitle": "Decreases page zoom.",
+      "category": "Browser",
+      "keywords": [
+        "zoom"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "-",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "br-zoom-reset",
+      "title": "Reset zoom",
+      "subtitle": "Resets page zoom to 100%.",
+      "category": "Browser",
+      "keywords": [
+        "zoom"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "0",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "xl-autosum",
+      "title": "AutoSum",
+      "subtitle": "Inserts a SUM formula for the selected cells.",
+      "category": "Excel",
+      "keywords": [
+        "excel",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-fill-down",
+      "title": "Fill down",
+      "subtitle": "Fills the selection down from the top row.",
+      "category": "Excel",
+      "keywords": [
+        "excel",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-fill-right",
+      "title": "Fill right",
+      "subtitle": "Fills the selection right from the left column.",
+      "category": "Excel",
+      "keywords": [
+        "excel",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-paste-values",
+      "title": "Paste values only",
+      "subtitle": "Pastes as values, dropping formulas and most formatting.",
+      "category": "Excel",
+      "keywords": [
+        "paste special"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "keystroke",
+            "key": "v",
+            "modifiers": [
+              "command",
+              "control"
+            ]
+          },
+          {
+            "kind": "keystroke",
+            "key": "v",
+            "modifiers": [],
+            "delayMs": 60
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "xl-insert-row",
+      "title": "Insert row",
+      "subtitle": "Inserts a row above the selection.",
+      "category": "Excel",
+      "keywords": [
+        "excel",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "=",
+        "modifiers": [
+          "control",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-delete-row",
+      "title": "Delete row",
+      "subtitle": "Deletes the selected row.",
+      "category": "Excel",
+      "keywords": [
+        "excel",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "-",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-toggle-absolute",
+      "title": "Toggle absolute reference",
+      "subtitle": "Cycles a formula reference between relative and absolute, the Mac Excel equivalent of F4.",
+      "category": "Excel",
+      "keywords": [
+        "f4",
+        "dollar sign",
+        "anchor"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-next-sheet",
+      "title": "Next sheet",
+      "subtitle": "Moves to the next sheet tab.",
+      "category": "Excel",
+      "keywords": [
+        "tab",
+        "worksheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "pagedown",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-prev-sheet",
+      "title": "Previous sheet",
+      "subtitle": "Moves to the previous sheet tab.",
+      "category": "Excel",
+      "keywords": [
+        "tab",
+        "worksheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "pageup",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-toggle-filter",
+      "title": "Toggle filter",
+      "subtitle": "Turns AutoFilter on or off for the selection.",
+      "category": "Excel",
+      "keywords": [
+        "autofilter"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-trace-precedents",
+      "title": "Trace precedents",
+      "subtitle": "Draws arrows to the cells that feed the selected formula.",
+      "category": "Excel",
+      "keywords": [
+        "audit",
+        "formula"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "[",
+        "modifiers": [
+          "control",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ],
+      "verify": true
+    },
+    {
+      "id": "xl-trace-dependents",
+      "title": "Trace dependents",
+      "subtitle": "Draws arrows to the cells that use the selected cell.",
+      "category": "Excel",
+      "keywords": [
+        "audit",
+        "formula"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "]",
+        "modifiers": [
+          "control",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ],
+      "verify": true
+    },
+    {
+      "id": "xl-insert-cell-comment",
+      "title": "New comment",
+      "subtitle": "Adds a comment to the selected cell.",
+      "category": "Excel",
+      "keywords": [
+        "note",
+        "annotate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f2",
+        "modifiers": [
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ],
+      "verify": true
+    },
+    {
+      "id": "xl-bold",
+      "title": "Bold",
+      "subtitle": "Toggles bold on the selection.",
+      "category": "Excel",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "xl-select-all",
+      "title": "Select current region",
+      "subtitle": "Selects the current data region around the active cell.",
+      "category": "Excel",
+      "keywords": [
+        "select"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "8",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ],
+      "verify": true
+    },
+    {
+      "id": "xl-format-cells",
+      "title": "Format cells",
+      "subtitle": "Opens the Format Cells dialog.",
+      "category": "Excel",
+      "keywords": [
+        "number format",
+        "style"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "1",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "gs-paste-values",
+      "title": "Paste values only",
+      "subtitle": "Pastes as values only, dropping formulas.",
+      "category": "Google Sheets",
+      "keywords": [
+        "sheets",
+        "google",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "v",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "gs-insert-row-above",
+      "title": "Insert row above",
+      "subtitle": "Inserts a row above the current one. This is a two-key chord: Command-Option-I, then R.",
+      "category": "Google Sheets",
+      "keywords": [
+        "sheets",
+        "google",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "keystroke",
+            "key": "i",
+            "modifiers": [
+              "command",
+              "option"
+            ]
+          },
+          {
+            "kind": "keystroke",
+            "key": "r",
+            "modifiers": [],
+            "delayMs": 150
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "gs-insert-row-below",
+      "title": "Insert row below",
+      "subtitle": "Inserts a row below the current one. This is a two-key chord: Command-Option-I, then B.",
+      "category": "Google Sheets",
+      "keywords": [
+        "sheets",
+        "google",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "keystroke",
+            "key": "i",
+            "modifiers": [
+              "command",
+              "option"
+            ]
+          },
+          {
+            "kind": "keystroke",
+            "key": "b",
+            "modifiers": [],
+            "delayMs": 150
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "gs-fill-down",
+      "title": "Fill down",
+      "subtitle": "Fills the selection down from the top row.",
+      "category": "Google Sheets",
+      "keywords": [
+        "sheets",
+        "google",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "gs-fill-right",
+      "title": "Fill right",
+      "subtitle": "Fills the selection right from the left column.",
+      "category": "Google Sheets",
+      "keywords": [
+        "sheets",
+        "google",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "gs-toggle-filter",
+      "title": "Toggle filter",
+      "subtitle": "Turns the current filter on or off.",
+      "category": "Google Sheets",
+      "keywords": [
+        "sheets",
+        "google",
+        "spreadsheet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "l",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "gs-bold",
+      "title": "Bold",
+      "subtitle": "Toggles bold on the selection.",
+      "category": "Google Sheets",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "gs-insert-comment",
+      "title": "Insert comment",
+      "subtitle": "Adds a comment on the selected cell.",
+      "category": "Google Sheets",
+      "keywords": [
+        "note",
+        "annotate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "m",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "gs-open-sheets",
+      "title": "Open Google Sheets",
+      "subtitle": "Opens sheets.google.com in the browser.",
+      "category": "Google Sheets",
+      "keywords": [
+        "launch",
+        "new"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "https://sheets.google.com"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "gs-show-formulas",
+      "title": "Show formulas",
+      "subtitle": "Toggles between showing formulas and their results.",
+      "category": "Google Sheets",
+      "keywords": [
+        "formula view"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "`",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-present-from-start",
+      "title": "Start presentation",
+      "subtitle": "Starts the slideshow from the first slide.",
+      "category": "PowerPoint",
+      "keywords": [
+        "present",
+        "slideshow"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-present-from-current",
+      "title": "Present from current slide",
+      "subtitle": "Starts the slideshow from the slide you are on.",
+      "category": "PowerPoint",
+      "keywords": [
+        "present",
+        "slideshow"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-new-slide",
+      "title": "New slide",
+      "subtitle": "Inserts a new slide after the current one.",
+      "category": "PowerPoint",
+      "keywords": [
+        "insert"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-duplicate-slide",
+      "title": "Duplicate slide",
+      "subtitle": "Duplicates the selected slide.",
+      "category": "PowerPoint",
+      "keywords": [
+        "copy"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ]
+    },
+    {
+      "id": "pp-next-slide",
+      "title": "Next slide",
+      "subtitle": "Moves to the next slide while editing.",
+      "category": "PowerPoint",
+      "keywords": [
+        "navigate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "down",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-prev-slide",
+      "title": "Previous slide",
+      "subtitle": "Moves to the previous slide while editing.",
+      "category": "PowerPoint",
+      "keywords": [
+        "navigate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "up",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-group",
+      "title": "Group objects",
+      "subtitle": "Groups the selected objects.",
+      "category": "PowerPoint",
+      "keywords": [
+        "group"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "g",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-ungroup",
+      "title": "Ungroup objects",
+      "subtitle": "Ungroups the selected group.",
+      "category": "PowerPoint",
+      "keywords": [
+        "ungroup"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "g",
+        "modifiers": [
+          "command",
+          "option",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-align-center",
+      "title": "Align center",
+      "subtitle": "Opens alignment options for the selected objects.",
+      "category": "PowerPoint",
+      "keywords": [
+        "layout"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "a",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pp-black-screen",
+      "title": "Blank the screen to black",
+      "subtitle": "Cuts the presentation to a black screen during a talk.",
+      "category": "PowerPoint",
+      "keywords": [
+        "blank",
+        "pause talk"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Powerpoint"
+      ],
+      "verify": true
+    },
+    {
+      "id": "kn-play",
+      "title": "Play presentation",
+      "subtitle": "Starts the slideshow from the first slide.",
+      "category": "Keynote",
+      "keywords": [
+        "present"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ],
+      "verify": true
+    },
+    {
+      "id": "kn-play-from-current",
+      "title": "Play from current slide",
+      "subtitle": "Starts the slideshow from the slide you are on.",
+      "category": "Keynote",
+      "keywords": [
+        "present"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ],
+      "verify": true
+    },
+    {
+      "id": "kn-new-slide",
+      "title": "New slide",
+      "subtitle": "Inserts a new slide after the current one.",
+      "category": "Keynote",
+      "keywords": [
+        "insert"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ]
+    },
+    {
+      "id": "kn-duplicate-slide",
+      "title": "Duplicate slide",
+      "subtitle": "Duplicates the selected slide.",
+      "category": "Keynote",
+      "keywords": [
+        "copy"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ]
+    },
+    {
+      "id": "kn-next-slide",
+      "title": "Next slide",
+      "subtitle": "Moves to the next slide while editing.",
+      "category": "Keynote",
+      "keywords": [
+        "navigate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "down",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ],
+      "verify": true
+    },
+    {
+      "id": "kn-prev-slide",
+      "title": "Previous slide",
+      "subtitle": "Moves to the previous slide while editing.",
+      "category": "Keynote",
+      "keywords": [
+        "navigate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "up",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ],
+      "verify": true
+    },
+    {
+      "id": "kn-group",
+      "title": "Group objects",
+      "subtitle": "Groups the selected objects.",
+      "category": "Keynote",
+      "keywords": [
+        "group"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "g",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ]
+    },
+    {
+      "id": "kn-ungroup",
+      "title": "Ungroup objects",
+      "subtitle": "Ungroups the selected group.",
+      "category": "Keynote",
+      "keywords": [
+        "ungroup"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "g",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ]
+    },
+    {
+      "id": "kn-skip-to-slide",
+      "title": "Skip to a slide number",
+      "subtitle": "Opens the slide navigator during a presentation.",
+      "category": "Keynote",
+      "keywords": [
+        "navigator"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ],
+      "verify": true
+    },
+    {
+      "id": "kn-black-screen",
+      "title": "Blank the screen to black",
+      "subtitle": "Cuts the presentation to a black screen during a talk.",
+      "category": "Keynote",
+      "keywords": [
+        "blank",
+        "pause talk"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.iWork.Keynote"
+      ],
+      "verify": true
+    },
+    {
+      "id": "fg-pen-tool",
+      "title": "Pen tool",
+      "subtitle": "Selects the pen tool.",
+      "category": "Figma",
+      "keywords": [
+        "vector",
+        "draw"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-zoom-to-fit",
+      "title": "Zoom to fit",
+      "subtitle": "Zooms to fit the current selection or the whole board.",
+      "category": "Figma",
+      "keywords": [
+        "zoom"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "1",
+        "modifiers": [
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-zoom-100",
+      "title": "Zoom to 100%",
+      "subtitle": "Resets zoom to 100%.",
+      "category": "Figma",
+      "keywords": [
+        "zoom"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "0",
+        "modifiers": [
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-undo",
+      "title": "Undo",
+      "subtitle": "Undoes the last change.",
+      "category": "Figma",
+      "keywords": [
+        "undo"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "z",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-redo",
+      "title": "Redo",
+      "subtitle": "Redoes the last undone change.",
+      "category": "Figma",
+      "keywords": [
+        "redo"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "z",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-toggle-rulers",
+      "title": "Toggle rulers",
+      "subtitle": "Shows or hides the rulers.",
+      "category": "Figma",
+      "keywords": [
+        "guides"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ],
+      "verify": true
+    },
+    {
+      "id": "fg-frame-tool",
+      "title": "Frame tool",
+      "subtitle": "Selects the frame tool.",
+      "category": "Figma",
+      "keywords": [
+        "artboard"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "a",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-group",
+      "title": "Group selection",
+      "subtitle": "Groups the selected layers.",
+      "category": "Figma",
+      "keywords": [
+        "group"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "g",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-component",
+      "title": "Create component",
+      "subtitle": "Turns the selection into a reusable component.",
+      "category": "Figma",
+      "keywords": [
+        "symbol"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "k",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-detach-instance",
+      "title": "Detach instance",
+      "subtitle": "Detaches a component instance from its main component.",
+      "category": "Figma",
+      "keywords": [
+        "break link"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ],
+      "verify": true
+    },
+    {
+      "id": "fg-comment-tool",
+      "title": "Comment tool",
+      "subtitle": "Selects the comment tool.",
+      "category": "Figma",
+      "keywords": [
+        "feedback"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "c",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ]
+    },
+    {
+      "id": "fg-present",
+      "title": "Present",
+      "subtitle": "Starts a presentation of the current frame.",
+      "category": "Figma",
+      "keywords": [
+        "play",
+        "preview"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.figma.Desktop"
+      ],
+      "verify": true
+    },
+    {
+      "id": "vc-command-palette",
+      "title": "Command palette",
+      "subtitle": "Opens the command palette.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "commands"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-quick-open",
+      "title": "Quick open file",
+      "subtitle": "Opens a file by fuzzy name search.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "file",
+        "search"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-toggle-terminal",
+      "title": "Toggle terminal",
+      "subtitle": "Shows or hides the integrated terminal.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "shell"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "`",
+        "modifiers": [
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-toggle-sidebar",
+      "title": "Toggle sidebar",
+      "subtitle": "Shows or hides the file explorer sidebar.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "explorer"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-comment-line",
+      "title": "Toggle line comment",
+      "subtitle": "Comments or uncomments the current line or selection.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "comment"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "/",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-format-document",
+      "title": "Format document",
+      "subtitle": "Runs the configured formatter on the file.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "prettier",
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f",
+        "modifiers": [
+          "shift",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ],
+      "verify": true
+    },
+    {
+      "id": "vc-go-to-definition",
+      "title": "Go to definition",
+      "subtitle": "Jumps to where the symbol under the cursor is defined.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "navigate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f12",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-quick-fix",
+      "title": "Quick fix",
+      "subtitle": "Shows quick fix suggestions at the cursor.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "lint",
+        "fix"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": ".",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ],
+      "verify": true
+    },
+    {
+      "id": "vc-rename-symbol",
+      "title": "Rename symbol",
+      "subtitle": "Renames the symbol under the cursor everywhere it is used.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "refactor"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f2",
+        "modifiers": []
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-split-editor",
+      "title": "Split editor",
+      "subtitle": "Splits the editor into a second column.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "split view"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "\\",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-save-all",
+      "title": "Save all",
+      "subtitle": "Saves every open file.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "save"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "s",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ],
+      "verify": true
+    },
+    {
+      "id": "vc-multi-cursor-next",
+      "title": "Add cursor at next match",
+      "subtitle": "Adds a cursor at the next occurrence of the current selection.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "multi cursor"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-move-line-down",
+      "title": "Move line down",
+      "subtitle": "Moves the current line down.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "reorder"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "down",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "vc-move-line-up",
+      "title": "Move line up",
+      "subtitle": "Moves the current line up.",
+      "category": "VS Code / Cursor",
+      "keywords": [
+        "reorder"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "up",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "term-new-tab",
+      "title": "New tab",
+      "subtitle": "Opens a new Terminal tab.",
+      "category": "Terminal",
+      "keywords": [
+        "shell"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2"
+      ]
+    },
+    {
+      "id": "term-new-window",
+      "title": "New window",
+      "subtitle": "Opens a new Terminal window.",
+      "category": "Terminal",
+      "keywords": [
+        "shell"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2"
+      ]
+    },
+    {
+      "id": "term-close-tab",
+      "title": "Close tab",
+      "subtitle": "Closes the current tab.",
+      "category": "Terminal",
+      "keywords": [
+        "shell"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "w",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2"
+      ]
+    },
+    {
+      "id": "term-clear",
+      "title": "Clear screen",
+      "subtitle": "Clears the visible terminal output.",
+      "category": "Terminal",
+      "keywords": [
+        "cls"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "k",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Terminal",
+        "com.googlecode.iterm2"
+      ]
+    },
+    {
+      "id": "term-split-pane",
+      "title": "Split pane",
+      "subtitle": "Splits the current Terminal pane.",
+      "category": "Terminal",
+      "keywords": [
+        "iterm"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.googlecode.iterm2"
+      ],
+      "verify": true
+    },
+    {
+      "id": "term-git-status",
+      "title": "Copy git status of home folder",
+      "subtitle": "Runs a read-only git status in your home folder and copies the result to the clipboard. Never modifies files.",
+      "category": "Terminal",
+      "keywords": [
+        "git",
+        "status"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "cd ~ && git status --short | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "term-whoami-copy",
+      "title": "Copy whoami and hostname",
+      "subtitle": "Copies your username and machine hostname to the clipboard. Read-only.",
+      "category": "Terminal",
+      "keywords": [
+        "identity"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "printf \"%s@%s\" \"$(whoami)\" \"$(hostname)\" | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "term-sw-vers-copy",
+      "title": "Copy macOS version",
+      "subtitle": "Copies the current macOS version string to the clipboard. Read-only.",
+      "category": "Terminal",
+      "keywords": [
+        "diagnostics"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "sw_vers | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "sl-search",
+      "title": "Search",
+      "subtitle": "Opens Slack search.",
+      "category": "Slack",
+      "keywords": [
+        "find"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "g",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ]
+    },
+    {
+      "id": "sl-quick-switcher",
+      "title": "Jump to conversation",
+      "subtitle": "Opens the quick switcher to jump to a channel or DM.",
+      "category": "Slack",
+      "keywords": [
+        "switch",
+        "navigate"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "k",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ]
+    },
+    {
+      "id": "sl-mark-all-read",
+      "title": "Mark everything read",
+      "subtitle": "Marks all channels as read.",
+      "category": "Slack",
+      "keywords": [
+        "inbox zero"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "escape",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ],
+      "verify": true
+    },
+    {
+      "id": "sl-new-message",
+      "title": "New message",
+      "subtitle": "Starts a new direct message.",
+      "category": "Slack",
+      "keywords": [
+        "dm",
+        "compose"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ]
+    },
+    {
+      "id": "sl-toggle-mute-channel",
+      "title": "Mute current channel",
+      "subtitle": "Mutes notifications for the current channel.",
+      "category": "Slack",
+      "keywords": [
+        "notifications"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "period",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ],
+      "verify": true
+    },
+    {
+      "id": "sl-set-status",
+      "title": "Set a status",
+      "subtitle": "Opens the status picker.",
+      "category": "Slack",
+      "keywords": [
+        "presence"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "period",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ],
+      "verify": true
+    },
+    {
+      "id": "sl-bold",
+      "title": "Bold",
+      "subtitle": "Toggles bold in the message box.",
+      "category": "Slack",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ]
+    },
+    {
+      "id": "sl-italic",
+      "title": "Italic",
+      "subtitle": "Toggles italic in the message box.",
+      "category": "Slack",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "i",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ]
+    },
+    {
+      "id": "sl-upload-file",
+      "title": "Upload a file",
+      "subtitle": "Opens the file picker to attach a file.",
+      "category": "Slack",
+      "keywords": [
+        "attach"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "u",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ],
+      "verify": true
+    },
+    {
+      "id": "sl-toggle-sidebar",
+      "title": "Toggle sidebar",
+      "subtitle": "Shows or hides the channel sidebar.",
+      "category": "Slack",
+      "keywords": [
+        "navigation"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.tinyspeck.slackmacgap"
+      ],
+      "verify": true
+    },
+    {
+      "id": "zm-toggle-mute",
+      "title": "Zoom: toggle mute",
+      "subtitle": "Mutes or unmutes your microphone in Zoom.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "zoom",
+        "microphone"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "a",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "us.zoom.xos"
+      ]
+    },
+    {
+      "id": "zm-toggle-video",
+      "title": "Zoom: toggle camera",
+      "subtitle": "Turns your camera on or off in Zoom.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "zoom",
+        "camera",
+        "video"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "v",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "us.zoom.xos"
+      ]
+    },
+    {
+      "id": "zm-share-screen",
+      "title": "Zoom: start or stop screen share",
+      "subtitle": "Toggles screen sharing in Zoom.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "zoom",
+        "present"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "s",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "us.zoom.xos"
+      ],
+      "verify": true
+    },
+    {
+      "id": "zm-leave-meeting",
+      "title": "Zoom: leave meeting",
+      "subtitle": "Leaves the current Zoom meeting. This ends your participation immediately.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "zoom",
+        "end call"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "w",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": true,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "us.zoom.xos"
+      ],
+      "verify": true
+    },
+    {
+      "id": "zm-raise-hand",
+      "title": "Zoom: raise or lower hand",
+      "subtitle": "Toggles raise hand in Zoom.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "zoom"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "y",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "us.zoom.xos"
+      ],
+      "verify": true
+    },
+    {
+      "id": "zm-gallery-view",
+      "title": "Zoom: toggle gallery view",
+      "subtitle": "Switches between gallery and speaker view in Zoom.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "zoom",
+        "layout"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "w",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "us.zoom.xos"
+      ],
+      "verify": true
+    },
+    {
+      "id": "meet-toggle-mute",
+      "title": "Meet: toggle mute",
+      "subtitle": "Mutes or unmutes your microphone in Google Meet in the browser.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "meet",
+        "microphone"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "meet-toggle-video",
+      "title": "Meet: toggle camera",
+      "subtitle": "Turns your camera on or off in Google Meet in the browser.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "meet",
+        "camera"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "e",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ]
+    },
+    {
+      "id": "meet-hand-raise",
+      "title": "Meet: raise or lower hand",
+      "subtitle": "Toggles raise hand in Google Meet in the browser.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "meet"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "h",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "meet-leave-call",
+      "title": "Meet: leave the call",
+      "subtitle": "Leaves the current Google Meet call in the browser. This ends your participation immediately.",
+      "category": "Zoom / Meet",
+      "keywords": [
+        "meet",
+        "end call"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "h",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": true,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Safari",
+        "com.google.Chrome",
+        "company.thebrowser.Browser"
+      ],
+      "verify": true
+    },
+    {
+      "id": "nt-quick-find",
+      "title": "Quick find",
+      "subtitle": "Opens quick find to jump to any page.",
+      "category": "Notion",
+      "keywords": [
+        "search",
+        "jump"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ]
+    },
+    {
+      "id": "nt-new-page",
+      "title": "New page",
+      "subtitle": "Creates a new page.",
+      "category": "Notion",
+      "keywords": [
+        "create"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ]
+    },
+    {
+      "id": "nt-search-replace",
+      "title": "Search and replace",
+      "subtitle": "Opens search and replace within the page.",
+      "category": "Notion",
+      "keywords": [
+        "find"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ],
+      "verify": true
+    },
+    {
+      "id": "nt-toggle-sidebar",
+      "title": "Toggle sidebar",
+      "subtitle": "Shows or hides the sidebar.",
+      "category": "Notion",
+      "keywords": [
+        "navigation"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "\\",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ]
+    },
+    {
+      "id": "nt-bold",
+      "title": "Bold",
+      "subtitle": "Toggles bold on the selection.",
+      "category": "Notion",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ]
+    },
+    {
+      "id": "nt-italic",
+      "title": "Italic",
+      "subtitle": "Toggles italic on the selection.",
+      "category": "Notion",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "i",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ]
+    },
+    {
+      "id": "nt-toggle-block",
+      "title": "Turn selection into a toggle",
+      "subtitle": "Wraps the current block as a toggle list.",
+      "category": "Notion",
+      "keywords": [
+        "collapse"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ],
+      "verify": true
+    },
+    {
+      "id": "nt-comment",
+      "title": "Add comment",
+      "subtitle": "Adds a comment on the current block.",
+      "category": "Notion",
+      "keywords": [
+        "feedback"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "return",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ],
+      "verify": true
+    },
+    {
+      "id": "nt-duplicate-block",
+      "title": "Duplicate block",
+      "subtitle": "Duplicates the current block.",
+      "category": "Notion",
+      "keywords": [
+        "copy"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ],
+      "verify": true
+    },
+    {
+      "id": "nt-move-block-up",
+      "title": "Move block up",
+      "subtitle": "Moves the current block up.",
+      "category": "Notion",
+      "keywords": [
+        "reorder"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "up",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "notion.id"
+      ],
+      "verify": true
+    },
+    {
+      "id": "wr-undo",
+      "title": "Undo",
+      "subtitle": "Undoes the last change.",
+      "category": "Writing",
+      "keywords": [
+        "undo"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "z",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-redo",
+      "title": "Redo",
+      "subtitle": "Redoes the last undone change.",
+      "category": "Writing",
+      "keywords": [
+        "redo"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "z",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-copy",
+      "title": "Copy",
+      "subtitle": "Copies the selection.",
+      "category": "Writing",
+      "keywords": [
+        "clipboard"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "c",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-paste",
+      "title": "Paste",
+      "subtitle": "Pastes the clipboard.",
+      "category": "Writing",
+      "keywords": [
+        "clipboard"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "v",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-paste-plain",
+      "title": "Paste without formatting",
+      "subtitle": "Pastes as plain text.",
+      "category": "Writing",
+      "keywords": [
+        "clipboard",
+        "plain"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "v",
+        "modifiers": [
+          "command",
+          "option",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-bold",
+      "title": "Bold",
+      "subtitle": "Toggles bold on the selection.",
+      "category": "Writing",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-italic",
+      "title": "Italic",
+      "subtitle": "Toggles italic on the selection.",
+      "category": "Writing",
+      "keywords": [
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "i",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-select-all",
+      "title": "Select all",
+      "subtitle": "Selects everything in the document.",
+      "category": "Writing",
+      "keywords": [
+        "select"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "a",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-dictate",
+      "title": "Start dictation",
+      "subtitle": "Starts macOS dictation at the cursor.",
+      "category": "Writing",
+      "keywords": [
+        "voice",
+        "speech"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "fn"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "wr-select-line",
+      "title": "Select current line",
+      "subtitle": "Selects from the start to the end of the current line.",
+      "category": "Writing",
+      "keywords": [
+        "select"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "keystroke",
+            "key": "left",
+            "modifiers": [
+              "command"
+            ]
+          },
+          {
+            "kind": "keystroke",
+            "key": "right",
+            "modifiers": [
+              "command",
+              "shift"
+            ],
+            "delayMs": 40
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-sign-off",
+      "title": "Type a sign-off",
+      "subtitle": "Types a plain, quote-safe sign-off. No em dashes, ever.",
+      "category": "Writing",
+      "keywords": [
+        "email",
+        "template"
+      ],
+      "action": {
+        "kind": "text",
+        "text": "Thanks,\n"
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "wr-todays-date",
+      "title": "Copy today's date",
+      "subtitle": "Copies today's date to the clipboard as YYYY-MM-DD. Read-only.",
+      "category": "Writing",
+      "keywords": [
+        "timestamp",
+        "date"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "date \"+%Y-%m-%d\" | tr -d \"\\n\" | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "fin-paste-values",
+      "title": "Paste values only",
+      "subtitle": "The standard Mac Excel paste special for values: Control-Command-V then V, no mouse needed.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "paste special"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "keystroke",
+            "key": "v",
+            "modifiers": [
+              "command",
+              "control"
+            ]
+          },
+          {
+            "kind": "keystroke",
+            "key": "v",
+            "modifiers": [],
+            "delayMs": 60
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-autosum",
+      "title": "AutoSum",
+      "subtitle": "Inserts a SUM formula, Shift-Command-T.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "sum"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-toggle-absolute",
+      "title": "Toggle absolute reference",
+      "subtitle": "The Mac Excel equivalent of F4, Command-T, cycles a reference between relative and absolute.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "f4",
+        "anchor"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "t",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-fill-down",
+      "title": "Fill down",
+      "subtitle": "Fills a formula down a column, Command-D.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-fill-right",
+      "title": "Fill right",
+      "subtitle": "Fills a formula across a row, Command-R.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-insert-row",
+      "title": "Insert row",
+      "subtitle": "Inserts a row above the selection.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "=",
+        "modifiers": [
+          "control",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-trace-precedents",
+      "title": "Trace precedents",
+      "subtitle": "Shows which cells feed the active formula, for auditing a model.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "audit"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "[",
+        "modifiers": [
+          "control",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ],
+      "verify": true
+    },
+    {
+      "id": "fin-cycle-number-format",
+      "title": "Cycle number format",
+      "subtitle": "Steps a cell through General, Currency, Percent and Number styles using only documented Mac Excel shortcuts (Control-Shift plus the unshifted key for each symbol).",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "currency",
+        "percent"
+      ],
+      "action": {
+        "kind": "macro",
+        "steps": [
+          {
+            "kind": "keystroke",
+            "key": "`",
+            "modifiers": [
+              "control",
+              "shift"
+            ]
+          },
+          {
+            "kind": "keystroke",
+            "key": "4",
+            "modifiers": [
+              "control",
+              "shift"
+            ],
+            "delayMs": 250
+          },
+          {
+            "kind": "keystroke",
+            "key": "5",
+            "modifiers": [
+              "control",
+              "shift"
+            ],
+            "delayMs": 250
+          },
+          {
+            "kind": "keystroke",
+            "key": "1",
+            "modifiers": [
+              "control",
+              "shift"
+            ],
+            "delayMs": 250
+          }
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ],
+      "verify": true
+    },
+    {
+      "id": "fin-format-cells",
+      "title": "Format cells",
+      "subtitle": "Opens the Format Cells dialog, Command-1.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "number format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "1",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-bold-header",
+      "title": "Bold",
+      "subtitle": "Bolds the selection, for header rows.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "format"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-toggle-filter",
+      "title": "Toggle filter",
+      "subtitle": "Turns AutoFilter on or off, for scrubbing an assumptions table.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "autofilter"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "fin-save",
+      "title": "Save workbook",
+      "subtitle": "Saves the current workbook.",
+      "category": "Finance modeling",
+      "keywords": [
+        "excel",
+        "save"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "s",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.Excel"
+      ]
+    },
+    {
+      "id": "dev-git-status",
+      "title": "Copy git status of home folder",
+      "subtitle": "Read-only git status of your home folder, copied to the clipboard. Never modifies files, never touches the network.",
+      "category": "Developer",
+      "keywords": [
+        "git"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "cd ~ && git status --short | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "dev-git-branch",
+      "title": "Copy current git branch",
+      "subtitle": "Copies the current branch name of the home folder repo to the clipboard. Read-only.",
+      "category": "Developer",
+      "keywords": [
+        "git",
+        "branch"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "cd ~ && git branch --show-current | tr -d \"\\n\" | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "dev-git-log",
+      "title": "Copy last commit summary",
+      "subtitle": "Copies a one-line summary of the last commit in the home folder repo. Read-only.",
+      "category": "Developer",
+      "keywords": [
+        "git",
+        "log"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "cd ~ && git log -1 --oneline | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "dev-comment-line",
+      "title": "Toggle line comment",
+      "subtitle": "Comments or uncomments the current line.",
+      "category": "Developer",
+      "keywords": [
+        "editor"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "/",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "dev-command-palette",
+      "title": "Command palette",
+      "subtitle": "Opens the editor command palette.",
+      "category": "Developer",
+      "keywords": [
+        "editor",
+        "commands"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "p",
+        "modifiers": [
+          "command",
+          "shift"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ]
+    },
+    {
+      "id": "dev-xcode-run",
+      "title": "Xcode: run",
+      "subtitle": "Builds and runs the active scheme.",
+      "category": "Developer",
+      "keywords": [
+        "xcode",
+        "build"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.dt.Xcode"
+      ]
+    },
+    {
+      "id": "dev-xcode-build",
+      "title": "Xcode: build",
+      "subtitle": "Builds the active scheme without running it.",
+      "category": "Developer",
+      "keywords": [
+        "xcode"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "b",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.dt.Xcode"
+      ]
+    },
+    {
+      "id": "dev-xcode-test",
+      "title": "Xcode: run tests",
+      "subtitle": "Runs the active test plan.",
+      "category": "Developer",
+      "keywords": [
+        "xcode",
+        "tests"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "u",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.dt.Xcode"
+      ],
+      "verify": true
+    },
+    {
+      "id": "dev-save-all",
+      "title": "Save all",
+      "subtitle": "Saves every open file in the editor.",
+      "category": "Developer",
+      "keywords": [
+        "editor",
+        "save"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "s",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.microsoft.VSCode",
+        "com.todesktop.230313mzl4w4u92"
+      ],
+      "verify": true
+    },
+    {
+      "id": "dev-pwd-copy",
+      "title": "Copy current shell directory",
+      "subtitle": "Copies the present working directory of your home folder to the clipboard. Read-only.",
+      "category": "Developer",
+      "keywords": [
+        "shell",
+        "path"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "cd ~ && pwd | tr -d \"\\n\" | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "pr-spotlight",
+      "title": "Open Spotlight",
+      "subtitle": "Opens Spotlight search.",
+      "category": "Productivity",
+      "keywords": [
+        "search"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "space",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "pr-quick-note",
+      "title": "Quick Note",
+      "subtitle": "Opens a new Quick Note.",
+      "category": "Productivity",
+      "keywords": [
+        "capture"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "q",
+        "modifiers": [
+          "fn"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pr-new-note",
+      "title": "New note in Notes",
+      "subtitle": "Creates a new note.",
+      "category": "Productivity",
+      "keywords": [
+        "notes"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.Notes"
+      ]
+    },
+    {
+      "id": "pr-new-reminder",
+      "title": "New reminder",
+      "subtitle": "Creates a new reminder.",
+      "category": "Productivity",
+      "keywords": [
+        "todo",
+        "tasks"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "n",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "com.apple.reminders"
+      ]
+    },
+    {
+      "id": "pr-pomodoro-start",
+      "title": "Start a Pomodoro timer",
+      "subtitle": "Runs a Shortcut named \"Start Pomodoro\". Create that Shortcut first in the Shortcuts app, for example a 25 minute timer with a notification.",
+      "category": "Productivity",
+      "keywords": [
+        "focus",
+        "timer"
+      ],
+      "action": {
+        "kind": "shortcut",
+        "name": "Start Pomodoro"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "pr-copy-timestamp",
+      "title": "Copy a timestamp",
+      "subtitle": "Copies the current date and time to the clipboard. Read-only.",
+      "category": "Productivity",
+      "keywords": [
+        "time"
+      ],
+      "action": {
+        "kind": "shell",
+        "command": "date \"+%Y-%m-%d %H:%M\" | pbcopy"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "pr-focus-toggle",
+      "title": "Toggle Do Not Disturb",
+      "subtitle": "Turns Focus on or off for a deep work block.",
+      "category": "Productivity",
+      "keywords": [
+        "focus"
+      ],
+      "action": {
+        "kind": "system",
+        "op": "dnd-toggle"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "pr-clipboard-snippet",
+      "title": "Copy a standard reply",
+      "subtitle": "Puts a short, ready to paste reply on the clipboard.",
+      "category": "Productivity",
+      "keywords": [
+        "template",
+        "snippet"
+      ],
+      "action": {
+        "kind": "clipboard",
+        "text": "Got it, thanks. I will follow up shortly."
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ]
+    },
+    {
+      "id": "ax-zoom-toggle",
+      "title": "Toggle screen zoom",
+      "subtitle": "Toggles the full-screen accessibility zoom.",
+      "category": "Accessibility",
+      "keywords": [
+        "low vision",
+        "magnify"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "8",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "ax-zoom-in",
+      "title": "Zoom in",
+      "subtitle": "Zooms the screen in, once accessibility zoom is on.",
+      "category": "Accessibility",
+      "keywords": [
+        "magnify"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "=",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "ax-zoom-out",
+      "title": "Zoom out",
+      "subtitle": "Zooms the screen out, once accessibility zoom is on.",
+      "category": "Accessibility",
+      "keywords": [
+        "magnify"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "-",
+        "modifiers": [
+          "command",
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "ax-invert-colors",
+      "title": "Toggle Invert Colors",
+      "subtitle": "Toggles classic color inversion.",
+      "category": "Accessibility",
+      "keywords": [
+        "contrast",
+        "low vision"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "8",
+        "modifiers": [
+          "command",
+          "option",
+          "control"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "ax-increase-contrast",
+      "title": "Open Display accessibility settings",
+      "subtitle": "Opens System Settings to the Display accessibility pane, for increasing contrast.",
+      "category": "Accessibility",
+      "keywords": [
+        "contrast"
+      ],
+      "action": {
+        "kind": "open",
+        "target": "x-apple.systempreferences:com.apple.preference.universalaccess"
+      },
+      "destructive": false,
+      "requires": [],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "ax-voiceover-toggle",
+      "title": "Toggle VoiceOver",
+      "subtitle": "Turns VoiceOver on or off.",
+      "category": "Accessibility",
+      "keywords": [
+        "screen reader"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "f5",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "ax-dictation-start",
+      "title": "Start dictation",
+      "subtitle": "Starts macOS dictation at the cursor.",
+      "category": "Accessibility",
+      "keywords": [
+        "voice",
+        "speech"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "d",
+        "modifiers": [
+          "fn"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    },
+    {
+      "id": "ax-speak-selection",
+      "title": "Speak selection",
+      "subtitle": "Reads the selected text out loud.",
+      "category": "Accessibility",
+      "keywords": [
+        "screen reader",
+        "read aloud"
+      ],
+      "action": {
+        "kind": "keystroke",
+        "key": "escape",
+        "modifiers": [
+          "option"
+        ]
+      },
+      "destructive": false,
+      "requires": [
+        "accessibility"
+      ],
+      "apps": [
+        "*"
+      ],
+      "verify": true
+    }
+  ]
+}

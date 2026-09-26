@@ -1,0 +1,207 @@
+{
+  "id": "music-and-media",
+  "name": "Music and media",
+  "description": "Playback, volume and brightness within reach, plus a tilt gesture for skipping tracks without touching the keyboard.",
+  "bindings": [
+    {
+      "id": "b1",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "media",
+        "command": "playpause"
+      },
+      "label": "Play or pause",
+      "presetId": "media-play-pause"
+    },
+    {
+      "id": "b2",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "left-palm",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "media",
+        "command": "next"
+      },
+      "label": "Next track",
+      "presetId": "media-next-track"
+    },
+    {
+      "id": "b3",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "volume",
+        "step": 6
+      },
+      "label": "Volume up",
+      "presetId": "vol-up"
+    },
+    {
+      "id": "b4",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "volume",
+        "step": -6
+      },
+      "label": "Volume down",
+      "presetId": "vol-down"
+    },
+    {
+      "id": "b5",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "right-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "mute"
+      },
+      "label": "Mute or unmute",
+      "presetId": "vol-mute"
+    },
+    {
+      "id": "b6",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "left-grille",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "media",
+        "command": "previous"
+      },
+      "label": "Previous track",
+      "presetId": "media-prev-track"
+    },
+    {
+      "id": "b7",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.apple.Music",
+      "action": {
+        "kind": "keystroke",
+        "key": "s",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Music: toggle shuffle",
+      "presetId": "media-music-shuffle"
+    },
+    {
+      "id": "b8",
+      "enabled": true,
+      "gesture": "double",
+      "zone": "top-strip",
+      "zones": null,
+      "modifiers": [],
+      "app": "com.apple.Music",
+      "action": {
+        "kind": "keystroke",
+        "key": "r",
+        "modifiers": [
+          "command"
+        ]
+      },
+      "label": "Music: toggle repeat",
+      "presetId": "media-music-repeat"
+    },
+    {
+      "id": "b9",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "right-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "brightness",
+        "step": 1
+      },
+      "label": "Brightness up",
+      "presetId": "bright-up"
+    },
+    {
+      "id": "b10",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "left-edge",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "brightness",
+        "step": -1
+      },
+      "label": "Brightness down",
+      "presetId": "bright-down"
+    },
+    {
+      "id": "b11",
+      "enabled": true,
+      "gesture": "tap",
+      "zone": "lid",
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "open",
+        "target": "Music"
+      },
+      "label": "Open Music",
+      "presetId": "media-open-music"
+    },
+    {
+      "id": "b12",
+      "enabled": true,
+      "gesture": "tilt_left",
+      "zone": null,
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "media",
+        "command": "previous"
+      },
+      "label": "Previous track",
+      "presetId": "media-prev-track"
+    },
+    {
+      "id": "b13",
+      "enabled": true,
+      "gesture": "tilt_right",
+      "zone": null,
+      "zones": null,
+      "modifiers": [],
+      "app": "*",
+      "action": {
+        "kind": "media",
+        "command": "next"
+      },
+      "label": "Next track",
+      "presetId": "media-next-track"
+    }
+  ]
+}
