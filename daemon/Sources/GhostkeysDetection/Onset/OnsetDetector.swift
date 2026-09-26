@@ -9,11 +9,21 @@
 //   3. Adaptive noise floor: the median of m over the last 2 s, computed robustly as the median of
 //      per-block medians (blocks of 40 samples, about 50 ms). A median ignores the spikes themselves,
 //      so taps and keystrokes do not inflate the floor, but sustained vibration (typing, a fan, a
-//      train) does raise it.
+//      train) does raise it. The floor falls fast: it is the lower of the 2 s median and the median
+//      of the last 0.5 s. In the first real recording a 2 s burst of handling noise otherwise kept
+//      the threshold at 156 mg for two more seconds and hid 60 to 100 mg taps made in 5 mg quiet.
 //   4. Trigger when m > max(absoluteFloor, k * noise). k and absoluteFloor come from sensitivity.
-//   5. Pulse tracking with hysteresis (half the trigger threshold). A pulse ends after 15 ms quiet.
-//      Pulses longer than 120 ms are not taps (the laptop is being moved, bumped or carried).
-//   6. Refractory 60 ms from onset and until the previous pulse has ended.
+//   5. Pulse tracking. The pulse ends after 15 ms below max(half the trigger threshold, 30% of the
+//      pulse's own peak). Its width is the time from onset to the last sample at 50% or more of its
+//      peak. Widths over 120 ms are not taps (the laptop is being moved, bumped or carried).
+//      Measured on the first real recording (laptop on a lap): left-palm taps stay above half their
+//      peak for 50 to 90 ms, right-palm 34 to 39 ms, grille 16 to 41 ms, while handling the machine
+//      mostly lasts 150 ms or more. A width measured against the (noise-driven) trigger threshold
+//      instead made most palm taps "too long" in that recording, because lap noise sat near it.
+//   6. Refractory: 60 ms from onset and until the previous pulse has ended. For 300 ms after a pulse
+//      ends, a new onset must also be a fresh jump: above twice the highest level of the preceding
+//      25 ms. A decaying ring never jumps like that (each swing is lower than the last); a real
+//      second tap does. This stops the ringing tail of a hard tap from triggering a second onset.
 //   7. Burst lockout: 4 onsets within 0.5 s mute detection for 0.4 s (rattling, drumming, typing).
 
 import Foundation
@@ -28,9 +38,9 @@ struct OnsetInfo {
 
 enum OnsetOutput {
     case onset(OnsetInfo)
-    /// The current pulse ended; width in seconds (onset to last sample above the hysteresis level).
+    /// The current pulse ended; width in seconds (onset to the last sample at >= 50% of its peak).
     case pulseEnded(width: Double)
-    /// The current pulse is still above the hysteresis level 120 ms after onset.
+    /// The pulse stayed above half its peak for more than 120 ms (or never settled within 400 ms).
     case pulseTooLong
 }
 
@@ -41,11 +51,16 @@ struct OnsetDetector {
     var refractory = 0.060
     var pulseEndQuiet = 0.015
     var maxPulseWidth = 0.120
+    var maxPulseSettle = 0.400         // a pulse that has not ended after this is too long regardless
+    var tailGuardDuration = 0.300      // ringing tail guard, see header
+    var tailJumpFactor = 2.0
+    var tailLookback = 20              // samples, about 25 ms
     var burstCount = 4
     var burstWindow = 0.5
     var burstLockout = 0.4
     var blockSize = 40
     var noiseBlocks = 40               // 40 blocks * 40 samples = 1600 samples = 2 s
+    var fastNoiseBlocks = 10           // 0.5 s: lets the floor drop quickly after a disturbance
     var minBlocksBeforeDetecting = 5   // warm-up, about 0.25 s
 
     /// 0 (strict) ... 1 (sensitive).
@@ -68,6 +83,14 @@ struct OnsetDetector {
     private var pulseOnsetT = 0.0
     private var pulseLastAbove = 0.0
     private var pulseHysteresis = 0.0
+    private var pulsePeak = 0.0
+    private var pulsePeakT = 0.0
+    private var pulseLastAboveHalfPeak = 0.0
+    // Last finished pulse, for the ringing-tail guard.
+    private var tailGuardUntil = -Double.infinity
+    private var recentLevels: [Double] = []
+    private var recentCursor = 0
+    private var lastLevel = 0.0
     private var lastOnsetT = -Double.infinity
     private var recentOnsets: [Double] = []
     private(set) var lockoutUntil = -Double.infinity
@@ -95,6 +118,8 @@ struct OnsetDetector {
         noise = 0
         pulse = .idle
         lastOnsetT = -.infinity
+        tailGuardUntil = -.infinity
+        recentLevels.removeAll()
         recentOnsets.removeAll()
         lockoutUntil = -.infinity
     }
@@ -112,23 +137,39 @@ struct OnsetDetector {
         level = m
 
         updateNoise(m)
+        // Levels of the preceding samples (for the tail guard), excluding this one.
+        let previousLevel = lastLevel
+        lastLevel = m
+        if recentLevels.count < tailLookback { recentLevels.append(previousLevel) } else {
+            recentLevels[recentCursor] = previousLevel
+            recentCursor = (recentCursor + 1) % tailLookback
+        }
 
         switch pulse {
         case .active:
-            if m > pulseHysteresis { pulseLastAbove = t }
+            if m > pulsePeak { pulsePeak = m; pulsePeakT = t }
+            if m >= 0.5 * pulsePeak { pulseLastAboveHalfPeak = t }
+            if m > max(pulseHysteresis, 0.3 * pulsePeak) { pulseLastAbove = t }
+            let width = pulseLastAboveHalfPeak - pulseOnsetT + 1 / sampleRate
             if t - pulseLastAbove >= pulseEndQuiet {
                 pulse = .idle
-                return .pulseEnded(width: pulseLastAbove - pulseOnsetT + 1 / sampleRate)
+                rememberTail()
+                if width > maxPulseWidth { return .pulseTooLong }
+                return .pulseEnded(width: width)
             }
-            if t - pulseOnsetT > maxPulseWidth {
+            // Decide "too long" as soon as it is certain, so the rejection is not delayed.
+            if width > maxPulseWidth || t - pulseOnsetT > maxPulseSettle {
                 pulse = .overlong
                 return .pulseTooLong
             }
             return nil
         case .overlong:
             // Wait for the disturbance to calm down before arming again.
-            if m > pulseHysteresis { pulseLastAbove = t }
-            if t - pulseLastAbove >= pulseEndQuiet { pulse = .idle }
+            if m > max(pulseHysteresis, 0.3 * pulsePeak) { pulseLastAbove = t }
+            if t - pulseLastAbove >= pulseEndQuiet {
+                pulse = .idle
+                rememberTail()
+            }
             return nil
         case .idle:
             break
@@ -137,12 +178,19 @@ struct OnsetDetector {
         guard isWarmedUp else { return nil }
         let thr = threshold
         guard m > thr, t - lastOnsetT >= refractory else { return nil }
+        // Ringing-tail guard (see header).
+        if t < tailGuardUntil {
+            guard m > tailJumpFactor * (recentLevels.max() ?? 0) else { return nil }
+        }
 
         // New onset.
         lastOnsetT = t
         pulse = .active
         pulseOnsetT = t
         pulseLastAbove = t
+        pulseLastAboveHalfPeak = t
+        pulsePeak = m
+        pulsePeakT = t
         pulseHysteresis = 0.5 * thr
 
         recentOnsets.append(t)
@@ -153,6 +201,10 @@ struct OnsetDetector {
             burst = true
         }
         return .onset(OnsetInfo(index: index, t: t, threshold: thr, noise: noise, burst: burst))
+    }
+
+    private mutating func rememberTail() {
+        tailGuardUntil = pulseLastAbove + tailGuardDuration
     }
 
     private mutating func updateNoise(_ m: Double) {
@@ -167,6 +219,12 @@ struct OnsetDetector {
             blockMedians[blockMedianCursor] = med
             blockMedianCursor = (blockMedianCursor + 1) % noiseBlocks
         }
-        noise = Stats.median(blockMedians)
+        // Newest `fastNoiseBlocks` entries (the ring's write position is the oldest once full).
+        let n = blockMedians.count
+        let newest = blockMedians.count < noiseBlocks ? n : blockMedianCursor + n
+        var recent: [Double] = []
+        recent.reserveCapacity(fastNoiseBlocks)
+        for k in 1...min(fastNoiseBlocks, n) { recent.append(blockMedians[(newest - k) % n]) }
+        noise = min(Stats.median(blockMedians), Stats.median(recent))
     }
 }

@@ -143,6 +143,18 @@ struct StreamBuilder {
         }
     }
 
+    /// A short rock of the whole machine: roll goes to `degrees` and back as a smooth bump lasting
+    /// `duration` s (what a firm tap does to a laptop resting on a lap).
+    mutating func addRock(at t0: Double, degrees: Double, duration: Double) {
+        let i0 = Int(t0 * fs)
+        for k in 0..<Int(duration * fs) where i0 + k < n {
+            let u = Double(k) / fs / duration
+            let r = degrees * pow(sin(.pi * u), 2) * .pi / 180
+            let up = SIMD3<Double>(-sin(r), 0, -cos(r))
+            a[i0 + k] = up * 0.9898 + (a[i0 + k] - StreamBuilder.restGravity)
+        }
+    }
+
     func samples() -> [IMUSample] {
         (0..<n).map { i in
             let gq = (g[i] / 0.061).rounded(.toNearestOrEven) * 0.061

@@ -129,13 +129,55 @@ import Testing
     }
 
     @Test func movingLaptopGatesTaps() {
-        var b = StreamBuilder(seconds: 4, seed: 26)
-        b.addRoll(at: 1.0, degrees: 6, ramp: 0.6, hold: 1.0)   // slow roll, not a tilt gesture
-        b.addTap(.leftPalm, at: 1.3, amp: 0.2)                  // while rotating
-        b.addTap(.leftPalm, at: 2.2, amp: 0.2)                  // held still at the new angle
+        var b = StreamBuilder(seconds: 5, seed: 26)
+        b.addRoll(at: 1.0, degrees: 20, ramp: 0.6, hold: 2.5)  // picking one side up, not a tilt gesture
+        b.addTap(.leftPalm, at: 1.4, amp: 0.2)                  // while rotating
+        b.addTap(.leftPalm, at: 2.8, amp: 0.2)                  // held still at the new angle
         let events = run(TapEngine(settings: DetectionSettings()), b.samples())
         #expect(events.rejections.map(\.reason) == [.motion], "\(events.rejections)")
         #expect(events.candidates.count == 1)
+    }
+
+    /// First real recording (on a lap): a palm tap rocks the machine by several degrees for a few
+    /// tens of ms. That is the tap, not motion, and must not be gated.
+    @Test func tapThatRocksTheMachineIsNotMotion() {
+        var b = StreamBuilder(seconds: 5, seed: 31)
+        var truth: [Double] = []
+        for k in 0..<8 {
+            let t = 1.0 + Double(k) * 0.4          // the user tapped every ~0.4 s
+            b.addRock(at: t, degrees: k % 2 == 0 ? 5 : -5, duration: 0.1)
+            truth.append(b.addTap(.leftPalm, at: t, amp: 0.1))
+        }
+        let events = run(TapEngine(settings: DetectionSettings()), b.samples())
+        #expect(events.rejections.isEmpty, "\(events.rejections)")
+        #expect(match(detected: events.candidates.map(\.t), truth: truth).hits == 8)
+    }
+
+    /// Left-palm taps in the real recording stay above half their peak for 50 to 90 ms.
+    @Test func longRingingTapIsStillATap() {
+        var b = StreamBuilder(seconds: 3, seed: 32)
+        var z = ZoneSpec.leftPalm
+        z.decay = 0.06; z.freq = 45
+        let t0 = b.addTap(z, at: 1.0, amp: 0.1, jitter: 0)
+        let events = run(TapEngine(settings: DetectionSettings()), b.samples())
+        #expect(events.rejections.isEmpty, "\(events.rejections)")
+        #expect(events.candidates.count == 1)
+        if let f = events.candidates.first {
+            #expect(abs(f.t - t0) < 0.02)
+            #expect(f[.pulseWidth] < 120, "\(f[.pulseWidth])")
+        }
+    }
+
+    @Test func ringingTailDoesNotRetrigger() {
+        var b = StreamBuilder(seconds: 4, seed: 33)
+        var z = ZoneSpec.rightPalm
+        z.decay = 0.04
+        var truth: [Double] = []
+        for k in 0..<5 { truth.append(b.addTap(z, at: 1 + Double(k) * 0.5, amp: 0.8, jitter: 0.5)) }
+        let events = run(TapEngine(settings: DetectionSettings()), b.samples())
+        let onsets = events.candidates.map(\.t) + events.rejections.map(\.t)
+        #expect(onsets.count == 5, "\(onsets)")
+        #expect(match(detected: onsets, truth: truth).hits == 5)
     }
 
     @Test func pausedRejectsEverything() {
@@ -178,7 +220,7 @@ import Testing
         #expect(v[.impulseZ] > 0)
         #expect(v[.xHat] > 0)                       // right of centre
         #expect(abs(v[.ringFrequency] - 100) < 25)  // right palm rings at ~100 Hz
-        #expect(v[.pulseWidth] > 5 && v[.pulseWidth] < 120)
+        #expect(v[.pulseWidth] > 0 && v[.pulseWidth] < 120)
         #expect(abs(v[.strength] - log10(200)) < 0.3)
     }
 }

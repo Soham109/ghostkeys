@@ -30,8 +30,8 @@
 //   9  peakGyroX      signed gyro value with the largest magnitude in the window (deg/s)
 //  10  peakGyroY
 //  11  peakGyroZ
-//  12  xHat           twistY / impulseZ, clamped to +-100 (lever arm along x, arbitrary units)
-//  13  yHat           -twistX / impulseZ, clamped to +-100
+//  12  xHat           twistY / impulseZ (|impulseZ| floored at 0.05 g*ms), clamped to +-2000
+//  13  yHat           -twistX / impulseZ, same guard (lever arm, millidegrees per g*ms)
 //  14  energyRatioX   accel energy on x / total accel energy (0..1)
 //  15  energyRatioY
 //  16  energyRatioZ
@@ -43,7 +43,7 @@
 //  22  ringFrequency  dominant frequency 20..400 Hz, parabolic-interpolated (Hz)
 //  23  decayTime      peak to the last sample whose magnitude is >= 25% of peak (ms)
 //  24  riseTime       last sample before the peak below 10% of peak, to the peak (ms)
-//  25  pulseWidth     time the detection level stayed above half the trigger threshold (ms)
+//  25  pulseWidth     onset to the last sample at >= 50% of the pulse's peak detection level (ms)
 //  26  strength       log10(peak accel magnitude in mg)
 //  27  impulseDirX    impulse vector / its length (unit direction of the first hit)
 //  28  impulseDirY
@@ -153,10 +153,12 @@ struct FeatureExtractor {
         let totalA = energyA[0] + energyA[1] + energyA[2]
 
         // Lever-arm position estimates (see header). Guard the division for sideways hits.
-        let eps = 1e-3
+        // Real taps (first lab recording) give |ratio| ~10 to 250; the old +-100 clamp saturated
+        // most of them, so the clamp only guards against near-zero vertical impulses now.
+        let eps = 0.05
         let az = abs(impulse[2]) < eps ? (impulse[2] < 0 ? -eps : eps) : impulse[2]
-        let xHat = Stats.clamp(twist[1] / az, -100, 100)
-        let yHat = Stats.clamp(-twist[0] / az, -100, 100)
+        let xHat = Stats.clamp(twist[1] / az, -2000, 2000)
+        let yHat = Stats.clamp(-twist[0] / az, -2000, 2000)
 
         // Spectrum: 64-point DFT per axis from the impulse start, summed over axes.
         var power = [Double](repeating: 0, count: dftN / 2 + 1)

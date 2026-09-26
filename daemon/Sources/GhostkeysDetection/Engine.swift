@@ -68,7 +68,6 @@ public final class TapEngine {
         var info: OnsetInfo
         var width: Double?
         var tooLong = false
-        var gravityAtOnset: SIMD3<Double>
         var movingAtOnset: Bool
         var typingAtOnset: Bool
         var trackpadAtOnset: Bool
@@ -119,11 +118,13 @@ public final class TapEngine {
             switch o {
             case .onset(let info):
                 inFlight.append(InFlight(
-                    info: info, gravityAtOnset: gravity.gravity, movingAtOnset: gravity.wasMoving(at: s.t),
+                    info: info, movingAtOnset: gravity.wasMoving(at: s.t),
                     typingAtOnset: context.secondsSinceKey * 1000 < settings.typingGateMs,
                     trackpadAtOnset: context.secondsSinceMouse < trackpadGate,
                     modifiers: context.modifiers))
                 activePulseIndex = index
+                // Keep the tap's own rocking out of the gravity estimate (see GravityMonitor.swift).
+                gravity.freeze(until: s.t + gravity.freezeAfterOnset)
             case .pulseEnded(let width):
                 if let i = inFlight.firstIndex(where: { $0.info.index == activePulseIndex }) { inFlight[i].width = width }
                 activePulseIndex = nil
@@ -170,7 +171,8 @@ public final class TapEngine {
             }
             if f.info.burst { return reject(.burst) }
         }
-        if f.tooLong || f.movingAtOnset || GravityMonitor.angle(f.gravityAtOnset, gravity.gravity) > gravity.motionDegrees {
+        // Motion: the pulse was too long, or sustained rotation was going on at the onset or is by now.
+        if f.tooLong || f.movingAtOnset || gravity.isMoving {
             return reject(.motion)
         }
 
