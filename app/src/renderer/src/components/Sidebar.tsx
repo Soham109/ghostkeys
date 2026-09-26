@@ -1,20 +1,16 @@
 import * as React from 'react'
 import { motion } from 'motion/react'
-import { Activity, Command, Crosshair, Settings2, SquareDashed, Waves, Pause, Play } from 'lucide-react'
 import { useStore, type Route } from '@/lib/store'
 import { client } from '@/lib/client'
 import { cn } from '@/lib/utils'
-import { FAMILY_LABEL } from '@shared/protocol'
-import { Logo } from './Logo'
-import { Tip } from './ui/controls'
 
-const NAV: { route: Route; label: string; icon: React.ComponentType<{ className?: string }> }[] = [
-  { route: 'live', label: 'Live', icon: Activity },
-  { route: 'zones', label: 'Zones', icon: SquareDashed },
-  { route: 'bindings', label: 'Gestures and actions', icon: Command },
-  { route: 'calibration', label: 'Calibration', icon: Crosshair },
-  { route: 'sensors', label: 'Sensors', icon: Waves },
-  { route: 'settings', label: 'Settings', icon: Settings2 }
+export const NAV: { route: Route; label: string }[] = [
+  { route: 'live', label: 'Live' },
+  { route: 'zones', label: 'Zones' },
+  { route: 'bindings', label: 'Gestures and actions' },
+  { route: 'calibration', label: 'Calibration' },
+  { route: 'sensors', label: 'Sensors' },
+  { route: 'settings', label: 'Settings' }
 ]
 
 /** A dot that lights in --signal for a moment whenever a tap is felt. */
@@ -22,11 +18,11 @@ function TouchDot({ state }: { state: 'on' | 'paused' | 'off' }): React.JSX.Elem
   const [pulse, setPulse] = React.useState(0)
   React.useEffect(() => client.on('tap', () => setPulse((p) => p + 1)), [])
   return (
-    <span className="relative inline-flex size-2">
+    <span className="relative inline-flex size-1.5">
       <span
         className={cn(
           'absolute inset-0 rounded-full',
-          state === 'on' ? 'bg-ink-2' : state === 'paused' ? 'bg-transparent shadow-[inset_0_0_0_1px_var(--ink-3)]' : 'bg-ink-3'
+          state === 'on' ? 'bg-ink-2' : state === 'paused' ? 'shadow-[inset_0_0_0_1px_var(--ink-3)]' : 'bg-ink-3/50'
         )}
       />
       {pulse > 0 && (
@@ -34,87 +30,113 @@ function TouchDot({ state }: { state: 'on' | 'paused' | 'off' }): React.JSX.Elem
           key={pulse}
           className="absolute inset-0 rounded-full bg-signal"
           initial={{ opacity: 1, scale: 1 }}
-          animate={{ opacity: 0, scale: 1.8 }}
-          transition={{ duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
+          animate={{ opacity: 0, scale: 1.6 }}
+          transition={{ duration: 1.1, ease: [0.16, 1, 0.3, 1] }}
         />
       )}
     </span>
   )
 }
 
-export function Sidebar(): React.JSX.Element {
+/** Microphone or camera open right now: say so plainly, with a way to stop it. */
+function SessionLine(): React.JSX.Element | null {
+  const sessions = useStore((s) => s.sessions)
+  const active = (['sound', 'air'] as const).filter((k) => sessions[k]?.active)
+  const [, tick] = React.useState(0)
+  React.useEffect(() => {
+    if (!active.length) return
+    const t = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(t)
+  }, [active.length])
+  if (!active.length) return null
+  return (
+    <div className="flex flex-col gap-1 pb-2">
+      {active.map((k) => {
+        const m = sessions[k]!
+        return (
+          <div key={k} className="flex items-center gap-2.5 text-[12px]" role="status">
+            <span className="size-1.5 rounded-full bg-ink" />
+            <span className="flex-1 text-ink">{k === 'sound' ? 'Microphone on' : 'Camera on'}</span>
+            <span className="num text-[11px] text-ink-3">{Math.max(0, Math.round(m.secondsLeft))}s</span>
+            <button
+              className="text-[12px] text-ink-2 hover:text-ink"
+              onClick={() => client.send({ type: k === 'sound' ? 'sound_session_stop' : 'air_session_stop' })}
+            >
+              Stop
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+export function Sidebar({ offline }: { offline?: boolean }): React.JSX.Element {
   const route = useStore((s) => s.route)
   const navigate = useStore((s) => s.navigate)
   const conn = useStore((s) => s.conn)
   const status = useStore((s) => s.status)
-  const hello = useStore((s) => s.hello)
   const setPaused = useStore((s) => s.setPaused)
+  const focused = useStore((s) => s.windowFocused)
   const paused = !!status?.paused
-  const forceOffline = useStore((s) => s.forceOffline)
-  const state = conn !== 'open' || forceOffline ? 'off' : paused ? 'paused' : 'on'
+  const state = conn !== 'open' || offline ? 'off' : paused ? 'paused' : 'on'
 
   return (
     <aside className="flex w-[220px] shrink-0 flex-col bg-[var(--sidebar)] in-data-[screenshot]:bg-[var(--sidebar-solid)]">
       <div className="drag h-[52px] shrink-0" />
-      <div className="flex items-center gap-2 px-4 pb-5">
-        <Logo className="size-[18px] text-ink" />
-        <span className="text-[14px] font-medium tracking-[-0.02em] lowercase">ghostkeys</span>
-      </div>
       <nav className="flex flex-col gap-px px-2" aria-label="Sections">
         {NAV.map((item, i) => {
           const active = route === item.route
-          const Icon = item.icon
           return (
             <button
               key={item.route}
+              disabled={offline}
               onClick={() => navigate(item.route)}
               aria-current={active ? 'page' : undefined}
+              aria-keyshortcuts={`Meta+${i + 1}`}
               className={cn(
-                'group relative flex h-7 items-center gap-2.5 rounded-[6px] px-2 text-left text-[13px] transition-colors duration-150',
-                active ? 'text-ink' : 'text-ink-2 hover:bg-fill-hover hover:text-ink'
+                'relative flex h-7 items-center gap-2 rounded-[6px] px-2 text-left text-[13px] transition-colors duration-150',
+                offline ? 'text-ink-3' : active ? 'text-ink' : 'text-ink-2 hover:bg-fill-hover hover:text-ink'
               )}
             >
-              {active && (
+              {active && !offline && (
                 <motion.span
                   layoutId="nav-active"
-                  className="absolute inset-0 rounded-[6px] bg-fill-active"
+                  className={cn('absolute inset-0 rounded-[6px]', focused ? 'bg-fill-active' : 'bg-fill-hover')}
                   transition={{ duration: 0.24, ease: [0.2, 0, 0, 1] }}
                 />
               )}
-              <Icon className="relative size-[15px] shrink-0 opacity-80" />
+              <span className={cn('num relative w-6 text-[11px] tracking-[0.06em]', active && !offline ? 'text-ink' : 'text-ink-3')}>
+                {String(i + 1).padStart(2, '0')}
+              </span>
               <span className="relative flex-1 truncate">{item.label}</span>
-              <span className="relative font-mono text-[11px] text-ink-3 opacity-0 transition-opacity group-hover:opacity-100">⌘{i + 1}</span>
             </button>
           )
         })}
       </nav>
 
       <div className="mt-auto px-4 pb-4">
+        <SessionLine />
         <div className="flex items-center gap-2.5 py-2">
           <TouchDot state={state} />
-          <div className="min-w-0 flex-1">
-            <div className="truncate text-[12px] text-ink">
-              {state === 'off' ? 'Service not running' : paused ? 'Paused' : 'Listening'}
-            </div>
-            <div className="truncate text-[11px] text-ink-3">{hello ? FAMILY_LABEL[hello.device.family] : 'No device'}</div>
-          </div>
-          <Tip content={paused ? 'Resume' : 'Pause all gestures'}>
-            <button
-              disabled={state === 'off'}
-              onClick={() => setPaused(!paused)}
-              aria-label={paused ? 'Resume' : 'Pause'}
-              className="inline-flex size-6 items-center justify-center rounded-[6px] text-ink-2 hover:bg-fill-hover hover:text-ink disabled:opacity-30"
-            >
-              {paused ? <Play className="size-3.5" /> : <Pause className="size-3.5" />}
-            </button>
-          </Tip>
+          <span className="flex-1 truncate text-[12px] text-ink-2">
+            {state === 'off' ? 'Not listening' : status?.pausedReason === 'rate_limit' ? 'Paused for safety' : paused ? 'Paused' : 'Listening'}
+          </span>
+          <button
+            disabled={state === 'off'}
+            onClick={() => setPaused(!paused)}
+            className="text-[12px] text-ink-2 hover:text-ink disabled:opacity-30"
+            aria-label={paused ? 'Resume Ghostkeys' : 'Pause Ghostkeys'}
+          >
+            {paused ? 'Resume' : 'Pause'}
+          </button>
         </div>
         <button
           onClick={() => useStore.setState({ paletteOpen: true })}
           className="flex h-7 w-full items-center justify-between rounded-[6px] px-2 text-[12px] text-ink-3 shadow-[inset_0_0_0_1px_var(--hairline)] hover:text-ink-2"
         >
           <span>Search and commands</span>
-          <span className="font-mono text-[11px]">⌘K</span>
+          <span className="num text-[11px] text-ink-2">⌘K</span>
         </button>
       </div>
     </aside>

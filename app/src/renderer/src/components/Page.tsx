@@ -17,7 +17,7 @@ export function PageHeader({
     <header className={cn('drag flex h-[52px] shrink-0 items-center gap-4 px-6', className)}>
       <div className="flex min-w-0 items-baseline gap-3">
         <h1 className="text-[15px] font-medium tracking-[-0.01em]">{title}</h1>
-        {subtitle && <p className="truncate text-[12px] text-ink-3">{subtitle}</p>}
+        {subtitle && <p className="num truncate text-[11px] tracking-[0.06em] text-ink-3 uppercase">{subtitle}</p>}
       </div>
       <div className="no-drag ml-auto flex items-center gap-1.5">{actions}</div>
     </header>
@@ -34,11 +34,21 @@ export function Fact({ label, children, className }: { label: string; children: 
   )
 }
 
+/** A problem that needs the person: a full sentence in ink with one inline action. */
+export function Notice({ children, action }: { children: React.ReactNode; action?: React.ReactNode }): React.JSX.Element {
+  return (
+    <div className="flex min-h-9 items-center gap-3 px-6 py-2 text-[13px] text-ink hairline-b" role="status">
+      <span className="flex-1">{children}</span>
+      {action}
+    </div>
+  )
+}
+
 export function Empty({ title, children, action }: { title: string; children?: React.ReactNode; action?: React.ReactNode }): React.JSX.Element {
   return (
-    <div className="flex flex-col items-start gap-2 px-4 py-10">
+    <div className="flex flex-col items-start gap-1.5 px-4 py-6">
       <p className="text-[13px] text-ink">{title}</p>
-      {children && <p className="max-w-[40ch] text-[12px] leading-relaxed text-ink-3">{children}</p>}
+      {children && <p className="max-w-[40ch] text-[13px] leading-relaxed text-ink-3">{children}</p>}
       {action && <div className="mt-2">{action}</div>}
     </div>
   )

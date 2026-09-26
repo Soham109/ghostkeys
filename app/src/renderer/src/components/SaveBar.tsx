@@ -20,7 +20,7 @@ export function SaveBar(): React.JSX.Element {
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: 8 }}
           transition={{ duration: 0.24, ease: [0.2, 0, 0, 1] }}
-          className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 rounded-[10px] bg-popover py-1.5 pr-1.5 pl-4 shadow-[var(--pop-shadow)]"
+          className="absolute bottom-5 left-1/2 z-30 flex -translate-x-1/2 items-center gap-3 material rounded-[10px] py-1.5 pr-1.5 pl-4"
           role="status"
         >
           <span className="text-[13px] text-ink-2">Unsaved changes</span>
@@ -30,7 +30,7 @@ export function SaveBar(): React.JSX.Element {
             </Button>
             <Button variant="primary" onClick={save} disabled={saving}>
               {saving ? 'Saving' : 'Save'}
-              <Kbd className="ml-1 text-bg/60 shadow-none">⌘S</Kbd>
+              <Kbd className="ml-1 text-bg/60">⌘S</Kbd>
             </Button>
           </div>
         </motion.div>

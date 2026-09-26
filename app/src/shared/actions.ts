@@ -16,7 +16,8 @@ export const ACTION_KIND_LABEL: Record<ActionKind, string> = {
   clipboard: 'Copy to clipboard',
   window: 'Arrange window',
   app: 'Control app',
-  system: 'System command'
+  system: 'System command',
+  integration: 'Command in an app'
 }
 
 export const MEDIA_LABEL: Record<MediaCommand, string> = {
@@ -126,6 +127,8 @@ export function describeAction(a: Action): string {
       return SYSTEM_LABEL[a.op]
     case 'macro':
       return `Macro, ${a.steps.length} ${a.steps.length === 1 ? 'step' : 'steps'}`
+    case 'integration':
+      return `${a.command.replace(/-/g, ' ').replace(/^./, (c) => c.toUpperCase())} in ${a.app.charAt(0).toUpperCase()}${a.app.slice(1)}`
   }
 }
 
@@ -161,6 +164,8 @@ export function defaultAction(kind: ActionKind): Action {
       return { kind, op: 'lock' }
     case 'macro':
       return { kind, steps: [] }
+    case 'integration':
+      return { kind, app: 'excel', command: 'toggle-absolute', args: {} }
   }
 }
 

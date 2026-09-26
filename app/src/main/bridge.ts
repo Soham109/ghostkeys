@@ -1,6 +1,6 @@
 import { EventEmitter } from 'node:events'
 import WebSocket from 'ws'
-import { parseDaemonMessage, type AppMessage, type Config, type DaemonMessage } from '@shared/protocol'
+import { parseDaemonMessage, type AppMessage, type Config, type DaemonMessage, type SessionMsg } from '@shared/protocol'
 import type { ConnState } from '@shared/ipc'
 
 export const TOKEN_HEADER = 'X-Ghostkeys-Token'
@@ -18,6 +18,8 @@ export class DaemonBridge extends EventEmitter {
   private closed = true
   state: ConnState = 'connecting'
   paused = false
+  pausedReason: string | null = null
+  sessions: { sound?: SessionMsg; air?: SessionMsg } = {}
   config: Config | null = null
   hello: DaemonMessage | null = null
   status: DaemonMessage | null = null
@@ -69,6 +71,7 @@ export class DaemonBridge extends EventEmitter {
     })
     ws.on('close', () => {
       this.ws = null
+      this.sessions = {}
       this.setState('closed')
       this.schedule()
     })
@@ -97,12 +100,16 @@ export class DaemonBridge extends EventEmitter {
   private onMessage(msg: DaemonMessage): void {
     if (msg.type === 'status') {
       this.paused = msg.paused
+      this.pausedReason = msg.pausedReason ?? null
       this.status = msg
       this.emit('change')
     } else if (msg.type === 'config') {
       this.config = msg.config
     } else if (msg.type === 'hello') {
       this.hello = msg
+    } else if (msg.type === 'session') {
+      this.sessions[msg.kind === 'sound' ? 'sound' : 'air'] = msg
+      this.emit('change')
     }
     this.emit('message', msg)
   }
@@ -119,6 +126,7 @@ export class DaemonBridge extends EventEmitter {
     if (this.hello) out.push(this.hello)
     if (this.status) out.push(this.status)
     if (this.config) out.push({ type: 'config', config: this.config })
+    for (const m of Object.values(this.sessions)) if (m) out.push(m)
     return out
   }
 

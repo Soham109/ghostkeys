@@ -21,9 +21,9 @@ export function layoutFor(family: DeviceFamily): Layout {
   const spec = LAPTOPS[family] ?? LAPTOPS['macbook-pro-14']
   const W = spec.widthMm * MM
   const D = spec.depthMm * MM
-  const pad = 28
-  const rail = 16
-  const gap = 18
+  const pad = 30
+  const rail = 14
+  const gap = 12
   const lidH = D * 0.34
   const baseX = pad + rail + gap
   const lidY = pad
@@ -77,34 +77,34 @@ export interface Key {
   h: number
 }
 
-/** A Mac keyboard in units: fn row at 0.6 height, five rows of 1, 14.5 units wide. */
-export function keyboardKeys(kb: Rect): Key[] {
+/** A Mac keyboard in units: full-height function row (M-series Pros), five rows below, 14.5 units wide. */
+export function keyboardKeys(kb: Rect): { keys: Key[]; touchId: Key } {
+  const FN = 0.9
   const unitW = kb.w / 14.5
-  const unitH = kb.h / 5.6
-  const gap = Math.min(unitW, unitH) * 0.16
+  const unitH = kb.h / (5 + FN)
+  const gap = Math.min(unitW, unitH) * 0.17
   const keys: Key[] = []
+  const at = (x: number, y: number, w: number, h: number): Key => ({
+    x: kb.x + x * unitW + gap / 2,
+    y: kb.y + y * unitH + gap / 2,
+    w: w * unitW - gap,
+    h: h * unitH - gap
+  })
   const row = (y: number, h: number, widths: number[]): void => {
     let x = 0
     for (const w of widths) {
-      keys.push({ x: kb.x + x * unitW + gap / 2, y: kb.y + y * unitH + gap / 2, w: w * unitW - gap, h: h * unitH - gap })
+      keys.push(at(x, y, w, h))
       x += w
     }
   }
-  row(0, 0.6, [1.1, ...Array(12).fill(1.05), 0.8])
-  row(0.6, 1, [...Array(13).fill(1), 1.5])
-  row(1.6, 1, [1.5, ...Array(12).fill(1), 1])
-  row(2.6, 1, [1.8, ...Array(11).fill(1), 1.7])
-  row(3.6, 1, [2.3, ...Array(10).fill(1), 2.2])
-  // bottom row with the inverted-T arrows
-  row(4.6, 1, [1, 1, 1, 1.25, 5, 1.25, 1])
+  row(0, FN, [1.25, ...Array(12).fill(1.02), 1.01])
+  const touchId = keys.pop()!
+  row(FN, 1, [...Array(13).fill(1), 1.5])
+  row(FN + 1, 1, [1.5, ...Array(12).fill(1), 1])
+  row(FN + 2, 1, [1.8, ...Array(11).fill(1), 1.7])
+  row(FN + 3, 1, [2.3, ...Array(10).fill(1), 2.2])
+  row(FN + 4, 1, [1, 1, 1, 1.25, 5, 1.25, 1])
   const ax = 11.5
-  const aw = 1
-  const push = (x: number, y: number, w: number, h: number): void => {
-    keys.push({ x: kb.x + x * unitW + gap / 2, y: kb.y + y * unitH + gap / 2, w: w * unitW - gap, h: h * unitH - gap })
-  }
-  push(ax, 5.1, aw, 0.5)
-  push(ax + 1, 4.6, aw, 0.5)
-  push(ax + 1, 5.1, aw, 0.5)
-  push(ax + 2, 5.1, aw, 0.5)
-  return keys
+  keys.push(at(ax, FN + 4.5, 1, 0.5), at(ax + 1, FN + 4, 1, 0.5), at(ax + 1, FN + 4.5, 1, 0.5), at(ax + 2, FN + 4.5, 1, 0.5))
+  return { keys, touchId }
 }

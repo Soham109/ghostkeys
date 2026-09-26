@@ -5,6 +5,7 @@ declare global {
     gk: GhostkeysBridge
     __gk?: {
       ready(): Promise<void>
+      summary(): Record<string, unknown>
       shot(name: string): Promise<void>
     }
   }

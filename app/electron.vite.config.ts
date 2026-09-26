@@ -6,6 +6,8 @@ import tailwindcss from '@tailwindcss/vite'
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],
+    // DEMO_UNLOCK=0 at build time turns Pro marking into real gating later. On for the hackathon demo.
+    define: { __DEMO_UNLOCK__: JSON.stringify(process.env.DEMO_UNLOCK !== '0') },
     resolve: { alias: { '@shared': resolve('src/shared') } }
   },
   preload: {

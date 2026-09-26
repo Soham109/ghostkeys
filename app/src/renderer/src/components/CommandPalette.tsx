@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Command } from 'cmdk'
 import { Dialog } from './ui/overlays'
 import { useStore, type Route } from '@/lib/store'
+import { client } from '@/lib/client'
 
 const GO: { route: Route; label: string; keys: string }[] = [
   { route: 'live', label: 'Live', keys: '⌘1' },
@@ -29,7 +30,7 @@ export function CommandPalette(): React.JSX.Element {
           placeholder="Search commands"
           className="h-12 w-full bg-transparent px-4 text-[15px] text-ink outline-none placeholder:text-ink-3 hairline-b"
         />
-        <Command.List className="max-h-[340px] overflow-y-auto p-1.5">
+        <Command.List className="max-h-[340px] overflow-y-auto px-1.5 pt-1.5 pb-2">
           <Command.Empty className="px-3 py-6 text-[13px] text-ink-3">No matching commands</Command.Empty>
           <Group heading="Go to">
             {GO.map((g) => (
@@ -46,6 +47,7 @@ export function CommandPalette(): React.JSX.Element {
                 s().navigate('bindings')
                 useStore.setState({ editingBinding: 'new' })
               })}
+              keys="⌘N"
             >
               New binding
             </Item>
@@ -57,6 +59,8 @@ export function CommandPalette(): React.JSX.Element {
             >
               Browse the action library
             </Item>
+            <Item onSelect={run(() => client.send({ type: 'sound_session_start' }))}>Listen with the microphone for a while</Item>
+            <Item onSelect={run(() => client.send({ type: 'air_session_start' }))}>Watch for hand gestures for a while</Item>
             <Item onSelect={run(() => useStore.setState({ onboarding: true, onboardingStep: 0 }))}>Show the welcome tour</Item>
           </Group>
           <Group heading="Appearance">
@@ -74,7 +78,7 @@ function Group({ heading, children }: { heading: string; children: React.ReactNo
   return (
     <Command.Group
       heading={heading}
-      className="[&_[cmdk-group-heading]]:label-mono [&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-2.5 [&_[cmdk-group-heading]]:pb-1"
+      className="[&_[cmdk-group-heading]]:tag-mono [&_[cmdk-group-heading]]:text-ink-3 [&_[cmdk-group-heading]]:px-2.5 [&_[cmdk-group-heading]]:pt-2.5 [&_[cmdk-group-heading]]:pb-1"
     >
       {children}
     </Command.Group>
@@ -88,7 +92,7 @@ function Item({ children, onSelect, keys }: { children: React.ReactNode; onSelec
       className="flex h-8 cursor-default items-center justify-between rounded-[6px] px-2.5 text-[13px] text-ink-2 data-[selected=true]:bg-fill-active data-[selected=true]:text-ink"
     >
       {children}
-      {keys && <span className="font-mono text-[11px] text-ink-3">{keys}</span>}
+      {keys && <span className="num text-[11px] text-ink-2">{keys}</span>}
     </Command.Item>
   )
 }

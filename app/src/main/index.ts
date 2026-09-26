@@ -1,27 +1,45 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, screen, shell, Tray } from 'electron'
 import { randomBytes } from 'node:crypto'
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { DaemonSupervisor } from './daemon'
 import { DaemonBridge } from './bridge'
 import { runScreenshots } from './screenshots'
+import { runSelfTest } from './selftest'
 import { loadLibrary } from './library'
 import { DEFAULT_PORT, GESTURE_LABEL, ZONELESS_GESTURES, type AppMessage, type DaemonMessage, type SimpleAction } from '@shared/protocol'
-import { APPROVAL_KINDS, approvalKey, approvalText } from '@shared/approval'
+import { APPROVAL_KINDS, approvalPayload, approvalText } from '@shared/approval'
 import type { AppInfo, AppPrefs, ConnState, DaemonState, HudPayload } from '@shared/ipc'
+import { licenseState, parseLicense } from '@shared/license'
 
 const PORT = Number(process.env.GK_PORT ?? DEFAULT_PORT)
 const MOCK = process.env.GK_MOCK === '1'
-const SCREENSHOT = process.env.SCREENSHOT === '1'
+const SELFTEST = process.env.SELFTEST === '1'
+/** Offscreen scripted runs: screenshots, or the self-test against a real daemon. */
+const SCREENSHOT = process.env.SCREENSHOT === '1' || SELFTEST
 const APP_ROOT = app.getAppPath()
 const RES_DIR = app.isPackaged ? process.resourcesPath : join(APP_ROOT, 'resources')
 
 app.setName('Ghostkeys')
 
+// Electron's own files (caches, local storage, prefs) live in Ghostkeys/app; the daemon owns Ghostkeys/daemon.
+// Must run before the app is ready. Idempotent: prefs from the old shared folder are copied once.
+const GK_SUPPORT = join(app.getPath('appData'), 'Ghostkeys')
+const APP_DATA = join(GK_SUPPORT, 'app')
+try {
+  mkdirSync(APP_DATA, { recursive: true })
+  const oldPrefs = join(GK_SUPPORT, 'app-prefs.json')
+  const newPrefs = join(APP_DATA, 'app-prefs.json')
+  if (existsSync(oldPrefs) && !existsSync(newPrefs)) copyFileSync(oldPrefs, newPrefs)
+} catch (e) {
+  console.error('[paths] could not prepare', APP_DATA, e)
+}
+app.setPath('userData', APP_DATA)
+
 // ---------------------------------------------------------------- prefs
 
-const DEFAULT_PREFS: AppPrefs = { theme: 'system', keepInMenuBar: true, showWindowOnLaunch: true, approved: [] }
+const DEFAULT_PREFS: AppPrefs = { theme: 'system', keepInMenuBar: true, showWindowOnLaunch: true }
 const prefsFile = (): string => join(app.getPath('userData'), 'app-prefs.json')
 
 function loadPrefs(): AppPrefs {
@@ -56,15 +74,18 @@ let quitting = false
 /** Per-launch secret handed to the daemon we spawn. GHOSTKEYS_TOKEN lets the mock (or a test) share one. */
 const SESSION_TOKEN = process.env.GHOSTKEYS_TOKEN || randomBytes(32).toString('hex')
 
-/** Token for a daemon started elsewhere: it writes one to Application Support with mode 0600. */
+/** Token for a daemon started elsewhere: it writes one (mode 0600) into its config folder on every launch. */
 function externalToken(): string | null {
-  const dir = join(homedir(), 'Library', 'Application Support', 'Ghostkeys')
-  for (const name of ['token', 'session-token']) {
-    try {
-      const t = readFileSync(join(dir, name), 'utf8').trim()
-      if (t) return t
-    } catch {
-      // not there
+  const support = join(homedir(), 'Library', 'Application Support', 'Ghostkeys')
+  const dirs = [process.env.GHOSTKEYS_CONFIG_DIR, join(support, 'daemon'), support].filter((d): d is string => !!d)
+  for (const dir of dirs) {
+    for (const name of ['token', 'session-token']) {
+      try {
+        const t = readFileSync(join(dir, name), 'utf8').trim()
+        if (t) return t
+      } catch {
+        // not there
+      }
     }
   }
   return null
@@ -185,6 +206,7 @@ const HUD_EXIT_MS = 240
 
 function zoneName(id: string | null): string | null {
   if (!id) return null
+  if (id === 'air') return 'In the air'
   return bridge.config?.zones.find((z) => z.id === id)?.name ?? id
 }
 
@@ -214,31 +236,53 @@ function onDaemonMessage(msg: DaemonMessage): void {
     showHud(title, ZONELESS_GESTURES.includes(msg.gesture) ? null : GESTURE_LABEL[msg.gesture])
   } else if (msg.type === 'action') {
     const recent = lastGesture && Date.now() - lastGesture.at < 1500 ? lastGesture.title : null
-    const title = msg.bindingId === 'test' ? 'Test' : (recent ?? 'Ghostkeys')
-    showHud(title, msg.ok ? msg.label : `${msg.label} failed`, msg.ok)
+    const title = msg.bindingId === 'test' || msg.bindingId === null ? 'Test' : (recent ?? 'Ghostkeys')
+    showHud(title, msg.label, msg.ok)
   }
 }
 
 // ---------------------------------------------------------------- tray
 
-function trayImage(paused = false): Electron.NativeImage {
-  const base = paused && existsSync(join(RES_DIR, 'trayPausedTemplate.png')) ? 'trayPausedTemplate' : 'trayTemplate'
+function trayImage(state: 'normal' | 'paused' | 'session'): Electron.NativeImage {
+  const want = state === 'paused' ? 'trayPausedTemplate' : state === 'session' ? 'trayActive' : 'trayTemplate'
+  const base = existsSync(join(RES_DIR, `${want}.png`)) ? want : 'trayTemplate'
   const img = nativeImage.createFromPath(join(RES_DIR, `${base}.png`))
   const img2x = nativeImage.createFromPath(join(RES_DIR, `${base}@2x.png`))
   if (!img2x.isEmpty()) img.addRepresentation({ scaleFactor: 2, buffer: img2x.toPNG() })
-  img.setTemplateImage(true)
+  // The active icon carries the one colored dot; the others follow the menu bar's appearance.
+  img.setTemplateImage(base !== 'trayActive')
   return img
 }
+
+let traySig = ''
 
 function refreshTray(): void {
   if (!tray) return
   const connected = bridge.connected
-  const statusLabel = !connected ? 'Service not running' : bridge.paused ? 'Paused' : 'Listening for taps'
+  const rateLimited = bridge.paused && bridge.pausedReason === 'rate_limit'
+  const statusLabel = !connected
+    ? 'Service not running'
+    : rateLimited
+      ? 'Paused: too many actions in a row'
+      : bridge.paused
+        ? 'Paused'
+        : 'Listening for taps'
+  const sessions = (['sound', 'air'] as const).filter((k) => bridge.sessions[k]?.active)
+  const sessionLabel = (k: 'sound' | 'air'): string =>
+    `${k === 'sound' ? 'Microphone' : 'Camera'} on, ${Math.max(0, Math.round(bridge.sessions[k]?.secondsLeft ?? 0))} s left`
+  const sig = JSON.stringify([statusLabel, sessions.map(sessionLabel), bridge.paused])
+  if (sig === traySig) return
+  traySig = sig
   tray.setToolTip(`Ghostkeys: ${statusLabel}`)
-  tray.setImage(trayImage(connected && bridge.paused))
+  tray.setImage(trayImage(sessions.length ? 'session' : connected && bridge.paused ? 'paused' : 'normal'))
+  tray.setTitle(sessions.length ? (sessions.includes('air') ? ' CAM' : ' MIC') : '', { fontType: 'monospacedDigit' })
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: statusLabel, enabled: false },
+      ...sessions.flatMap((k): Electron.MenuItemConstructorOptions[] => [
+        { label: sessionLabel(k), enabled: false },
+        { label: k === 'sound' ? 'Turn off the microphone' : 'Turn off the camera', click: () => bridge.send({ type: k === 'sound' ? 'sound_session_stop' : 'air_session_stop' }) }
+      ]),
       { type: 'separator' },
       {
         label: bridge.paused ? 'Resume' : 'Pause',
@@ -266,8 +310,34 @@ ipcMain.handle('info', (): AppInfo => ({
   daemon: supervisor.state,
   conn: bridge.state,
   prefs,
-  snapshot: bridge.snapshot()
+  snapshot: bridge.snapshot(),
+  packaged: app.isPackaged,
+  license: licenseState(prefs.licenseKey, __DEMO_UNLOCK__)
 }))
+
+ipcMain.handle('set-license', (_e, key: string | null) => {
+  if (key === null || key.trim() === '') {
+    prefs = { ...prefs, licenseKey: null }
+    savePrefs()
+    return { license: licenseState(null, __DEMO_UNLOCK__), error: null }
+  }
+  const parsed = parseLicense(key)
+  if (!parsed.ok) return { license: licenseState(prefs.licenseKey, __DEMO_UNLOCK__), error: parsed.error }
+  prefs = { ...prefs, licenseKey: key.trim() }
+  savePrefs()
+  return { license: licenseState(prefs.licenseKey, __DEMO_UNLOCK__), error: null }
+})
+
+ipcMain.handle('pricing', () => {
+  for (const p of [join(RES_DIR, 'features.json'), join(APP_ROOT, '../docs/pricing/features.json')]) {
+    try {
+      return JSON.parse(readFileSync(p, 'utf8')) as unknown
+    } catch {
+      // try the next place
+    }
+  }
+  return null
+})
 
 /** Messages the renderer may relay. approve_action is deliberately missing: only the dialog below sends it. */
 const RELAYABLE = new Set<AppMessage['type']>([
@@ -283,7 +353,13 @@ const RELAYABLE = new Set<AppMessage['type']>([
   'config_get',
   'config_set',
   'test_action',
-  'request_permission'
+  'request_permission',
+  'revoke_action',
+  'catalog_get',
+  'sound_session_start',
+  'sound_session_stop',
+  'air_session_start',
+  'air_session_stop'
 ])
 
 ipcMain.on('daemon-send', (e, msg: AppMessage) => {
@@ -293,13 +369,31 @@ ipcMain.on('daemon-send', (e, msg: AppMessage) => {
 })
 ipcMain.on('daemon-reconnect', () => bridge.reconnectNow())
 
-ipcMain.handle('approve', async (e, actions: SimpleAction[], context: string): Promise<string[] | null> => {
+/** Replies to approve_action arrive in order on our single connection. */
+const approvalWaiters: ((hash: string | null) => void)[] = []
+
+function awaitApproval(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      const i = approvalWaiters.indexOf(done)
+      if (i >= 0) approvalWaiters.splice(i, 1)
+      resolve(null)
+    }, 4000)
+    const done = (h: string | null): void => {
+      clearTimeout(timer)
+      resolve(h)
+    }
+    approvalWaiters.push(done)
+  })
+}
+
+ipcMain.handle('approve', async (e, actions: SimpleAction[], context: string): Promise<(string | null)[] | null> => {
   if (e.sender !== mainWindow?.webContents || !Array.isArray(actions) || actions.length === 0) return null
-  const risky = actions.filter((a) => a && APPROVAL_KINDS.includes(a.kind))
-  if (!risky.length) return prefs.approved
-  const detail = risky
-    .map((a, i) => `${risky.length > 1 ? `${i + 1}. ` : ''}${a.kind === 'applescript' ? 'AppleScript' : a.kind === 'shell' ? 'Shell command' : ''}${a.kind === 'applescript' || a.kind === 'shell' ? ':\n' : ''}${approvalText(a)}`)
-    .join('\n\n')
+  const risky = actions.filter((a) => a && APPROVAL_KINDS.includes(a.kind)) as Parameters<typeof approvalPayload>[0][]
+  if (!risky.length || !bridge.connected) return null
+  const label = (a: SimpleAction): string =>
+    a.kind === 'applescript' ? 'AppleScript:\n' : a.kind === 'shell' ? 'Shell command:\n' : ''
+  const detail = risky.map((a, i) => `${risky.length > 1 ? `${i + 1}. ` : ''}${label(a)}${approvalText(a)}`).join('\n\n')
   const opts: Electron.MessageBoxOptions = {
     type: 'warning',
     message: risky.length > 1 ? `Allow Ghostkeys to run these ${risky.length} actions?` : 'Allow Ghostkeys to run this action?',
@@ -311,13 +405,19 @@ ipcMain.handle('approve', async (e, actions: SimpleAction[], context: string): P
   }
   const { response } = mainWindow ? await dialog.showMessageBox(mainWindow, opts) : await dialog.showMessageBox(opts)
   if (response !== 1) return null
-  for (const a of risky) bridge.send({ type: 'approve_action', action: a })
-  const keys = new Set(prefs.approved)
-  risky.forEach((a) => keys.add(approvalKey(a)))
-  prefs = { ...prefs, approved: [...keys].slice(-500) }
-  savePrefs()
-  return prefs.approved
+  return sendApprovals(risky)
 })
+
+/** Only ever called after the user said Allow in the native dialog (or by the self-test, which never shows UI). */
+async function sendApprovals(risky: Parameters<typeof approvalPayload>[0][]): Promise<(string | null)[]> {
+  const hashes: (string | null)[] = []
+  for (const a of risky) {
+    const wait = awaitApproval()
+    bridge.send({ type: 'approve_action', action: approvalPayload(a) })
+    hashes.push(await wait)
+  }
+  return hashes
+}
 
 ipcMain.handle('library', () => loadLibrary(app.isPackaged ? join(process.resourcesPath, 'presets') : join(APP_ROOT, '../presets')))
 
@@ -327,9 +427,7 @@ ipcMain.handle('restart-daemon', async () => {
 })
 
 ipcMain.handle('set-prefs', (_e, p: Partial<AppPrefs>) => {
-  // approvals only change through the dialog
-  const { approved: _ignored, ...rest } = p
-  prefs = { ...prefs, ...rest }
+  prefs = { ...prefs, ...p }
   nativeTheme.themeSource = prefs.theme
   savePrefs()
   return prefs
@@ -357,6 +455,8 @@ if (!gotLock) {
     })
     bridge.on('change', refreshTray)
     bridge.on('message', (msg: DaemonMessage) => {
+      if (msg.type === 'approved') approvalWaiters.shift()?.(msg.hash)
+      else if (msg.type === 'error' && msg.message.startsWith('approve_action')) approvalWaiters.shift()?.(null)
       onDaemonMessage(msg)
       mainWindow?.webContents.send('daemon-message', msg)
     })
@@ -366,6 +466,13 @@ if (!gotLock) {
     bridge.start()
 
     mainWindow = createMainWindow()
+    if (SELFTEST) {
+      const code = await runSelfTest({ main: mainWindow, bridge, supervisor, sendApprovals, outDir: join(APP_ROOT, 'screenshots') })
+      quitting = true
+      supervisor.stop()
+      setTimeout(() => app.exit(code), 1500)
+      return
+    }
     if (SCREENSHOT) {
       hudWindow = createHudWindow()
       await runScreenshots({ main: mainWindow, hud: hudWindow, outDir: join(APP_ROOT, 'screenshots'), showHud })
@@ -374,7 +481,7 @@ if (!gotLock) {
       return
     }
 
-    tray = new Tray(trayImage())
+    tray = new Tray(trayImage('normal'))
     refreshTray()
   })
 

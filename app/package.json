@@ -15,7 +15,8 @@
     "lint": "eslint .",
     "icons": "node scripts/gen-icons.mjs",
     "screenshots": "pnpm build && node scripts/screenshots.mjs",
-    "build:mac": "pnpm build && electron-builder --mac --dir --arm64"
+    "build:mac": "pnpm build && electron-builder --mac --dir --arm64",
+    "selftest:real": "pnpm build && node scripts/selftest-real.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [
@@ -28,7 +29,6 @@
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
     "geist": "^1.7.2",
-    "lucide-react": "^1.48.0",
     "motion": "^13.4.4",
     "radix-ui": "^1.6.7",
     "react": "^19",

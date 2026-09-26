@@ -37,15 +37,17 @@ function Hud(): React.JSX.Element {
             transition={{ layout: { duration: 0.24, ease: [0.2, 0, 0, 1] } }}
             className="hud-pill"
           >
-            <motion.span layout="position" className={payload.ok ? 'hud-dot' : 'hud-dot is-error'} />
+            <motion.span layout="position" key={`dot${payload.id}`} className={payload.ok ? 'hud-dot' : 'hud-dot is-error'} />
             <motion.span layout="position" key={`t${payload.id}`} className="hud-title">
               {payload.title}
             </motion.span>
             {payload.detail && (
               <>
-                <motion.span layout="position" className="hud-sep" />
-                <motion.span layout="position" key={`d${payload.id}`} className="hud-detail">
-                  {payload.detail}
+                <motion.span layout="position" key={`d${payload.id}`} className="hud-detail-wrap">
+                  <span className="hud-sep" aria-hidden>
+                    &middot;
+                  </span>
+                  <span className={payload.ok ? 'hud-detail' : 'hud-detail is-error'}>{payload.detail}</span>
                 </motion.span>
               </>
             )}

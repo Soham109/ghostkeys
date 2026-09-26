@@ -1,41 +1,65 @@
 import { toast } from 'sonner'
-import type { Action, SimpleAction } from '@shared/protocol'
-import { riskyParts, unapproved } from '@shared/approval'
-import { useStore } from './store'
-
-export function approvedKeys(): string[] {
-  return useStore.getState().info?.prefs.approved ?? []
-}
-
-export function needsApproval(a: Action, approved: string[] = approvedKeys()): SimpleAction[] {
-  return unapproved(a, approved)
-}
+import type { Action, Config } from '@shared/protocol'
+import { applyHashes, riskyParts, unapproved } from '@shared/approval'
 
 export function isRisky(a: Action): boolean {
   return riskyParts(a).length > 0
 }
 
-/**
- * Makes sure every shell, AppleScript, Shortcut and open step in these actions was approved by the
- * user in a native dialog showing the exact text. Resolves false if the user declines.
- */
-export async function ensureApproved(actions: Action[], context: string): Promise<boolean> {
-  const approved = approvedKeys()
-  const pending = actions.flatMap((a) => needsApproval(a, approved))
-  if (!pending.length) return true
-  const next = await window.gk.approve(pending, context)
-  if (!next) {
-    toast('Not approved', { description: 'Nothing was run or saved.' })
-    return false
-  }
-  const info = useStore.getState().info
-  if (info) useStore.setState({ info: { ...info, prefs: { ...info.prefs, approved: next } } })
-  return true
+export function approvalState(a: Action): 'none' | 'approved' | 'pending' {
+  if (!isRisky(a)) return 'none'
+  return unapproved(a).length ? 'pending' : 'approved'
 }
 
-/** Hook-friendly: is this exact action approved right now? */
-export function useApproval(a: Action): 'none' | 'approved' | 'pending' {
-  const approved = useStore((s) => s.info?.prefs.approved)
-  if (!isRisky(a)) return 'none'
-  return unapproved(a, approved ?? []).length ? 'pending' : 'approved'
+/**
+ * One native dialog for every unapproved shell, AppleScript, Shortcut and open step in `actions`.
+ * Returns the actions with the daemon's approvedHash filled in, or null if the user declined.
+ */
+async function approveAll(actions: Action[], context: string): Promise<Action[] | null> {
+  const pendingPer = actions.map((a) => riskyParts(a).map((p) => !p.approvedHash))
+  const pending = actions.flatMap((a) => unapproved(a))
+  if (!pending.length) return actions
+  const hashes = await window.gk.approve(pending, context)
+  if (!hashes) {
+    toast('Not approved', { description: 'Nothing was run or saved.' })
+    return null
+  }
+  if (hashes.some((h) => !h)) {
+    toast('The service did not confirm the approval', { description: 'Check that Ghostkeys is running, then try again.' })
+    return null
+  }
+  let k = 0
+  return actions.map((a, i) => {
+    const perPart = pendingPer[i]!.map((isPending) => (isPending ? (hashes[k++] ?? null) : null))
+    return perPart.some(Boolean) ? applyHashes(a, perPart) : a
+  })
+}
+
+export async function ensureActionApproved(a: Action, context: string): Promise<Action | null> {
+  const r = await approveAll([a], context)
+  return r ? r[0]! : null
+}
+
+/** Every enabled binding's action (and knob inverse) must be approved before a save. */
+export async function ensureApproved(config: Config, context: string): Promise<Config | null> {
+  const slots: { b: number; inverse: boolean }[] = []
+  const actions: Action[] = []
+  config.bindings.forEach((b, i) => {
+    if (!b.enabled) return
+    slots.push({ b: i, inverse: false })
+    actions.push(b.action)
+    if (b.knob?.inverse) {
+      slots.push({ b: i, inverse: true })
+      actions.push(b.knob.inverse)
+    }
+  })
+  const r = await approveAll(actions, context)
+  if (!r) return null
+  const out = structuredClone(config)
+  slots.forEach((s, i) => {
+    const b = out.bindings[s.b]!
+    if (s.inverse && b.knob) b.knob.inverse = r[i]!
+    else b.action = r[i]!
+  })
+  return out
 }

@@ -10,7 +10,7 @@ import { installShots } from './lib/shots'
 async function boot(): Promise<void> {
   wireClient()
   const info = await window.gk.info()
-  useStore.setState({ info, daemon: info.daemon })
+  useStore.setState({ info, daemon: info.daemon, license: info.license })
   window.gk.onDaemonState((daemon) => {
     useStore.setState({ daemon })
     client.retryNow()

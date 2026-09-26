@@ -2,51 +2,69 @@ import * as React from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useStore } from '@/lib/store'
 import { client } from '@/lib/client'
+import { defaultZones } from '@shared/defaults'
 import { Button } from './ui/button'
 import { Logo } from './Logo'
+import { LaptopMap } from './laptop/LaptopMap'
 
-function detail(d: ReturnType<typeof useStore.getState>['daemon'], port: number): { title: string; body: React.ReactNode } {
+function detail(d: ReturnType<typeof useStore.getState>['daemon']): { title: string; body: string; dev: React.ReactNode } {
   switch (d.kind) {
     case 'missing':
       return {
-        title: 'The Ghostkeys service is not built yet',
-        body: (
+        title: 'Ghostkeys isn’t listening.',
+        body: 'Its background helper is missing from this copy of the app. Reinstall Ghostkeys to bring your gestures back.',
+        dev: (
           <>
-            The app talks to a small background service, ghostkeysd, that reads the motion sensor. Build it from the
-            daemon folder with <code className="font-mono text-[12px] text-ink">swift build -c release</code>, then try again.
+            <p>
+              Build the helper from the daemon folder with <code className="text-ink">swift build -c release</code>, then restart.
+            </p>
+            {d.searched.map((p) => (
+              <p key={p} className="truncate">
+                {p}
+              </p>
+            ))}
           </>
         )
       }
     case 'exited':
       return {
-        title: 'The Ghostkeys service stopped',
-        body: d.message
-          ? `It could not start: ${d.message}`
-          : `It exited${d.code !== null ? ` with code ${d.code}` : d.signal ? ` after ${d.signal}` : ''}. Try starting it again.`
+        title: 'Ghostkeys isn’t listening.',
+        body: d.gaveUp
+          ? 'Its background helper stopped several times in a row, so Ghostkeys stopped restarting it. Restart it when you are ready.'
+          : 'Its background helper stopped. Restart it to bring your gestures back.',
+        dev: (
+          <>
+            <p className="truncate">{d.path}</p>
+            <p>{d.message ?? (d.code !== null ? `exit code ${d.code}` : d.signal ? `signal ${d.signal}` : 'exited')}</p>
+          </>
+        )
       }
     case 'mock':
       return {
-        title: 'The mock service is not running',
-        body: (
-          <>
-            Start it with <code className="font-mono text-[12px] text-ink">pnpm mock</code>, or run the app with{' '}
-            <code className="font-mono text-[12px] text-ink">pnpm dev:mock</code>.
-          </>
+        title: 'Ghostkeys isn’t listening.',
+        body: 'The practice helper is not running.',
+        dev: (
+          <p>
+            Start it with <code className="text-ink">pnpm mock</code>, or run the app with <code className="text-ink">pnpm dev:mock</code>.
+          </p>
         )
       }
     default:
       return {
-        title: 'The Ghostkeys service is not running',
-        body: `Waiting for it to accept connections on 127.0.0.1:${port}.`
+        title: 'Ghostkeys isn’t listening.',
+        body: 'Its background helper is not answering yet. Restart it to bring your gestures back.',
+        dev: <p>Waiting for 127.0.0.1:{useStore.getState().info?.port ?? 47823}.</p>
       }
   }
 }
 
 export function ServiceOffline(): React.JSX.Element {
   const daemon = useStore((s) => s.daemon)
-  const port = useStore((s) => s.info?.port ?? 47823)
+  const packaged = useStore((s) => s.info?.packaged ?? false)
+  const family = useStore((s) => s.hello?.device.family ?? 'macbook-pro-14')
   const [busy, setBusy] = React.useState(false)
-  const { title, body } = detail(daemon, port)
+  const [details, setDetails] = React.useState(false)
+  const { title, body, dev } = detail(daemon)
 
   const retry = async (): Promise<void> => {
     setBusy(true)
@@ -59,33 +77,42 @@ export function ServiceOffline(): React.JSX.Element {
   }
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="relative flex flex-1 flex-col overflow-hidden">
+      <div className="pointer-events-none absolute inset-y-16 right-[-12%] left-[52%] opacity-[0.12]" aria-hidden>
+        <LaptopMap family={family} zones={defaultZones(family)} showLabels={false} />
+      </div>
       <div className="drag h-[52px] shrink-0" />
-      <div className="flex flex-1 items-center px-16 pb-16">
-        <motion.div
-          className="max-w-[520px]"
-          initial={{ opacity: 0, y: 6 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
-        >
-          <Logo className="mb-8 size-10 text-ink-3" />
-          <p className="label-mono mb-3">Service</p>
+      <div className="relative flex flex-1 items-center px-16 pb-16">
+        <motion.div className="max-w-[460px]" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.16, 1, 0.3, 1] }}>
+          <Logo className="mb-8 size-9 text-ink-3" dotClassName="fill-[var(--ink-3)]" />
           <h1 className="text-[28px] leading-[1.15] font-medium tracking-[-0.02em]">{title}</h1>
-          <p className="mt-3 max-w-[60ch] text-[13px] leading-relaxed text-ink-2">{body}</p>
-          {daemon.kind === 'missing' && (
-            <ul className="mt-5 space-y-1">
-              {daemon.searched.map((p) => (
-                <li key={p} className="truncate font-mono text-[11px] text-ink-3">
-                  {p}
-                </li>
-              ))}
-            </ul>
-          )}
-          <div className="mt-8 flex gap-2">
-            <Button variant="primary" onClick={retry} disabled={busy}>
-              {busy ? 'Starting' : 'Try again'}
+          <p className="mt-3 max-w-[56ch] text-[15px] leading-relaxed text-ink-2">{body}</p>
+          <div className="mt-8 flex items-center gap-5">
+            <Button variant="primary" size="lg" onClick={() => void retry()} disabled={busy}>
+              {busy ? 'Restarting' : 'Restart helper'}
             </Button>
+            {!packaged && (
+              <Button variant="text" onClick={() => setDetails((d) => !d)} aria-expanded={details}>
+                {details ? 'Hide details' : 'Show details'}
+              </Button>
+            )}
           </div>
+          <AnimatePresence>
+            {details && !packaged && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.24, ease: [0.2, 0, 0, 1] }}
+                className="overflow-hidden"
+              >
+                <div className="mt-8 space-y-1 pt-4 font-mono text-[11px] leading-relaxed text-ink-3 shadow-[0_-1px_0_var(--hairline)]">
+                  <p className="label-mono pb-1">Developer</p>
+                  {dev}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </motion.div>
       </div>
     </div>
@@ -108,7 +135,7 @@ export function ReconnectBanner(): React.JSX.Element {
           role="status"
         >
           <span className="size-1.5 animate-[breathe_1.6s_ease-in-out_infinite] rounded-full bg-ink-3" />
-          Lost the connection to the Ghostkeys service. Reconnecting.
+          Lost the connection to the Ghostkeys helper. Reconnecting.
         </motion.div>
       )}
     </AnimatePresence>

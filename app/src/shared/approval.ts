@@ -1,17 +1,32 @@
 // Actions that run arbitrary code or open arbitrary things need the user's explicit approval
-// (docs/audit/SAFETY_AUDIT.md H4). The daemon refuses unapproved ones; the app asks, then sends approve_action.
+// (docs/PROTOCOL.md, Authentication). The app shows the exact text in a native dialog, sends approve_action,
+// and stores the hash the daemon replies with as `approvedHash` on the action. The daemon refuses anything else.
 import type { Action, ActionKind, SimpleAction } from './protocol'
 
 export const APPROVAL_KINDS: ActionKind[] = ['shell', 'applescript', 'shortcut', 'open']
 
-/** The steps of an action that need approval (the action itself, or the risky steps of a macro). */
-export function riskyParts(a: Action): SimpleAction[] {
-  if (a.kind === 'macro') return a.steps.filter((s) => APPROVAL_KINDS.includes(s.kind)).map(stripDelay)
-  return APPROVAL_KINDS.includes(a.kind) ? [a] : []
+type Approvable = Extract<SimpleAction, { approvedHash?: string }>
+
+export function needsApprovalKind(a: SimpleAction): a is Approvable {
+  return APPROVAL_KINDS.includes(a.kind)
+}
+
+/** The parts of an action that need approval (the action itself, or the matching steps of a macro). */
+export function riskyParts(a: Action): Approvable[] {
+  if (a.kind === 'macro') return a.steps.map(stripDelay).filter(needsApprovalKind)
+  return needsApprovalKind(a) ? [a] : []
 }
 
 export function stripDelay(s: SimpleAction & { delayMs?: number }): SimpleAction {
   const { delayMs: _delay, ...rest } = s
+  return rest as SimpleAction
+}
+
+/** What the daemon hashes: the action without approvedHash, label and delayMs. */
+export function approvalPayload(a: Approvable): SimpleAction {
+  const { approvedHash: _h, ...rest } = a as Approvable & { label?: string; delayMs?: number }
+  delete (rest as { label?: string }).label
+  delete (rest as { delayMs?: number }).delayMs
   return rest as SimpleAction
 }
 
@@ -23,42 +38,37 @@ export function approvalText(a: SimpleAction): string {
     case 'applescript':
       return a.source
     case 'shortcut':
-      return `Shortcut: ${a.name}`
+      return `Run the Shortcut named "${a.name}"`
     case 'open':
-      return `Open: ${a.target}`
+      return `Open ${a.target}`
     default:
       return JSON.stringify(a)
   }
 }
 
-function canonical(v: unknown): string {
-  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
-  if (v && typeof v === 'object') {
-    return `{${Object.keys(v)
-      .filter((k) => k !== 'delayMs')
-      .sort()
-      .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
-      .join(',')}}`
-  }
-  return JSON.stringify(v)
+export function unapproved(a: Action): Approvable[] {
+  return riskyParts(a).filter((p) => !p.approvedHash)
 }
 
-/** Stable key for "this exact action was approved". Changing any text changes the key. */
-export function approvalKey(a: SimpleAction): string {
-  const str = canonical(a)
-  let h1 = 0xdeadbeef
-  let h2 = 0x41c6ce57
-  for (let i = 0; i < str.length; i++) {
-    const ch = str.charCodeAt(i)
-    h1 = Math.imul(h1 ^ ch, 2654435761)
-    h2 = Math.imul(h2 ^ ch, 1597334677)
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909)
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909)
-  return `${a.kind}:${(h2 >>> 0).toString(16).padStart(8, '0')}${(h1 >>> 0).toString(16).padStart(8, '0')}:${str.length}`
+/** Keeps approvedHash only while the approved text is unchanged. */
+export function keepApproval<T extends SimpleAction>(prev: SimpleAction | undefined, next: T): T {
+  if (!needsApprovalKind(next)) return next
+  const same = prev && prev.kind === next.kind && approvalText(prev) === approvalText(next)
+  const prevHash = prev && needsApprovalKind(prev) ? prev.approvedHash : undefined
+  const out = { ...next } as T & { approvedHash?: string }
+  if (same && prevHash) out.approvedHash = prevHash
+  else delete out.approvedHash
+  return out
 }
 
-export function unapproved(a: Action, approved: ReadonlySet<string> | readonly string[]): SimpleAction[] {
-  const set = approved instanceof Set ? approved : new Set(approved)
-  return riskyParts(a).filter((p) => !set.has(approvalKey(p)))
+/** Writes hashes (in riskyParts order) back into the action. */
+export function applyHashes(a: Action, hashes: (string | null)[]): Action {
+  let i = 0
+  const set = (p: SimpleAction): SimpleAction => {
+    if (!needsApprovalKind(p)) return p
+    const h = hashes[i++]
+    return h ? ({ ...p, approvedHash: h } as SimpleAction) : p
+  }
+  if (a.kind === 'macro') return { ...a, steps: a.steps.map((s) => ({ ...set(s), ...(s.delayMs !== undefined ? { delayMs: s.delayMs } : {}) }) as typeof s) }
+  return set(a)
 }

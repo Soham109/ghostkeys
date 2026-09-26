@@ -1,100 +1,41 @@
 import * as React from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Check, Minus } from 'lucide-react'
 import { useStore } from '@/lib/store'
 import { client } from '@/lib/client'
-import { cn } from '@/lib/utils'
-import { FAMILY_LABEL, type Zone } from '@shared/protocol'
+import { FAMILY_LABEL } from '@shared/protocol'
 import { defaultZones } from '@shared/defaults'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/Logo'
 import { LaptopMap } from '@/components/laptop/LaptopMap'
 import { pointToSvg } from '@/components/laptop/geometry'
 
-const DEMO = [
-  { zone: 'right-palm', gesture: 'Double tap', action: 'Play or pause', taps: 2 },
-  { zone: 'right-grille', gesture: 'Tap', action: 'Volume up', taps: 1 },
-  { zone: 'left-palm', gesture: 'Double tap', action: 'AutoSum in Excel', taps: 2 },
-  { zone: 'top-strip', gesture: 'Triple tap', action: 'Screenshot of an area', taps: 3 }
+const TOUR = [
+  { zone: 'right-grille', action: 'Volume up' },
+  { zone: 'left-palm', action: 'Play or pause' },
+  { zone: 'top-strip', action: 'Screenshot' },
+  { zone: 'left-edge', action: 'Next tab' },
+  { zone: 'right-palm', action: 'Fill the screen' }
 ]
+const EASE_OUT = [0.16, 1, 0.3, 1] as const
 
-/** The idea in one loop: a tap on blank aluminum, a ring, and the HUD naming what happened. */
-function Explainer({ family }: { family: Parameters<typeof defaultZones>[0] }): React.JSX.Element {
-  const zones = React.useMemo(() => defaultZones(family), [family])
-  const demos = DEMO.filter((d) => zones.some((z) => z.id === d.zone))
-  const [i, setI] = React.useState(0)
-  const [beat, setBeat] = React.useState(0)
+/** Headline lines rise out of a mask, 80 ms apart. */
+function Reveal({ lines, className }: { lines: React.ReactNode[]; className?: string }): React.JSX.Element {
   const reduce = useReducedMotion()
-  const demo = demos[i % demos.length]!
-  const zone = zones.find((z) => z.id === demo.zone) as Zone
-
-  React.useEffect(() => {
-    const t = setInterval(() => {
-      setI((x) => x + 1)
-      setBeat((b) => b + 1)
-    }, 2600)
-    return () => clearInterval(t)
-  }, [])
-
   return (
-    <div className="flex h-full flex-col">
-      <div className="relative min-h-0 flex-1">
-        <LaptopMap
-          family={family}
-          zones={zones}
-          mode="static"
-          focusId={zone.id}
-          overlay={(layout) => {
-            const c = pointToSvg(layout, zone.surface, zone.rect.x + zone.rect.w * 0.55, zone.rect.y + zone.rect.h * 0.5)
-            return (
-              <g key={beat} pointerEvents="none">
-                {Array.from({ length: demo.taps }, (_, k) => (
-                  <motion.circle
-                    key={k}
-                    cx={c.x}
-                    cy={c.y}
-                    r={26}
-                    fill="none"
-                    stroke="var(--signal)"
-                    strokeWidth={1.5}
-                    vectorEffect="non-scaling-stroke"
-                    style={{ transformBox: 'fill-box', transformOrigin: 'center' }}
-                    initial={{ scale: 0.4, opacity: 0 }}
-                    animate={{ scale: reduce ? 1 : [0.4, 1.6], opacity: [1, 0] }}
-                    transition={{ duration: 0.52, delay: 0.35 + k * 0.2, ease: [0.16, 1, 0.3, 1] }}
-                  />
-                ))}
-                <motion.circle
-                  cx={c.x}
-                  cy={c.y}
-                  r={5}
-                  fill="var(--signal)"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: [0, 1, 1, 0] }}
-                  transition={{ duration: 1.2, delay: 0.3, times: [0, 0.1, 0.6, 1] }}
-                />
-              </g>
-            )
-          }}
-        />
-      </div>
-      <div className="flex h-16 items-center justify-center">
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={beat}
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0, transition: { delay: 0.5 + demo.taps * 0.2, duration: 0.2, ease: [0.2, 0, 0, 1] } }}
-            exit={{ opacity: 0, transition: { duration: 0.24 } }}
-            className="inline-flex h-9 items-center gap-2.5 rounded-full bg-popover pr-4 pl-3.5 text-[13px] shadow-[var(--pop-shadow)]"
+    <h1 className={className}>
+      {lines.map((l, i) => (
+        <span key={i} className="block overflow-hidden pb-[0.08em]">
+          <motion.span
+            className="block"
+            initial={reduce ? { opacity: 0 } : { y: '110%' }}
+            animate={reduce ? { opacity: 1 } : { y: 0 }}
+            transition={{ duration: reduce ? 0.28 : 0.9, delay: i * 0.08, ease: EASE_OUT }}
           >
-            <span className="size-1.5 rounded-full bg-signal" />
-            <span className="font-medium">{zone.name}</span>
-            <span className="h-3 w-px bg-hairline-strong" />
-            <span className="text-ink-2">{demo.action}</span>
-          </motion.div>
-        </AnimatePresence>
-      </div>
-    </div>
+            {l}
+          </motion.span>
+        </span>
+      ))}
+    </h1>
   )
 }
 
@@ -106,16 +47,9 @@ function CheckRow({ label, detail, ok, delay }: { label: string; detail?: string
       transition={{ delay, duration: 0.28, ease: [0.2, 0, 0, 1] }}
       className="flex h-10 items-center gap-3 shadow-[0_1px_0_var(--hairline)]"
     >
-      <span
-        className={cn(
-          'flex size-4 items-center justify-center rounded-full',
-          ok ? 'bg-ink text-bg' : ok === false ? 'text-ink-3 shadow-[inset_0_0_0_1px_var(--hairline-strong)]' : 'text-ink-3'
-        )}
-      >
-        {ok ? <Check className="size-2.5" strokeWidth={3.5} /> : <Minus className="size-2.5" />}
-      </span>
-      <span className="flex-1 text-[13px]">{label}</span>
+      <span className="flex-1 text-[13px] text-ink">{label}</span>
       {detail && <span className="text-[12px] text-ink-3">{detail}</span>}
+      <span className="num w-14 text-right text-[11px] tracking-[0.06em] text-ink-2">{ok === null ? '...' : ok ? 'OK' : 'NONE'}</span>
     </motion.li>
   )
 }
@@ -128,7 +62,21 @@ export function Onboarding(): React.JSX.Element {
   const granted = !!hello?.permissions.accessibility
   const [asked, setAsked] = React.useState(false)
   const setStep = (n: number): void => useStore.setState({ onboardingStep: n })
+  const zones = React.useMemo(() => defaultZones(family), [family])
+  const tour = TOUR.filter((t) => zones.some((z) => z.id === t.zone))
+  const [beat, setBeat] = React.useState(0)
+  const reduce = useReducedMotion()
   const TOTAL = 4
+
+  React.useEffect(() => {
+    if (step !== 0) return
+    const t = setInterval(() => setBeat((b) => b + 1), 1400)
+    return () => clearInterval(t)
+  }, [step])
+
+  const demo = tour[beat % tour.length]!
+  const demoIndex = zones.findIndex((z) => z.id === demo.zone)
+  const demoZone = zones[demoIndex]!
 
   const sensors = hello?.sensors
   const sensorRows: { label: string; key: keyof NonNullable<typeof sensors>; use: string }[] = [
@@ -138,67 +86,73 @@ export function Onboarding(): React.JSX.Element {
     { label: 'Ambient light sensor', key: 'light', use: 'Covering it' }
   ]
 
+  const allow = (): void => {
+    client.send({ type: 'request_permission', which: 'accessibility' })
+    setAsked(true)
+  }
+
   const body = [
     <>
-      <h1 className="text-[44px] leading-[1.02] font-medium tracking-[-0.035em]">
-        Your MacBook has <span className="font-serif font-normal tracking-[-0.01em] italic">hidden</span> keys.
-      </h1>
-      <p className="mt-5 max-w-[42ch] text-[15px] leading-relaxed text-ink-2">
-        Ghostkeys turns the palm rests, speaker grilles, edges and lid into buttons. It listens to the motion sensor already inside
-        your Mac, so there is nothing to attach and nothing to charge.
+      <Reveal
+        className="font-display text-[44px] leading-[0.92] font-medium tracking-[-0.035em]"
+        lines={[
+          'Your MacBook has',
+          <>
+            <motion.span
+              className="font-serif text-[46px] font-normal tracking-[-0.01em] italic"
+              initial={{ filter: 'blur(8px)' }}
+              animate={{ filter: 'blur(0px)' }}
+              transition={{ delay: 0.12, duration: 0.9, ease: EASE_OUT }}
+            >
+              hidden
+            </motion.span>{' '}
+            keys.
+          </>
+        ]}
+      />
+      <p className="mt-6 max-w-[42ch] text-[15px] leading-[1.55] text-ink-2">
+        Ghostkeys turns the palm rests, speaker grilles, edges and lid into buttons. It listens to the motion sensor already inside your Mac, so there is nothing
+        to attach and nothing to charge.
       </p>
     </>,
     <>
-      <h1 className="text-[28px] leading-[1.1] font-medium tracking-[-0.02em]">Checking this Mac</h1>
-      <p className="mt-3 max-w-[44ch] text-[13px] leading-relaxed text-ink-2">Ghostkeys draws your exact model and uses whichever sensors it has.</p>
+      <Reveal className="text-[28px] leading-[1.1] font-medium tracking-[-0.02em]" lines={['Checking this Mac']} />
+      <p className="mt-3 max-w-[44ch] text-[15px] leading-[1.55] text-ink-2">Ghostkeys draws your exact model and uses whichever sensors it has.</p>
       <ul className="mt-6 shadow-[0_-1px_0_var(--hairline)]">
-        <CheckRow label={hello ? FAMILY_LABEL[hello.device.family] : 'Looking for your Mac'} detail={hello ? `${hello.device.chip}` : undefined} ok={hello ? true : null} delay={0.05} />
+        <CheckRow label={hello ? FAMILY_LABEL[hello.device.family] : 'Looking for your Mac'} detail={hello?.device.chip} ok={hello ? true : null} delay={0.05} />
         {sensorRows.map((r, i) => (
-          <CheckRow key={r.key} label={r.label} detail={sensors ? (sensors[r.key] ? r.use : 'Not found') : undefined} ok={sensors ? sensors[r.key] : null} delay={0.15 + i * 0.08} />
+          <CheckRow key={r.key} label={r.label} detail={sensors ? (sensors[r.key] ? r.use : 'Not found') : undefined} ok={sensors ? !!sensors[r.key] : null} delay={0.13 + i * 0.08} />
         ))}
       </ul>
-      {sensors && !sensors.imu && (
-        <p className="mt-4 max-w-[44ch] text-[12px] leading-relaxed text-ink-2">
-          No motion sensor was found, so taps cannot be felt. Lid and light gestures still work.
-        </p>
-      )}
+      {sensors && !sensors.imu && <p className="mt-4 max-w-[44ch] text-[13px] leading-relaxed text-ink-2">No motion sensor was found, so taps cannot be felt. Lid and light gestures still work.</p>}
     </>,
     <>
-      <h1 className="text-[28px] leading-[1.1] font-medium tracking-[-0.02em]">Let Ghostkeys press keys for you</h1>
-      <p className="mt-3 max-w-[46ch] text-[13px] leading-relaxed text-ink-2">
-        Shortcuts, typed text and window moves need Accessibility access. macOS asks once; you can turn it off any time in System
-        Settings, under Privacy and Security.
+      <Reveal className="text-[28px] leading-[1.1] font-medium tracking-[-0.02em]" lines={['Let Ghostkeys press', 'keys for you']} />
+      <p className="mt-3 max-w-[46ch] text-[15px] leading-[1.55] text-ink-2">
+        Shortcuts, typed text and window moves need Accessibility access. macOS asks once, and you can turn it off any time in System Settings.
       </p>
-      <div className="mt-6 flex items-center gap-3 py-3 shadow-[0_-1px_0_var(--hairline),0_1px_0_var(--hairline)]">
-        <span className={cn('size-2 rounded-full', granted ? 'bg-ink' : 'shadow-[inset_0_0_0_1px_var(--ink-3)]')} />
-        <span className="flex-1 text-[13px]">{granted ? 'Access granted' : asked ? 'Waiting for your answer in the macOS prompt' : 'Not granted yet'}</span>
-        {!granted && (
-          <Button
-            variant="outline"
-            onClick={() => {
-              client.send({ type: 'request_permission', which: 'accessibility' })
-              setAsked(true)
-            }}
-          >
-            Open the prompt
+      <div className="mt-8 flex items-center gap-4">
+        {granted ? (
+          <p className="text-[15px] text-ink">Access allowed.</p>
+        ) : (
+          <Button variant="primary" size="lg" onClick={allow}>
+            {asked ? 'Ask again' : 'Allow Accessibility'}
           </Button>
         )}
+        {asked && !granted && <span className="text-[13px] text-ink-3">Answer the macOS prompt, then come back.</span>}
       </div>
-      <p className="mt-4 max-w-[46ch] text-[12px] leading-relaxed text-ink-3">
-        Media keys, volume, opening apps and Shortcuts work without it.
-      </p>
+      <p className="mt-6 max-w-[46ch] text-[12px] leading-relaxed text-ink-3">Media keys, volume, opening apps and Shortcuts work without it.</p>
     </>,
     <>
-      <h1 className="text-[28px] leading-[1.1] font-medium tracking-[-0.02em]">Teach it your taps</h1>
-      <p className="mt-3 max-w-[46ch] text-[13px] leading-relaxed text-ink-2">
-        You tap each zone 20 times, then type normally for 45 seconds. Ghostkeys learns the difference on this Mac, and nothing leaves
-        it.
+      <Reveal className="text-[28px] leading-[1.1] font-medium tracking-[-0.02em]" lines={['Teach it your taps']} />
+      <p className="mt-3 max-w-[46ch] text-[15px] leading-[1.55] text-ink-2">
+        Tap each zone 20 times, then type normally for 45 seconds. Ghostkeys learns the difference on this Mac, and nothing leaves it.
       </p>
-      <div className="mt-8 flex gap-2">
+      <div className="mt-8 flex items-center gap-6">
         <Button variant="primary" size="lg" onClick={() => finish('calibration')}>
           Start calibration
         </Button>
-        <Button variant="ghost" size="lg" onClick={() => finish('live')}>
+        <Button variant="text" onClick={() => finish('live')}>
           Skip for now
         </Button>
       </div>
@@ -207,57 +161,102 @@ export function Onboarding(): React.JSX.Element {
 
   return (
     <div className="flex h-full w-full flex-col bg-bg">
-      <div className="drag flex h-[52px] shrink-0 items-center justify-end px-6">
-        <button className="no-drag text-[12px] text-ink-3 hover:text-ink" onClick={() => finish('live')}>
+      <div className="drag flex h-[52px] shrink-0 items-center justify-end px-12">
+        <Button variant="text" size="sm" className="no-drag" onClick={() => finish('live')}>
           Skip introduction
-        </button>
+        </Button>
       </div>
-      <div className="grid min-h-0 flex-1 grid-cols-[minmax(360px,440px)_1fr] gap-10 pr-10 pl-16">
+      <div className="grid min-h-0 flex-1 grid-cols-[minmax(360px,440px)_1fr] gap-10 pr-12 pl-12">
         <div className="flex flex-col justify-center pb-10">
-          <Logo className="mb-10 size-8 text-ink" dotClassName="text-signal fill-[var(--signal)]" />
+          <div className="mb-10 h-8">
+            {step === 0 && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.4 }}>
+                <Logo className="size-8 text-ink" dotClassName="onboard-dot" />
+              </motion.div>
+            )}
+          </div>
           <AnimatePresence mode="wait">
-            <motion.div
-              key={step}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.36, ease: [0.16, 1, 0.3, 1] }}
-            >
+            <motion.div key={step} exit={{ opacity: 0, y: -6 }} transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}>
               {body[step]}
             </motion.div>
           </AnimatePresence>
         </div>
-        <div className="relative min-h-0 py-10">
+        {/* One drawing for every step: it never remounts, only its emphasis changes. */}
+        <div className="relative flex min-h-0 flex-col py-10">
           <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(55% 50% at 50% 48%, var(--light-behind), transparent 72%)' }} />
-          <div className="relative h-full">
-            {step === 0 ? (
-              <Explainer family={family} />
-            ) : (
-              <div className="h-full pb-16">
-                <LaptopMap family={family} zones={defaultZones(family)} mode="static" showLabels={step !== 2} mutedIds={step === 2 ? defaultZones(family).map((z) => z.id) : []} />
-              </div>
-            )}
+          <div className="relative min-h-0 flex-1" style={{ opacity: step === 2 ? 0.35 : 1, transition: 'opacity 600ms var(--ease-snap)' }}>
+            <LaptopMap
+              family={family}
+              zones={zones}
+              mode="static"
+              showLabels={step !== 2}
+              focusId={step === 0 ? demoZone.id : null}
+              overlay={(layout, px) => {
+                if (step !== 0) return null
+                const r = demoZone.rect
+                const c = pointToSvg(layout, demoZone.surface, demoZone.surface.startsWith('edge') ? 0.5 : r.x + r.w * 0.55, r.y + r.h * 0.5)
+                return (
+                  <g key={beat} pointerEvents="none">
+                    {!reduce &&
+                      [0, 1].map((k) => (
+                        <motion.circle
+                          key={k}
+                          cx={c.x}
+                          cy={c.y}
+                          fill="none"
+                          stroke="var(--signal)"
+                          strokeWidth={1}
+                          vectorEffect="non-scaling-stroke"
+                          initial={{ r: px(6), opacity: k ? 0.7 : 1 }}
+                          animate={{ r: px(44), opacity: 0 }}
+                          transition={{ duration: 0.64, delay: 0.1 + k * 0.09, ease: EASE_OUT }}
+                        />
+                      ))}
+                    <motion.circle cx={c.x} cy={c.y} r={px(2)} fill="var(--signal)" initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 1, 0] }} transition={{ duration: 1.3, times: [0, 0.08, 0.8, 1] }} />
+                  </g>
+                )
+              }}
+            />
+          </div>
+          <div className="relative flex h-10 items-center justify-center">
+            <AnimatePresence mode="wait">
+              {step === 0 && (
+                <motion.p
+                  key={beat}
+                  initial={{ opacity: 0, y: -4 }}
+                  animate={{ opacity: 1, y: 0, transition: { delay: 0.2, duration: 0.2 } }}
+                  exit={{ opacity: 0, transition: { duration: 0.2 } }}
+                  className="num text-[11px] tracking-[0.08em] text-ink-2 uppercase"
+                >
+                  <span className="text-signal">{String(demoIndex + 1).padStart(2, '0')}</span>
+                  &nbsp;&nbsp;{demoZone.name}&nbsp;&nbsp;&rarr;&nbsp;&nbsp;{demo.action}
+                </motion.p>
+              )}
+            </AnimatePresence>
           </div>
         </div>
       </div>
-      <footer className="flex h-16 shrink-0 items-center gap-6 px-16 shadow-[0_-1px_0_var(--hairline)]">
+      <footer className="flex h-16 shrink-0 items-center gap-6 px-12 shadow-[0_-1px_0_var(--hairline)]">
+        <Button variant="text" className={step === 0 ? 'invisible' : undefined} onClick={() => setStep(step - 1)}>
+          Back
+        </Button>
         <span className="num text-[11px] text-ink-3">
           {String(step + 1).padStart(2, '0')} / {String(TOTAL).padStart(2, '0')}
         </span>
         <div className="relative h-px w-40 bg-hairline-strong">
           <motion.div className="absolute inset-y-0 left-0 bg-ink" animate={{ width: `${((step + 1) / TOTAL) * 100}%` }} transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }} />
         </div>
-        <div className="ml-auto flex gap-2">
-          {step > 0 && (
-            <Button variant="ghost" onClick={() => setStep(step - 1)}>
-              Back
-            </Button>
-          )}
-          {step < TOTAL - 1 && (
-            <Button variant="primary" onClick={() => setStep(step + 1)}>
-              {step === 0 ? 'Get started' : step === 2 && !granted ? 'Continue without it' : 'Continue'}
-            </Button>
-          )}
+        <div className="ml-auto flex items-center gap-2">
+          {step < TOTAL - 1 &&
+            (step === 2 && !granted ? (
+              <Button variant="text" onClick={() => setStep(step + 1)}>
+                Continue without it
+              </Button>
+            ) : (
+              <Button variant="primary" onClick={() => setStep(step + 1)}>
+                {step === 0 ? 'Get started' : 'Continue'}
+              </Button>
+            ))}
         </div>
       </footer>
     </div>

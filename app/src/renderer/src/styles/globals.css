@@ -22,7 +22,10 @@
   font-display: block;
 }
 
-/* Tokens: docs/design/BRIEF.md. --signal means "a touch was felt" and nothing else. */
+/*
+ * Tokens: docs/design/BRIEF.md, with the contrast fixes from docs/review/APP_CRITIQUE.md.
+ * --signal means "a touch was felt" and nothing else. --danger appears only inside a destructive confirm.
+ */
 :root,
 :root[data-theme='dark'] {
   --bg: #0a0a0b;
@@ -30,24 +33,23 @@
   --bg-sunken: #070708;
   --ink: #ededef;
   --ink-2: #8a8a90;
-  --ink-3: #55555b;
+  --ink-3: #76767d;
+  --line: #3a3a40;
+  --line-faint: #26262b;
   --hairline: #1f1f23;
   --hairline-strong: #2b2b30;
-  --aluminum: #a7a9ac;
   --signal: #ff5b1f;
-  --danger: #ff6b5e;
-  --fill: rgb(237 237 239 / 0.04);
+  --danger: #e5484d;
+  --fill: rgb(237 237 239 / 0.03);
   --fill-hover: rgb(237 237 239 / 0.06);
-  --fill-active: rgb(237 237 239 / 0.1);
+  --fill-active: rgb(237 237 239 / 0.09);
   --sidebar: rgb(18 18 20 / 0.55);
   --sidebar-solid: #121214;
-  --popover: #16161a;
-  --overlay: rgb(0 0 0 / 0.5);
-  --pop-shadow: 0 0 0 1px rgb(255 255 255 / 0.06), 0 16px 40px -8px rgb(0 0 0 / 0.7);
-  --light-behind: rgb(237 237 239 / 0.055);
-  --series-x: #7aa2ff;
-  --series-y: #5cc8b0;
-  --series-z: #8a8a90;
+  --material: color-mix(in srgb, #111113 78%, transparent);
+  --overlay: rgb(0 0 0 / 0.24);
+  --light-behind: rgb(237 237 239 / 0.05);
+  --zone-fill: rgb(237 237 239 / 0.06);
+  --outline-weight: 1.25;
   color-scheme: dark;
 }
 
@@ -57,24 +59,23 @@
   --bg-sunken: #efefeb;
   --ink: #0b0b0c;
   --ink-2: #65656b;
-  --ink-3: #9a9a9e;
+  --ink-3: #707076;
+  --line: #9c9ca0;
+  --line-faint: #cfcfca;
   --hairline: #dadad5;
-  --hairline-strong: #c9c9c3;
-  --aluminum: #c9cbce;
+  --hairline-strong: #c4c4be;
   --signal: #e5480c;
-  --danger: #d4372a;
-  --fill: rgb(11 11 12 / 0.035);
+  --danger: #cd2b31;
+  --fill: rgb(11 11 12 / 0.03);
   --fill-hover: rgb(11 11 12 / 0.05);
-  --fill-active: rgb(11 11 12 / 0.08);
-  --sidebar: rgb(236 236 232 / 0.6);
+  --fill-active: rgb(11 11 12 / 0.075);
+  --sidebar: rgb(236 236 232 / 0.4);
   --sidebar-solid: #e9e9e5;
-  --popover: #fbfbf9;
-  --overlay: rgb(20 20 18 / 0.18);
-  --pop-shadow: 0 0 0 1px rgb(0 0 0 / 0.07), 0 16px 40px -10px rgb(0 0 0 / 0.22);
-  --light-behind: rgb(255 255 255 / 0.8);
-  --series-x: #3d6fe0;
-  --series-y: #1f9a82;
-  --series-z: #8a8a90;
+  --material: color-mix(in srgb, #f7f7f5 80%, transparent);
+  --overlay: rgb(20 20 18 / 0.12);
+  --light-behind: rgb(255 255 255 / 0.85);
+  --zone-fill: rgb(11 11 12 / 0.05);
+  --outline-weight: 1.25;
   color-scheme: light;
 }
 
@@ -85,6 +86,7 @@
   --color-ink: var(--ink);
   --color-ink-2: var(--ink-2);
   --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
   --color-hairline: var(--hairline);
   --color-hairline-strong: var(--hairline-strong);
   --color-signal: var(--signal);
@@ -92,8 +94,8 @@
   --color-fill: var(--fill);
   --color-fill-hover: var(--fill-hover);
   --color-fill-active: var(--fill-active);
-  --color-popover: var(--popover);
   --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', system-ui, 'Geist', sans-serif;
+  --font-display: 'Geist', -apple-system, system-ui, sans-serif;
   --font-mono: 'Geist Mono', ui-monospace, 'SF Mono', monospace;
   --font-serif: 'Instrument Serif', 'New York', Georgia, serif;
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -135,16 +137,16 @@
     cursor: text;
   }
   :focus-visible {
-    outline: 2px solid color-mix(in srgb, var(--ink) 55%, transparent);
+    outline: 2px solid color-mix(in srgb, var(--ink) 70%, transparent);
     outline-offset: 2px;
-  }
-  button:focus-visible,
-  [role='switch']:focus-visible {
-    outline-offset: 2px;
+    border-radius: inherit;
   }
   * {
     scrollbar-width: thin;
     scrollbar-color: var(--hairline-strong) transparent;
+  }
+  textarea {
+    resize: none;
   }
 }
 
@@ -163,13 +165,42 @@
   text-transform: uppercase;
   color: var(--ink-3);
 }
+/* Smaller mono for column headers and inline tags. */
+@utility tag-mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
 @utility num {
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.01em;
 }
+/* Big numerals: Geist 500, tabular, tight. */
+@utility numeral {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.035em;
+  line-height: 0.92;
+}
 @utility hairline-b {
   box-shadow: inset 0 -1px 0 var(--hairline);
+}
+/* Floating panels: material, hairline edge, no drop shadow. */
+@utility material {
+  background: var(--material);
+  -webkit-backdrop-filter: blur(40px) saturate(1.4);
+  backdrop-filter: blur(40px) saturate(1.4);
+  box-shadow: inset 0 0 0 1px var(--hairline-strong);
+}
+@utility fade-bottom {
+  mask-image: linear-gradient(to bottom, black calc(100% - 24px), transparent);
+}
+@utility fade-top {
+  mask-image: linear-gradient(to bottom, transparent, black 16px);
 }
 
 /* uPlot, restyled to the tokens */
@@ -181,6 +212,50 @@
 }
 .u-select {
   background: var(--fill-active);
+}
+
+/* Laptop line drawing: two stroke weights, like an instrument drawing. */
+.laptop-map .contour {
+  stroke: var(--line);
+  stroke-width: var(--outline-weight);
+  vector-effect: non-scaling-stroke;
+  fill: none;
+}
+:root[data-theme='light'] .laptop-map .contour {
+  stroke: var(--ink-2);
+}
+.laptop-map .detail {
+  stroke: var(--line);
+  stroke-opacity: 0.75;
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+  fill: none;
+}
+.laptop-map .keys rect {
+  fill: none;
+  stroke: var(--line-faint);
+  stroke-width: 0.75;
+  vector-effect: non-scaling-stroke;
+}
+.laptop-map .label-svg {
+  font-family: var(--font-mono);
+  letter-spacing: 0.08em;
+  fill: var(--ink-3);
+}
+.laptop-map .zone-index {
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+  fill: var(--ink-3);
+}
+.laptop-map .zone-name {
+  font-family: var(--font-sans);
+  fill: var(--ink);
+}
+.laptop-map .zone:focus-visible {
+  outline: none;
+}
+.laptop-map .zone:focus-visible .zone-body {
+  stroke: var(--ink);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -195,7 +270,7 @@
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: scale(0.97) translateY(-2px);
+    transform: scale(0.98) translateY(-2px);
   }
 }
 @keyframes fade-in {
@@ -228,45 +303,26 @@
 }
 @keyframes breathe {
   50% {
-    opacity: 0.35;
+    opacity: 0.45;
   }
 }
 
-/* Laptop line drawing: 1px strokes at any zoom. */
-.laptop-map .stroke-strong {
-  stroke: var(--ink-3);
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
+/* Onboarding: the logo's dot lands, then flashes like a touch. */
+.onboard-dot {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation:
+    dot-land 280ms var(--ease-out) 300ms both,
+    dot-flash 1100ms var(--ease-out) 580ms both;
 }
-.laptop-map .stroke-faint {
-  stroke: var(--ink-3);
-  stroke-opacity: 0.6;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
+@keyframes dot-land {
+  from {
+    transform: scale(0);
+  }
 }
-.laptop-map .stroke-keys rect {
-  fill: none;
-  stroke: var(--ink-3);
-  stroke-opacity: 0.45;
-  stroke-width: 1;
-  vector-effect: non-scaling-stroke;
-}
-.laptop-map .label-svg {
-  font-family: var(--font-mono);
-  letter-spacing: 0.08em;
-  fill: var(--ink-3);
-}
-.laptop-map .zone-label {
-  font-family: var(--font-sans);
-  fill: var(--ink-2);
-}
-.laptop-map .zone-label.is-emph {
-  fill: var(--ink);
-}
-.laptop-map .zone:focus-visible {
-  outline: none;
-}
-.laptop-map .zone:focus-visible rect:first-child {
-  stroke: var(--ink);
-  stroke-opacity: 1;
+@keyframes dot-flash {
+  0%,
+  30% {
+    fill: var(--signal);
+  }
 }

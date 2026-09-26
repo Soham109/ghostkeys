@@ -23,6 +23,13 @@ export const SHOTS = [
   'sensors',
   'sensors-light',
   'settings',
+  'settings-sessions',
+  'settings-license',
+  'bindings-integration',
+  'bindings-pinch',
+  'live-notices',
+  'live-session',
+  'library-layouts',
   'command-palette',
   'service-offline'
 ] as const
@@ -55,7 +62,7 @@ export async function runScreenshots(opts: {
     if (only && !only.includes(name)) continue
     try {
       await main.webContents.executeJavaScript(`window.__gk.shot(${JSON.stringify(name)})`, true)
-      await wait(700)
+      await wait(120)
       main.webContents.invalidate()
       await wait(120)
       const img = await main.webContents.capturePage()

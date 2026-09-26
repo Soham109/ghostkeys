@@ -1,5 +1,6 @@
 // Types shared by main, preload and renderer for Electron IPC.
 import type { Library } from './library'
+import type { LicenseState } from './license'
 import type { AppMessage, DaemonMessage, SimpleAction } from './protocol'
 
 export type DaemonState =
@@ -24,6 +25,8 @@ export interface AppInfo {
   prefs: AppPrefs
   /** Last hello, status and config the main process saw, so a freshly loaded window starts complete. */
   snapshot: DaemonMessage[]
+  packaged: boolean
+  license: LicenseState
 }
 
 export interface AppPrefs {
@@ -32,8 +35,8 @@ export interface AppPrefs {
   keepInMenuBar: boolean
   /** Open the main window when Ghostkeys starts. */
   showWindowOnLaunch: boolean
-  /** approvalKey() of every action the user approved in the native dialog. */
-  approved: string[]
+  /** Offline license key (see shared/license.ts). */
+  licenseKey?: string | null
 }
 
 export interface HudPayload {
@@ -59,6 +62,9 @@ export interface GhostkeysBridge {
   onMessage(cb: (m: DaemonMessage) => void): () => void
   onConn(cb: (s: ConnState) => void): () => void
   reconnect(): void
-  /** Shows a native dialog with the exact text; on approval, sends approve_action for each. Resolves to the new approved list, or null if declined. */
-  approve(actions: SimpleAction[], context: string): Promise<string[] | null>
+  /** Native dialog with the exact text; on approval sends approve_action for each. Resolves to the daemon's hashes in order, or null if declined. */
+  approve(actions: SimpleAction[], context: string): Promise<(string | null)[] | null>
+  setLicense(key: string | null): Promise<{ license: LicenseState; error: string | null }>
+  /** docs/pricing/features.json, copied into the app at build time. */
+  pricing(): Promise<unknown>
 }

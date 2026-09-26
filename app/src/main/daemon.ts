@@ -36,7 +36,9 @@ export class DaemonSupervisor extends EventEmitter {
     return [
       ...(fromEnv ? [fromEnv] : []),
       resolve(this.appRoot, '../daemon/.build/release/ghostkeysd'),
-      resolve(this.appRoot, '../daemon/.build/debug/ghostkeysd')
+      resolve(this.appRoot, '../daemon/.build/debug/ghostkeysd'),
+      resolve(this.appRoot, '../daemon/.build-app/release/ghostkeysd'),
+      resolve(this.appRoot, '../daemon/.build-app/debug/ghostkeysd')
     ]
   }
 
@@ -59,7 +61,9 @@ export class DaemonSupervisor extends EventEmitter {
   }
 
   private spawn(bin: string): void {
-    const child = spawn(bin, ['--port', String(this.port), '--parent-pid', String(process.pid)], {
+    // GHOSTKEYSD_ARGS: extra flags for testing, e.g. "--dry-run" so no action really runs.
+    const extra = (process.env.GHOSTKEYSD_ARGS ?? '').split(' ').filter(Boolean)
+    const child = spawn(bin, ['--port', String(this.port), '--parent-pid', String(process.pid), ...extra], {
       stdio: ['ignore', 'pipe', 'pipe'],
       env: { ...process.env, GHOSTKEYS_TOKEN: this.token }
     })

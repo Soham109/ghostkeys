@@ -10,7 +10,10 @@ const pairs = [
   ['assets/tray/GhostkeysTemplate.png', 'trayTemplate.png'],
   ['assets/tray/GhostkeysTemplate@2x.png', 'trayTemplate@2x.png'],
   ['assets/tray/GhostkeysPausedTemplate.png', 'trayPausedTemplate.png'],
-  ['assets/tray/GhostkeysPausedTemplate@2x.png', 'trayPausedTemplate@2x.png']
+  ['assets/tray/GhostkeysPausedTemplate@2x.png', 'trayPausedTemplate@2x.png'],
+  ['assets/tray/GhostkeysActive.png', 'trayActive.png'],
+  ['assets/tray/GhostkeysActive@2x.png', 'trayActive@2x.png'],
+  ['docs/pricing/features.json', 'features.json']
 ]
 let n = 0
 for (const [from, to] of pairs) {

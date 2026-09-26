@@ -1,17 +1,17 @@
 import * as React from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowLeft, Pause, Play } from 'lucide-react'
-import { useStore, type FeedItem } from '@/lib/store'
+import { useStore, zoneNumber, type FeedItem } from '@/lib/store'
 import { client } from '@/lib/client'
 import { appName } from '@/lib/apps'
-import { bindingsForZone, zoneById } from '@/lib/bindings'
-import { relTime, cn } from '@/lib/utils'
+import { bindingsForZone } from '@/lib/bindings'
+import { cn } from '@/lib/utils'
 import { GESTURE_LABEL, MODIFIER_GLYPH, SURFACE_LABEL, ZONELESS_GESTURES, type Config, type Zone } from '@shared/protocol'
 import { describeAction, sortModifiers } from '@shared/actions'
-import { PageHeader, Fact, Empty } from '@/components/Page'
+import { PageHeader, Notice, Empty } from '@/components/Page'
 import { Button } from '@/components/ui/button'
-import { ZoneDot } from '@/components/ui/controls'
+import { ZoneIndex } from '@/components/ui/controls'
 import { LaptopMap } from '@/components/laptop/LaptopMap'
+import { Seismograph } from '@/components/Seismograph'
 
 export function useNow(ms: number): number {
   const [now, setNow] = React.useState(() => Date.now())
@@ -22,97 +22,134 @@ export function useNow(ms: number): number {
   return now
 }
 
-function StatusFacts(): React.JSX.Element {
+function ago(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return m < 60 ? `${m}m` : `${Math.floor(m / 60)}h`
+}
+
+/** Everything fine fits on one mono line. */
+function statusLine(s: ReturnType<typeof useStore.getState>): string {
+  const parts: string[] = []
+  parts.push(s.conn === 'open' ? (s.status?.paused ? 'Paused' : 'Connected') : 'Offline')
+  if (s.hello) {
+    const v = Object.entries(s.hello.sensors).filter(([k]) => ['imu', 'gyro', 'lid', 'light'].includes(k))
+    parts.push(`${v.filter(([, on]) => on).length}/${v.length} sensors`)
+  }
+  if (s.status?.calibrated) parts.push('Trained')
+  if (s.status) parts.push(`${s.status.imuHz} Hz`)
+  return parts.join(' · ')
+}
+
+function Notices(): React.JSX.Element {
   const hello = useStore((s) => s.hello)
   const status = useStore((s) => s.status)
-  const conn = useStore((s) => s.conn)
   const navigate = useStore((s) => s.navigate)
-  const sensors = hello ? Object.values(hello.sensors) : []
-  const present = sensors.filter(Boolean).length
-  const granted = !!hello?.permissions.accessibility
-
+  const setPaused = useStore((s) => s.setPaused)
   return (
-    <div className="grid shrink-0 grid-cols-5 gap-6 px-6 pt-1 pb-4 hairline-b">
-      <Fact label="Service">{conn === 'open' ? (status?.paused ? 'Paused' : 'Connected') : 'Offline'}</Fact>
-      <Fact label="Sensors">
-        {hello ? (
-          <>
-            {present} of {sensors.length}
-            {present < sensors.length && <span className="text-ink-3">present</span>}
-          </>
-        ) : (
-          <span className="text-ink-3">Checking</span>
-        )}
-      </Fact>
-      <Fact label="Calibration">
-        {status?.calibrated ? (
-          'Trained'
-        ) : (
-          <button className="underline decoration-ink-3 underline-offset-2 hover:decoration-ink" onClick={() => navigate('calibration')}>
-            Not trained yet
-          </button>
-        )}
-      </Fact>
-      <Fact label="Accessibility">
-        {granted ? (
-          'Granted'
-        ) : (
-          <>
-            <span className="text-ink-2">Not granted</span>
-            <Button size="sm" variant="outline" onClick={() => client.send({ type: 'request_permission', which: 'accessibility' })}>
-              Grant
+    <>
+      {status?.paused && status.pausedReason === 'rate_limit' && (
+        <Notice
+          action={
+            <Button variant="primary" size="sm" onClick={() => setPaused(false)}>
+              Resume
             </Button>
-          </>
-        )}
-      </Fact>
-      <Fact label="Motion sensor">
-        <span className="num">{status ? `${status.imuHz} Hz` : '...'}</span>
-      </Fact>
-    </div>
+          }
+        >
+          Ghostkeys paused itself because actions fired too fast in a row. Check your bindings, then resume.
+        </Notice>
+      )}
+      {hello && !hello.permissions.accessibility && (
+        <Notice
+          action={
+            <Button variant="text" className="text-ink underline decoration-ink-3 underline-offset-2" onClick={() => client.send({ type: 'request_permission', which: 'accessibility' })}>
+              Allow in System Settings
+            </Button>
+          }
+        >
+          Ghostkeys can&rsquo;t press keys or move windows yet.
+        </Notice>
+      )}
+      {status && !status.calibrated && (
+        <Notice
+          action={
+            <Button variant="text" className="text-ink underline decoration-ink-3 underline-offset-2" onClick={() => navigate('calibration')}>
+              Calibrate
+            </Button>
+          }
+        >
+          Ghostkeys hasn&rsquo;t learned how your taps feel yet.
+        </Notice>
+      )}
+    </>
   )
 }
 
-function FeedRow({ item, zones, now }: { item: FeedItem; zones: Zone[]; now: number }): React.JSX.Element {
+function FeedRow({ item, config, now }: { item: FeedItem; config: Config; now: number }): React.JSX.Element {
   const g = item.gesture
   const zoneless = ZONELESS_GESTURES.includes(g.gesture)
-  const zone = zoneById(zones, g.zone)
-  const seq = g.gesture === 'sequence' ? (g.zones ?? []).map((id) => zoneById(zones, id)) : null
-  const title = zoneless ? GESTURE_LABEL[g.gesture] : seq ? seq.map((z) => z?.name ?? '?').join(' then ') : (zone?.name ?? g.zone)
+  const fresh = now - item.at < 1100
+  const idx = g.gesture === 'sequence' ? null : zoneNumber(config, g.zone)
+  const seq = g.gesture === 'sequence' ? (g.zones ?? []).map((z) => String(zoneNumber(config, z) ?? 0).padStart(2, '0')).join('→') : null
   return (
     <motion.li
       layout="position"
-      initial={{ opacity: 0, x: 12 }}
-      animate={{ opacity: 1, x: 0 }}
+      initial={{ opacity: 0, y: -8 }}
+      animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
-      className="flex gap-3 px-4 py-2.5 shadow-[0_1px_0_var(--hairline)]"
+      className="flex h-8 items-center gap-2.5 px-4 shadow-[0_1px_0_var(--hairline)]"
+      title={`${g.gesture === 'sequence' ? 'Sequence' : zoneless ? '' : (config.zones.find((z) => z.id === g.zone)?.name ?? '')}${g.app ? ` in ${appName(g.app)}` : ''}`}
     >
-      <span className="mt-[5px] flex w-2 shrink-0 flex-col gap-1">
-        {seq ? seq.map((z, i) => <ZoneDot key={i} color={z?.color ?? 'var(--ink-3)'} />) : <ZoneDot color={zone?.color ?? 'var(--ink-3)'} />}
+      {seq ? (
+        <span className={cn('num w-11 shrink-0 text-[11px] tracking-[0.04em]', fresh ? 'text-signal' : 'text-ink-3')}>{seq}</span>
+      ) : zoneless ? (
+        <span className={cn('num w-5 shrink-0 text-[11px]', fresh ? 'text-signal' : 'text-ink-3')}>{g.zone === 'air' ? 'AIR' : '—'}</span>
+      ) : (
+        <ZoneIndex n={idx} lit={fresh} />
+      )}
+      <span className="shrink-0 text-[13px] text-ink">{GESTURE_LABEL[g.gesture] ?? g.gesture}</span>
+      {g.modifiers.length > 0 && <span className="num shrink-0 text-[11px] text-ink-2">{sortModifiers(g.modifiers).map((m) => MODIFIER_GLYPH[m]).join('')}</span>}
+      {item.tapType && item.tapType !== 'fingertip' && <span className="tag-mono shrink-0 text-ink-3">{item.tapType}</span>}
+      <span className={cn('min-w-0 flex-1 truncate text-[13px]', item.action && !item.action.ok ? 'text-ink-3 line-through' : 'text-ink-2')}>
+        {item.action ? item.action.label : ''}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="flex items-baseline justify-between gap-2">
-          <span className="truncate text-[13px] text-ink">{title}</span>
-          <span className="shrink-0 font-mono text-[11px] text-ink-3">{relTime(now - item.at)}</span>
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5 truncate text-[12px] text-ink-3">
-          {!zoneless && <span>{GESTURE_LABEL[g.gesture]}</span>}
-          {g.modifiers.length > 0 && <span className="font-mono">{sortModifiers(g.modifiers).map((m) => MODIFIER_GLYPH[m]).join('')}</span>}
-          {!zoneless && <span aria-hidden>/</span>}
-          {item.action ? (
-            <span className={cn('truncate', item.action.ok ? 'text-ink-2' : 'text-danger')}>
-              {item.action.label}
-              {!item.action.ok && `, ${item.action.error ?? 'failed'}`}
-            </span>
-          ) : (
-            <span className="truncate">No binding</span>
-          )}
-        </div>
-      </div>
+      {item.count > 1 && <span className="num shrink-0 text-[11px] text-ink-2">&times;{item.count}</span>}
+      <span className="num w-7 shrink-0 text-right text-[11px] text-ink-3">{ago(now - item.at)}</span>
     </motion.li>
   )
 }
 
-function ZoneDetail({ zone, config, onBack }: { zone: Zone; config: Config; onBack: () => void }): React.JSX.Element {
+function Feed({ config }: { config: Config }): React.JSX.Element {
+  const feed = useStore((s) => s.feed)
+  const now = useNow(1000)
+  if (!feed.length) return <Empty title="Nothing yet." />
+  // Group by minute with a mono divider.
+  const groups: { key: string; items: FeedItem[] }[] = []
+  for (const f of feed) {
+    const d = new Date(f.at)
+    const key = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+    const g = groups[groups.length - 1]
+    if (g && g.key === key) g.items.push(f)
+    else groups.push({ key, items: [f] })
+  }
+  return (
+    <ul className="fade-bottom min-h-0 flex-1 overflow-y-auto pb-6">
+      <AnimatePresence initial={false}>
+        {groups.map((g) => (
+          <React.Fragment key={g.key}>
+            <li className="num flex h-7 items-end px-4 pb-1 text-[10px] tracking-[0.08em] text-ink-3 shadow-[0_1px_0_var(--hairline)]">{g.key}</li>
+            {g.items.map((item) => (
+              <FeedRow key={item.id} item={item} config={config} now={now} />
+            ))}
+          </React.Fragment>
+        ))}
+      </AnimatePresence>
+    </ul>
+  )
+}
+
+function ZoneDetail({ zone, index, config, onBack }: { zone: Zone; index: number; config: Config; onBack: () => void }): React.JSX.Element {
   const navigate = useStore((s) => s.navigate)
   const bindings = bindingsForZone(config, zone.id)
   return (
@@ -124,41 +161,34 @@ function ZoneDetail({ zone, config, onBack }: { zone: Zone; config: Config; onBa
       transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <div className="flex items-center gap-2 px-2 pt-2">
-        <Button variant="ghost" size="sm" onClick={onBack}>
-          <ArrowLeft />
-          Recent
+      <div className="px-4 pt-4">
+        <Button variant="text" size="sm" onClick={onBack}>
+          Back to recent
         </Button>
       </div>
-      <div className="px-4 pt-3 pb-4">
-        <div className="flex items-center gap-2">
-          <ZoneDot color={zone.color} />
+      <div className="px-4 pt-3 pb-5">
+        <div className="flex items-baseline gap-2">
+          <ZoneIndex n={index} />
           <h2 className="text-[15px] font-medium">{zone.name}</h2>
         </div>
-        <p className="mt-1 text-[12px] text-ink-3">{SURFACE_LABEL[zone.surface]}</p>
+        <p className="mt-1 pl-7 text-[12px] text-ink-3">{SURFACE_LABEL[zone.surface]}</p>
       </div>
-      <div className="px-4">
-        <p className="label-mono pb-2">Bindings</p>
-      </div>
+      <p className="label-mono px-4 pb-2">Bindings</p>
       {bindings.length ? (
         <ul className="shadow-[0_-1px_0_var(--hairline)]">
           {bindings.map((b) => (
-            <li key={b.id} className={cn('px-4 py-2.5 shadow-[0_1px_0_var(--hairline)]', !b.enabled && 'opacity-50')}>
-              <div className="flex items-baseline justify-between gap-2">
-                <span className="text-[13px]">{b.label || describeAction(b.action)}</span>
-                <span className="shrink-0 text-[11px] text-ink-3">{appName(b.app)}</span>
-              </div>
-              <div className="mt-0.5 text-[12px] text-ink-3">
-                {GESTURE_LABEL[b.gesture]}
-                {b.modifiers.length > 0 && <span className="ml-1.5 font-mono">{sortModifiers(b.modifiers).map((m) => MODIFIER_GLYPH[m]).join('')}</span>}
-              </div>
+            <li key={b.id} className="flex h-8 items-center gap-2.5 px-4 shadow-[0_1px_0_var(--hairline)]">
+              <span className={cn('shrink-0 text-[13px]', b.enabled ? 'text-ink' : 'text-ink-3')}>{GESTURE_LABEL[b.gesture]}</span>
+              {b.modifiers.length > 0 && <span className="num text-[11px] text-ink-2">{sortModifiers(b.modifiers).map((m) => MODIFIER_GLYPH[m]).join('')}</span>}
+              <span className={cn('min-w-0 flex-1 truncate text-[13px]', b.enabled ? 'text-ink-2' : 'text-ink-3')}>{b.label || describeAction(b.action)}</span>
+              {b.app !== '*' && <span className="shrink-0 text-[11px] text-ink-3">{appName(b.app)}</span>}
             </li>
           ))}
         </ul>
       ) : (
-        <Empty title="Nothing is bound here yet.">Give this zone a job, like play and pause, or moving a window.</Empty>
+        <Empty title="Nothing is bound here yet." />
       )}
-      <div className="px-4 pt-4">
+      <div className="px-4 pt-5">
         <Button
           variant="outline"
           onClick={() => {
@@ -176,37 +206,24 @@ function ZoneDetail({ zone, config, onBack }: { zone: Zone; config: Config; onBa
 export function LiveScreen(): React.JSX.Element {
   const hello = useStore((s) => s.hello)
   const config = useStore((s) => s.config)
-  const feed = useStore((s) => s.feed)
-  const status = useStore((s) => s.status)
-  const setPaused = useStore((s) => s.setPaused)
+  const line = useStore(statusLine)
+  const tapsSeen = useStore((s) => s.tapsSeen)
   const [selected, setSelected] = React.useState<string | null>(null)
-  const now = useNow(5000)
 
   React.useEffect(() => client.subscribe(['taps']), [])
 
   const zones = config?.zones ?? []
-  const selectedZone = zones.find((z) => z.id === selected)
-  const paused = !!status?.paused
+  const selectedIndex = zones.findIndex((z) => z.id === selected)
+  const selectedZone = zones[selectedIndex]
 
   return (
     <>
-      <PageHeader
-        title="Live"
-        actions={
-          <Button variant="outline" onClick={() => setPaused(!paused)}>
-            {paused ? <Play /> : <Pause />}
-            {paused ? 'Resume' : 'Pause'}
-          </Button>
-        }
-      />
-      <StatusFacts />
-      <div className="flex min-h-0 flex-1">
+      <PageHeader title="Live" subtitle={line} />
+      <Notices />
+      <div className="flex min-h-0 flex-1 shadow-[0_-1px_0_var(--hairline)]">
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{ background: 'radial-gradient(60% 55% at 50% 48%, var(--light-behind), transparent 70%)' }}
-          />
-          <div className="relative min-h-0 flex-1 px-10 pt-8 pb-4">
+          <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(60% 55% at 50% 45%, var(--light-behind), transparent 70%)' }} />
+          <div className="relative min-h-0 flex-1 px-8 pt-6 pb-2">
             {hello && config ? (
               <LaptopMap
                 family={hello.device.family}
@@ -215,19 +232,34 @@ export function LiveScreen(): React.JSX.Element {
                 listenTaps
                 selectedId={selected}
                 onSelect={(id) => setSelected(id)}
+                describe={(z) => {
+                  const n = bindingsForZone(config, z.id).length
+                  return `${n} ${n === 1 ? 'gesture' : 'gestures'}`
+                }}
               />
             ) : null}
           </div>
-          <p className="relative px-6 pb-5 text-[12px] text-ink-3">
-            {paused
-              ? 'Paused. Taps are felt but nothing runs until you resume.'
-              : 'Tap a zone on your MacBook to see it light up. Click a zone here to see what it does.'}
-          </p>
+          <div className="relative h-12 px-8">
+            <AnimatePresence>
+              {tapsSeen === 0 && (
+                <motion.p
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.28 }}
+                  className="absolute inset-x-0 top-0 text-center text-[13px] text-ink-2"
+                >
+                  Tap anywhere on your MacBook.
+                </motion.p>
+              )}
+            </AnimatePresence>
+          </div>
+          <div className="relative px-8 pb-6">
+            <Seismograph height={40} />
+          </div>
         </div>
-        <aside className="flex w-[300px] shrink-0 flex-col shadow-[-1px_0_0_var(--hairline)]">
+        <aside className="flex w-[320px] shrink-0 flex-col shadow-[-1px_0_0_var(--hairline)]">
           <AnimatePresence mode="wait" initial={false}>
             {selectedZone && config ? (
-              <ZoneDetail key="detail" zone={selectedZone} config={config} onBack={() => setSelected(null)} />
+              <ZoneDetail key="detail" zone={selectedZone} index={selectedIndex + 1} config={config} onBack={() => setSelected(null)} />
             ) : (
               <motion.div
                 key="feed"
@@ -237,20 +269,8 @@ export function LiveScreen(): React.JSX.Element {
                 transition={{ duration: 0.16 }}
                 className="flex min-h-0 flex-1 flex-col"
               >
-                <div className="px-4 pt-4">
-                  <p className="label-mono pb-2">Recent gestures</p>
-                </div>
-                {feed.length ? (
-                  <ul className="min-h-0 flex-1 overflow-y-auto shadow-[0_-1px_0_var(--hairline)]">
-                    <AnimatePresence initial={false}>
-                      {feed.map((item) => (
-                        <FeedRow key={item.id} item={item} zones={zones} now={now} />
-                      ))}
-                    </AnimatePresence>
-                  </ul>
-                ) : (
-                  <Empty title="Nothing yet.">Tap a palm rest or a speaker grille. Each gesture Ghostkeys recognizes shows up here.</Empty>
-                )}
+                <p className="label-mono px-4 pt-6 pb-2">Recent gestures</p>
+                {config && <Feed config={config} />}
               </motion.div>
             )}
           </AnimatePresence>

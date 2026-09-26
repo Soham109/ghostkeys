@@ -6,13 +6,12 @@ import {
   AlertDialog as AlertPrimitive,
   Popover as PopoverPrimitive
 } from 'radix-ui'
-import { Check, ChevronDown, X } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from './button'
+import { Chevron, Tick } from './glyphs'
 
 const popSurface =
-  'z-50 overflow-hidden rounded-[8px] bg-popover p-1 text-ink shadow-[var(--pop-shadow)] origin-[var(--radix-popper-transform-origin)] ' +
-  'data-[state=open]:animate-[pop-in_160ms_var(--ease-snap)]'
+  'material z-50 overflow-hidden rounded-[8px] p-1 text-ink origin-[var(--radix-popper-transform-origin)] data-[state=open]:animate-[pop-in_160ms_var(--ease-snap)]'
 
 // ---------------------------------------------------------------- Select
 
@@ -20,20 +19,25 @@ export const Select = SelectPrimitive.Root
 export const SelectValue = SelectPrimitive.Value
 export const SelectGroup = SelectPrimitive.Group
 
-export function SelectTrigger({ className, children, ...props }: React.ComponentProps<typeof SelectPrimitive.Trigger>): React.JSX.Element {
+export function SelectTrigger({
+  className,
+  children,
+  borderless,
+  ...props
+}: React.ComponentProps<typeof SelectPrimitive.Trigger> & { borderless?: boolean }): React.JSX.Element {
   return (
     <SelectPrimitive.Trigger
       className={cn(
-        'flex h-7 w-full items-center justify-between gap-2 rounded-[6px] bg-fill px-2.5 text-left text-[13px] text-ink',
-        'shadow-[inset_0_0_0_1px_var(--hairline)] outline-none hover:bg-fill-hover focus-visible:shadow-[inset_0_0_0_1px_var(--ink-3)]',
-        'data-[placeholder]:text-ink-3 [&>span]:truncate',
+        'flex h-7 w-full items-center justify-between gap-2 rounded-[6px] px-2.5 text-left text-[13px] text-ink outline-none',
+        borderless ? '-mx-2.5 w-[calc(100%+20px)] hover:bg-fill-hover' : 'bg-fill shadow-[inset_0_0_0_1px_var(--hairline)] hover:bg-fill-hover',
+        'focus-visible:shadow-[inset_0_0_0_1px_var(--ink-3)] data-[placeholder]:text-ink-3 [&>span]:truncate',
         className
       )}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDown className="size-3.5 shrink-0 text-ink-3" />
+        <Chevron className="size-3 shrink-0 text-ink-3" />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   )
@@ -66,14 +70,14 @@ export function SelectItem({ className, children, ...props }: React.ComponentPro
     >
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
       <SelectPrimitive.ItemIndicator className="absolute right-2">
-        <Check className="size-3.5" />
+        <Tick />
       </SelectPrimitive.ItemIndicator>
     </SelectPrimitive.Item>
   )
 }
 
 export function SelectLabel({ className, ...props }: React.ComponentProps<typeof SelectPrimitive.Label>): React.JSX.Element {
-  return <SelectPrimitive.Label className={cn('label-mono px-2 pt-2 pb-1', className)} {...props} />
+  return <SelectPrimitive.Label className={cn('tag-mono px-2 pt-2 pb-1 text-ink-3', className)} {...props} />
 }
 
 export function SelectSeparator(): React.JSX.Element {
@@ -93,26 +97,17 @@ export function MenuContent({ className, ...props }: React.ComponentProps<typeof
   )
 }
 
-export function MenuItem({
-  className,
-  destructive,
-  ...props
-}: React.ComponentProps<typeof DropdownPrimitive.Item> & { destructive?: boolean }): React.JSX.Element {
+export function MenuItem({ className, ...props }: React.ComponentProps<typeof DropdownPrimitive.Item>): React.JSX.Element {
   return (
     <DropdownPrimitive.Item
-      className={cn(
-        'flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-[13px] outline-none select-none data-[highlighted]:bg-fill-active',
-        '[&_svg]:size-3.5 [&_svg]:text-ink-2',
-        destructive && 'text-danger [&_svg]:text-danger',
-        className
-      )}
+      className={cn('flex h-7 cursor-default items-center gap-2 rounded-[5px] px-2 text-[13px] outline-none select-none data-[highlighted]:bg-fill-active', className)}
       {...props}
     />
   )
 }
 
 export function MenuLabel({ className, ...props }: React.ComponentProps<typeof DropdownPrimitive.Label>): React.JSX.Element {
-  return <DropdownPrimitive.Label className={cn('label-mono px-2 pt-1.5 pb-1', className)} {...props} />
+  return <DropdownPrimitive.Label className={cn('tag-mono px-2 pt-1.5 pb-1 text-ink-3', className)} {...props} />
 }
 
 export function MenuSeparator(): React.JSX.Element {
@@ -133,7 +128,7 @@ export function PopoverContent({ className, ...props }: React.ComponentProps<typ
   )
 }
 
-// ---------------------------------------------------------------- Sheet (side panel) and Dialog
+// ---------------------------------------------------------------- Sheet (side panel): the one pattern for side work
 
 export function Sheet({
   open,
@@ -142,7 +137,9 @@ export function Sheet({
   description,
   children,
   footer,
-  width = 460
+  width = 460,
+  bodyClassName,
+  fade = true
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
@@ -151,6 +148,8 @@ export function Sheet({
   children: React.ReactNode
   footer?: React.ReactNode
   width?: number
+  bodyClassName?: string
+  fade?: boolean
 }): React.JSX.Element {
   return (
     <DialogPrimitive.Root open={open} onOpenChange={onOpenChange}>
@@ -159,15 +158,15 @@ export function Sheet({
         <DialogPrimitive.Content
           style={{ width }}
           className={cn(
-            'fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-bg shadow-[-1px_0_0_var(--hairline)] outline-none',
+            'fixed top-0 right-0 bottom-0 z-50 flex flex-col bg-raised shadow-[-1px_0_0_var(--hairline)] outline-none',
             'data-[state=open]:animate-[sheet-in_280ms_var(--ease-out)] data-[state=closed]:animate-[sheet-out_200ms_var(--ease-snap)]'
           )}
         >
-          <div className="drag flex h-[52px] shrink-0 items-center justify-between pr-3 pl-6">
+          <div className="drag flex h-[52px] shrink-0 items-center justify-between px-6">
             <DialogPrimitive.Title className="text-[15px] font-medium">{title}</DialogPrimitive.Title>
             <DialogPrimitive.Close asChild>
-              <Button variant="ghost" size="icon" className="no-drag" aria-label="Close">
-                <X />
+              <Button variant="text" size="sm" className="no-drag">
+                Close
               </Button>
             </DialogPrimitive.Close>
           </div>
@@ -176,8 +175,8 @@ export function Sheet({
           ) : (
             <DialogPrimitive.Description className="sr-only">{title}</DialogPrimitive.Description>
           )}
-          <div className="min-h-0 flex-1 overflow-y-auto">{children}</div>
-          {footer && <div className="flex shrink-0 items-center gap-2 px-6 py-3 shadow-[0_-1px_0_var(--hairline)]">{footer}</div>}
+          <div className={cn(fade && 'fade-top', 'min-h-0 flex-1 overflow-x-hidden overflow-y-auto', bodyClassName)}>{children}</div>
+          {footer && <div className="flex h-14 shrink-0 items-center gap-3 px-6 shadow-[0_-1px_0_var(--hairline)]">{footer}</div>}
         </DialogPrimitive.Content>
       </DialogPrimitive.Portal>
     </DialogPrimitive.Root>
@@ -203,7 +202,7 @@ export function Dialog({
         <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-[var(--overlay)] data-[state=open]:animate-[fade-in_200ms_var(--ease-snap)]" />
         <DialogPrimitive.Content
           className={cn(
-            'fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[12px] bg-popover shadow-[var(--pop-shadow)] outline-none',
+            'material fixed top-1/2 left-1/2 z-50 -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-[10px] outline-none',
             'data-[state=open]:animate-[dialog-in_240ms_var(--ease-out)]',
             className
           )}
@@ -217,13 +216,15 @@ export function Dialog({
   )
 }
 
+/** Confirmation. `destructive` is the only place the danger color appears in the app. */
 export function Confirm({
   open,
   onOpenChange,
   title,
   body,
   confirmLabel,
-  onConfirm
+  onConfirm,
+  destructive
 }: {
   open: boolean
   onOpenChange: (o: boolean) => void
@@ -231,12 +232,13 @@ export function Confirm({
   body: React.ReactNode
   confirmLabel: string
   onConfirm: () => void
+  destructive?: boolean
 }): React.JSX.Element {
   return (
     <AlertPrimitive.Root open={open} onOpenChange={onOpenChange}>
       <AlertPrimitive.Portal>
         <AlertPrimitive.Overlay className="fixed inset-0 z-[60] bg-[var(--overlay)] data-[state=open]:animate-[fade-in_200ms_var(--ease-snap)]" />
-        <AlertPrimitive.Content className="fixed top-1/2 left-1/2 z-[61] w-[380px] -translate-x-1/2 -translate-y-1/2 rounded-[12px] bg-popover p-5 shadow-[var(--pop-shadow)] data-[state=open]:animate-[dialog-in_240ms_var(--ease-out)]">
+        <AlertPrimitive.Content className="material fixed top-1/2 left-1/2 z-[61] w-[380px] -translate-x-1/2 -translate-y-1/2 rounded-[10px] p-5 data-[state=open]:animate-[dialog-in_240ms_var(--ease-out)]">
           <AlertPrimitive.Title className="text-[15px] font-medium">{title}</AlertPrimitive.Title>
           <AlertPrimitive.Description className="mt-2 text-[13px] leading-relaxed text-ink-2">{body}</AlertPrimitive.Description>
           <div className="mt-5 flex justify-end gap-2">
@@ -244,7 +246,7 @@ export function Confirm({
               <Button variant="ghost">Cancel</Button>
             </AlertPrimitive.Cancel>
             <AlertPrimitive.Action asChild>
-              <Button variant="primary" onClick={onConfirm}>
+              <Button variant={destructive ? 'danger' : 'primary'} onClick={onConfirm}>
                 {confirmLabel}
               </Button>
             </AlertPrimitive.Action>

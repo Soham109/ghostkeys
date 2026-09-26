@@ -13,9 +13,10 @@
  * Like the real daemon, it rejects any handshake with an Origin header (browsers always send one)
  * and only runs shell, AppleScript, Shortcut and open actions after approve_action.
  */
-import { timingSafeEqual } from 'node:crypto'
+import { createHash, timingSafeEqual } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { WebSocketServer, WebSocket } from 'ws'
-import { approvalKey, riskyParts } from '../src/shared/approval.ts'
+import { approvalPayload, riskyParts } from '../src/shared/approval.ts'
 import { defaultConfig } from '../src/shared/defaults.ts'
 import { describeAction } from '../src/shared/actions.ts'
 import type { Action } from '../src/shared/protocol.ts'
@@ -50,13 +51,26 @@ const now = (): number => Math.round((performance.now() - start) * 10) / 10
 
 let config: Config = defaultConfig(family)
 let paused = false
+let pausedReason: 'user' | 'rate_limit' = 'user'
 let calibrated = process.env.GK_CALIBRATED !== '0'
 let accessibility = process.env.GK_ACCESSIBILITY === '1'
 
 const subs = new Map<WebSocket, Set<Stream>>()
 const token = process.env.GHOSTKEYS_TOKEN ?? ''
 const approved = new Set<string>()
-const isApproved = (a: Action): boolean => riskyParts(a).every((p) => approved.has(approvalKey(p)))
+/** Like the daemon: SHA-256 over the action without approvedHash, label and delayMs (canonical key order). */
+function canonical(v: unknown): string {
+  if (Array.isArray(v)) return `[${v.map(canonical).join(',')}]`
+  if (v && typeof v === 'object')
+    return `{${Object.keys(v)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonical((v as Record<string, unknown>)[k])}`)
+      .join(',')}}`
+  return JSON.stringify(v)
+}
+const hashOf = (a: Parameters<typeof approvalPayload>[0]): string => createHash('sha256').update(canonical(approvalPayload(a))).digest('hex')
+const isApproved = (a: Action): boolean => riskyParts(a).every((p) => !!p.approvedHash && approved.has(p.approvedHash) && p.approvedHash === hashOf(p))
+const catalog = JSON.parse(readFileSync(new URL('./fixtures/catalog.json', import.meta.url), 'utf8')) as unknown
 
 function tokenOk(got: string | string[] | undefined): boolean {
   if (!token) return true
@@ -88,15 +102,17 @@ const hello = (): DaemonMessage => ({
   type: 'hello',
   version: '0.1.0-mock',
   device: { ...MODEL[family], family },
-  sensors: { imu: true, gyro: true, lid: true, light: true },
-  permissions: { accessibility }
+  sensors: { imu: true, gyro: true, lid: true, light: true, sound: true, camera: true },
+  permissions: { accessibility, microphone: 'authorized', camera: 'not_determined' }
 })
 const status = (): DaemonMessage => ({
   type: 'status',
   paused,
+  pausedReason: paused ? pausedReason : null,
   calibrated,
   zones: config.zones.map((z) => z.id),
-  imuHz: 797
+  imuHz: 797,
+  detector: { noiseFloorMg: 1.4 + Math.random() * 0.3, thresholdMg: 17.5, level: 1.6 + tapEnergy * 40 }
 })
 
 // ---------------------------------------------------------------- sensor simulation
@@ -158,7 +174,8 @@ function emitTap(zone: Zone): void {
     return
   }
   const { x, y } = pointIn(zone)
-  broadcast({ type: 'tap', t: now(), zone: zone.id, confidence: rand(0.82, 0.99), x, y, strength: rand(0.3, 0.9) })
+  const tapType = sessions.sound.timer ? (Math.random() < 0.3 ? 'knuckle' : 'fingertip') : undefined
+  broadcast({ type: 'tap', t: now(), zone: zone.id, confidence: rand(0.82, 0.99), x, y, strength: rand(0.3, 0.9), source: 'imu', ...(tapType ? { tapType } : {}) })
 }
 
 function emitGesture(gesture: GestureKind, zone: string | null, zones: string[] | null, modifiers: Modifier[] = []): void {
@@ -301,6 +318,7 @@ function negatives(seconds: number): void {
 
 function finish(): void {
   stopCalTimer()
+  broadcast({ type: 'calibration', phase: 'training' })
   const labels = [...calZones, 'none']
   const accuracy: Record<string, number> = {}
   const weak = calZones.length > 2 ? calZones[calZones.length - 2] : undefined
@@ -334,6 +352,44 @@ function finish(): void {
   )
 }
 
+// ---------------------------------------------------------------- sound and camera sessions (simulated)
+
+const sessions: Record<'sound' | 'air', { left: number; timer: ReturnType<typeof setInterval> | null }> = {
+  sound: { left: 0, timer: null },
+  air: { left: 0, timer: null }
+}
+function sessionMsg(kind: 'sound' | 'air', reason?: string): DaemonMessage {
+  const s = sessions[kind]
+  return { type: 'session', kind, active: !!s.timer, secondsLeft: s.left, simulated: true, ...(reason ? { reason } : {}), ...(s.timer ? { trigger: 'request' } : {}) }
+}
+function startSession(kind: 'sound' | 'air', seconds?: number): void {
+  const s = sessions[kind]
+  if (s.timer) clearInterval(s.timer)
+  s.left = Math.max(1, Math.min(120, seconds ?? config.settings[kind === 'sound' ? 'sound' : 'camera']?.sessionSeconds ?? 30))
+  s.timer = setInterval(() => {
+    s.left -= 1
+    if (kind === 'air') simulateAir()
+    if (s.left <= 0) stopSession(kind, 'timeout')
+    else broadcast(sessionMsg(kind))
+  }, 1000)
+  broadcast(sessionMsg(kind))
+}
+function stopSession(kind: 'sound' | 'air', reason: string): void {
+  const s = sessions[kind]
+  if (s.timer) clearInterval(s.timer)
+  s.timer = null
+  s.left = 0
+  broadcast(sessionMsg(kind, reason))
+}
+let airPhase = 0
+function simulateAir(): void {
+  airPhase += 1
+  const x = 0.5 + Math.sin(airPhase / 2) * 0.25
+  const y = 0.45 + Math.cos(airPhase / 3) * 0.15
+  broadcast({ type: 'air', t: now(), phase: airPhase % 4 === 0 ? 'began' : 'changed', gesture: 'pinch_hold', x, y, dx: 0.02, dy: 0, hand: 'right', confidence: 0.9 }, 'air')
+  if (airPhase % 5 === 0) emitGesture('air_tap', 'air', ['air'])
+}
+
 // ---------------------------------------------------------------- messages
 
 function handle(ws: WebSocket, msg: AppMessage): void {
@@ -349,6 +405,7 @@ function handle(ws: WebSocket, msg: AppMessage): void {
       return
     case 'pause':
       paused = true
+      pausedReason = 'user'
       broadcast(status())
       return
     case 'resume':
@@ -360,6 +417,7 @@ function handle(ws: WebSocket, msg: AppMessage): void {
       calZones = msg.zones
       calTarget = msg.target
       calCounts = {}
+      broadcast({ type: 'calibration', phase: 'started', zones: calZones, target: calTarget })
       return
     case 'calibration_zone':
       captureZone(msg.zone)
@@ -373,6 +431,7 @@ function handle(ws: WebSocket, msg: AppMessage): void {
     case 'calibration_cancel':
       stopCalTimer()
       calibrating = false
+      broadcast({ type: 'calibration', phase: 'cancelled' })
       return
     case 'config_get':
       send(ws, { type: 'config', config })
@@ -383,15 +442,31 @@ function handle(ws: WebSocket, msg: AppMessage): void {
       broadcast(status())
       return
     case 'test_action': {
-      const error = paused ? 'Ghostkeys is paused' : isApproved(msg.action) ? null : 'Not approved in the app'
-      setTimeout(
-        () => send(ws, { type: 'action', t: now(), bindingId: 'test', label: describeAction(msg.action), ok: !error, error }),
-        120
-      )
+      const error = paused ? 'Ghostkeys is paused' : isApproved(msg.action) ? null : 'action is not approved'
+      setTimeout(() => send(ws, { type: 'action', t: now(), bindingId: null, label: describeAction(msg.action), ok: !error, error }), 120)
       return
     }
-    case 'approve_action':
-      approved.add(approvalKey(msg.action))
+    case 'approve_action': {
+      const h = hashOf(msg.action as Parameters<typeof hashOf>[0])
+      approved.add(h)
+      send(ws, { type: 'approved', hash: h, kind: msg.action.kind })
+      return
+    }
+    case 'revoke_action': {
+      const found = approved.delete(msg.hash)
+      send(ws, { type: 'revoked', hash: msg.hash, found })
+      return
+    }
+    case 'catalog_get':
+      send(ws, { type: 'catalog', catalog: catalog as never })
+      return
+    case 'sound_session_start':
+    case 'air_session_start':
+      startSession(msg.type === 'sound_session_start' ? 'sound' : 'air', msg.seconds)
+      return
+    case 'sound_session_stop':
+    case 'air_session_stop':
+      stopSession(msg.type === 'sound_session_stop' ? 'sound' : 'air', 'requested')
       return
     case 'request_permission':
       setTimeout(() => {
@@ -407,6 +482,8 @@ wss.on('connection', (ws) => {
   send(ws, hello())
   send(ws, status())
   send(ws, { type: 'config', config })
+  send(ws, sessionMsg('sound'))
+  send(ws, sessionMsg('air'))
   ws.on('message', (data) => {
     try {
       handle(ws, JSON.parse(String(data)) as AppMessage)
@@ -424,6 +501,9 @@ wss.on('error', (e) => {
   console.error(`[mock ghostkeysd] ${e.message}`)
   process.exit(1)
 })
+
+// The detector level moves; send it now and then like the daemon's status updates.
+setInterval(() => broadcast(status()), 2000)
 
 const shutdown = (): void => {
   wss.close()

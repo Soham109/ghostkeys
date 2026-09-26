@@ -27,6 +27,11 @@ export class GhostkeysClient {
     snapshot.forEach((m) => this.dispatch(m))
   }
 
+  /** Screenshot mode only: feed a message through as if the daemon sent it. */
+  inject(msg: DaemonMessage): void {
+    this.dispatch(msg)
+  }
+
   private dispatch(msg: DaemonMessage): void {
     this.listeners.get(msg.type)?.forEach((l) => l(msg))
     this.listeners.get('*')?.forEach((l) => l(msg))

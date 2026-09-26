@@ -1,0 +1,1088 @@
+{
+ "apps": [
+  {
+   "key": "excel",
+   "name": "Microsoft Excel",
+   "bundleId": "com.microsoft.Excel"
+  },
+  {
+   "key": "chrome",
+   "name": "Google Chrome",
+   "bundleId": "com.google.Chrome"
+  },
+  {
+   "key": "arc",
+   "name": "Arc",
+   "bundleId": "company.thebrowser.Browser"
+  },
+  {
+   "key": "safari",
+   "name": "Safari",
+   "bundleId": "com.apple.Safari"
+  },
+  {
+   "key": "music",
+   "name": "Music",
+   "bundleId": "com.apple.Music"
+  },
+  {
+   "key": "spotify",
+   "name": "Spotify",
+   "bundleId": "com.spotify.client"
+  },
+  {
+   "key": "finder",
+   "name": "Finder",
+   "bundleId": "com.apple.finder"
+  },
+  {
+   "key": "powerpoint",
+   "name": "Microsoft PowerPoint",
+   "bundleId": "com.microsoft.Powerpoint"
+  },
+  {
+   "key": "keynote",
+   "name": "Keynote",
+   "bundleId": "com.apple.Keynote"
+  },
+  {
+   "key": "zoom",
+   "name": "Zoom",
+   "bundleId": "us.zoom.xos"
+  },
+  {
+   "key": "meet",
+   "name": "Google Meet (in Chrome)",
+   "bundleId": "com.google.Chrome"
+  },
+  {
+   "key": "system",
+   "name": "System"
+  }
+ ],
+ "commands": [
+  {
+   "summary": "Wraps each formula in the selection in IFERROR(formula, fallback). Already wrapped formulas are left alone.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Excel does not record edits made over Apple Events in its undo history. Reverse with unwrap-iferror.",
+   "title": "Wrap in IFERROR",
+   "undoable": false,
+   "args": [
+    {
+     "defaultValue": "0",
+     "kind": "string",
+     "help": "Value shown on error: a number, TRUE/FALSE, 'blank' for \"\", or text",
+     "name": "fallback",
+     "required": false
+    }
+   ],
+   "command": "wrap-iferror",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Removes an IFERROR wrapper that spans the whole formula, in each selected cell.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Excel does not record edits made over Apple Events in its undo history.",
+   "title": "Remove IFERROR",
+   "undoable": false,
+   "args": [],
+   "command": "unwrap-iferror",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Cycles every reference in the selected formulas through $A$1, A$1, $A1, A1, like F4.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Excel does not record edits made over Apple Events in its undo history. Press three more times to get back.",
+   "title": "Cycle $ anchors",
+   "undoable": false,
+   "args": [],
+   "command": "toggle-absolute",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Steps the selection through General, #,##0, #,##0.0%, 0.0x, $#,##0.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Excel does not record edits made over Apple Events in its undo history.",
+   "title": "Cycle number format",
+   "undoable": false,
+   "args": [],
+   "command": "cycle-number-format",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Adds one decimal place to the selection's number format (based on the active cell).",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Excel does not record edits made over Apple Events in its undo history.",
+   "title": "Increase decimals",
+   "undoable": false,
+   "args": [],
+   "command": "increase-decimals",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Removes one decimal place from the selection's number format (based on the active cell).",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Excel does not record edits made over Apple Events in its undo history.",
+   "title": "Decrease decimals",
+   "undoable": false,
+   "args": [],
+   "command": "decrease-decimals",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Blue font for hard-coded numbers, black for formulas, in the selection.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Excel does not record edits made over Apple Events in its undo history. At most 5,000 cells.",
+   "title": "Color inputs and formulas",
+   "undoable": false,
+   "args": [
+    {
+     "defaultValue": "false",
+     "kind": "bool",
+     "help": "Also turn text constants blue",
+     "name": "includeText",
+     "required": false
+    }
+   ],
+   "command": "color-inputs-formulas",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Puts =XLOOKUP(,,) in the active cell and leaves the cursor on the first argument.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Refuses a non-empty cell unless overwrite is true. Edit mode is entered with Control-U.",
+   "title": "Insert XLOOKUP",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "false",
+     "kind": "bool",
+     "help": "Replace the active cell even when it is not empty",
+     "name": "overwrite",
+     "required": false
+    }
+   ],
+   "command": "insert-xlookup",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Puts =INDEX(,MATCH(,,0)) in the active cell and leaves the cursor on the first argument.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Refuses a non-empty cell unless overwrite is true.",
+   "title": "Insert INDEX/MATCH",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "false",
+     "kind": "bool",
+     "help": "Replace the active cell even when it is not empty",
+     "name": "overwrite",
+     "required": false
+    }
+   ],
+   "command": "insert-index-match",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Puts =SUMIFS(,,) in the active cell and leaves the cursor on the first argument.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Refuses a non-empty cell unless overwrite is true.",
+   "title": "Insert SUMIFS",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "false",
+     "kind": "bool",
+     "help": "Replace the active cell even when it is not empty",
+     "name": "overwrite",
+     "required": false
+    }
+   ],
+   "command": "insert-sumifs",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Pastes the clipboard into the selection as values only.",
+   "destructive": true,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "Overwrites the selection and cannot be undone in Excel.",
+   "title": "Paste values",
+   "undoable": false,
+   "args": [],
+   "command": "paste-values",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies the top row of the selection down (Command-D).",
+   "destructive": false,
+   "app": "excel",
+   "title": "Fill down",
+   "undoable": true,
+   "args": [],
+   "command": "fill-down",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Copies the left column of the selection right (Command-R).",
+   "destructive": false,
+   "app": "excel",
+   "title": "Fill right",
+   "undoable": true,
+   "args": [],
+   "command": "fill-right",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Inserts a SUM of the adjacent range (Command-Shift-T).",
+   "destructive": false,
+   "app": "excel",
+   "title": "AutoSum",
+   "undoable": true,
+   "args": [],
+   "command": "autosum",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Draws arrows to the active cell's direct precedents.",
+   "destructive": false,
+   "app": "excel",
+   "automationBundleId": "com.microsoft.Excel",
+   "notes": "If Excel refuses the script, falls back to Control-[ which selects the direct precedents.",
+   "title": "Trace precedents",
+   "undoable": true,
+   "args": [],
+   "command": "trace-precedents",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Opens a new tab in the front window.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "title": "New tab",
+   "undoable": true,
+   "args": [],
+   "command": "new-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Closes the active tab.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "notes": "Not marked destructive: reopen-closed-tab brings it back.",
+   "title": "Close tab",
+   "undoable": true,
+   "args": [],
+   "command": "close-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Reopens the last closed tab (Command-Shift-T).",
+   "destructive": false,
+   "app": "chrome",
+   "title": "Reopen closed tab",
+   "undoable": true,
+   "args": [],
+   "command": "reopen-closed-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Switches to the next tab, wrapping around.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "title": "Next tab",
+   "undoable": true,
+   "args": [],
+   "command": "next-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Switches to the previous tab, wrapping around.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "title": "Previous tab",
+   "undoable": true,
+   "args": [],
+   "command": "previous-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Opens the active tab's page again in a new tab.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "title": "Duplicate tab",
+   "undoable": true,
+   "args": [],
+   "command": "duplicate-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies the active tab's address.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "title": "Copy URL",
+   "undoable": true,
+   "args": [],
+   "command": "copy-url",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies [title](url) for the active tab.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "title": "Copy Markdown link",
+   "undoable": true,
+   "args": [],
+   "command": "copy-markdown-link",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Opens an address in this browser.",
+   "destructive": false,
+   "app": "chrome",
+   "notes": "The only command that launches the app when it is closed.",
+   "title": "Open URL",
+   "undoable": true,
+   "args": [
+    {
+     "kind": "url",
+     "help": "http or https address",
+     "name": "url",
+     "required": true
+    }
+   ],
+   "command": "open-url",
+   "mechanism": "native"
+  },
+  {
+   "summary": "Closes the active tab and opens its address in a new window.",
+   "destructive": false,
+   "app": "chrome",
+   "automationBundleId": "com.google.Chrome",
+   "notes": "The page reloads, so its back history and unsaved form input are lost.",
+   "title": "Move tab to new window",
+   "undoable": true,
+   "args": [],
+   "command": "move-tab-to-new-window",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Opens a new tab in the front window.",
+   "destructive": false,
+   "app": "arc",
+   "title": "New tab",
+   "undoable": true,
+   "args": [],
+   "command": "new-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Closes the active tab.",
+   "destructive": false,
+   "app": "arc",
+   "notes": "Not marked destructive: reopen-closed-tab brings it back.",
+   "title": "Close tab",
+   "undoable": true,
+   "args": [],
+   "command": "close-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Reopens the last closed tab (Command-Shift-T).",
+   "destructive": false,
+   "app": "arc",
+   "title": "Reopen closed tab",
+   "undoable": true,
+   "args": [],
+   "command": "reopen-closed-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Switches to the next tab, wrapping around.",
+   "destructive": false,
+   "app": "arc",
+   "title": "Next tab",
+   "undoable": true,
+   "args": [],
+   "command": "next-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Switches to the previous tab, wrapping around.",
+   "destructive": false,
+   "app": "arc",
+   "title": "Previous tab",
+   "undoable": true,
+   "args": [],
+   "command": "previous-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Opens the active tab's page again in a new tab.",
+   "destructive": false,
+   "app": "arc",
+   "automationBundleId": "company.thebrowser.Browser",
+   "title": "Duplicate tab",
+   "undoable": true,
+   "args": [],
+   "command": "duplicate-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies the active tab's address.",
+   "destructive": false,
+   "app": "arc",
+   "automationBundleId": "company.thebrowser.Browser",
+   "title": "Copy URL",
+   "undoable": true,
+   "args": [],
+   "command": "copy-url",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies [title](url) for the active tab.",
+   "destructive": false,
+   "app": "arc",
+   "automationBundleId": "company.thebrowser.Browser",
+   "title": "Copy Markdown link",
+   "undoable": true,
+   "args": [],
+   "command": "copy-markdown-link",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Opens an address in this browser.",
+   "destructive": false,
+   "app": "arc",
+   "notes": "The only command that launches the app when it is closed.",
+   "title": "Open URL",
+   "undoable": true,
+   "args": [
+    {
+     "kind": "url",
+     "help": "http or https address",
+     "name": "url",
+     "required": true
+    }
+   ],
+   "command": "open-url",
+   "mechanism": "native"
+  },
+  {
+   "summary": "Pins or unpins the active tab (Command-D).",
+   "destructive": false,
+   "app": "arc",
+   "title": "Pin tab",
+   "undoable": true,
+   "args": [],
+   "command": "pin-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Opens a new tab in the front window.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "title": "New tab",
+   "undoable": true,
+   "args": [],
+   "command": "new-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Closes the active tab.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "notes": "Not marked destructive: reopen-closed-tab brings it back.",
+   "title": "Close tab",
+   "undoable": true,
+   "args": [],
+   "command": "close-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Reopens the last closed tab (Command-Shift-T).",
+   "destructive": false,
+   "app": "safari",
+   "title": "Reopen closed tab",
+   "undoable": true,
+   "args": [],
+   "command": "reopen-closed-tab",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Switches to the next tab, wrapping around.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "title": "Next tab",
+   "undoable": true,
+   "args": [],
+   "command": "next-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Switches to the previous tab, wrapping around.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "title": "Previous tab",
+   "undoable": true,
+   "args": [],
+   "command": "previous-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Opens the active tab's page again in a new tab.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "title": "Duplicate tab",
+   "undoable": true,
+   "args": [],
+   "command": "duplicate-tab",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies the active tab's address.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "title": "Copy URL",
+   "undoable": true,
+   "args": [],
+   "command": "copy-url",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies [title](url) for the active tab.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "title": "Copy Markdown link",
+   "undoable": true,
+   "args": [],
+   "command": "copy-markdown-link",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Opens an address in this browser.",
+   "destructive": false,
+   "app": "safari",
+   "notes": "The only command that launches the app when it is closed.",
+   "title": "Open URL",
+   "undoable": true,
+   "args": [
+    {
+     "kind": "url",
+     "help": "http or https address",
+     "name": "url",
+     "required": true
+    }
+   ],
+   "command": "open-url",
+   "mechanism": "native"
+  },
+  {
+   "summary": "Closes the active tab and opens its address in a new window.",
+   "destructive": false,
+   "app": "safari",
+   "automationBundleId": "com.apple.Safari",
+   "notes": "The page reloads, so its back history and unsaved form input are lost.",
+   "title": "Move tab to new window",
+   "undoable": true,
+   "args": [],
+   "command": "move-tab-to-new-window",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Toggles playback.",
+   "destructive": false,
+   "app": "music",
+   "automationBundleId": "com.apple.Music",
+   "title": "Play/pause",
+   "undoable": true,
+   "args": [],
+   "command": "play-pause",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Skips to the next track.",
+   "destructive": false,
+   "app": "music",
+   "automationBundleId": "com.apple.Music",
+   "title": "Next track",
+   "undoable": true,
+   "args": [],
+   "command": "next",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Goes to the previous track.",
+   "destructive": false,
+   "app": "music",
+   "automationBundleId": "com.apple.Music",
+   "title": "Previous track",
+   "undoable": true,
+   "args": [],
+   "command": "previous",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Raises the app's own volume.",
+   "destructive": false,
+   "app": "music",
+   "automationBundleId": "com.apple.Music",
+   "title": "Volume up",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "10",
+     "kind": "number",
+     "help": "Percentage points, 1 to 100",
+     "name": "step",
+     "required": false
+    }
+   ],
+   "command": "volume-up",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Lowers the app's own volume.",
+   "destructive": false,
+   "app": "music",
+   "automationBundleId": "com.apple.Music",
+   "title": "Volume down",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "10",
+     "kind": "number",
+     "help": "Percentage points, 1 to 100",
+     "name": "step",
+     "required": false
+    }
+   ],
+   "command": "volume-down",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Returns \"Title by Artist\", or an empty string when stopped.",
+   "destructive": false,
+   "app": "music",
+   "automationBundleId": "com.apple.Music",
+   "title": "Now playing",
+   "undoable": true,
+   "args": [],
+   "command": "now-playing",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Marks the playing track as a favorite.",
+   "destructive": false,
+   "app": "music",
+   "automationBundleId": "com.apple.Music",
+   "title": "Favorite current track",
+   "undoable": true,
+   "args": [],
+   "command": "like-current",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Toggles playback.",
+   "destructive": false,
+   "app": "spotify",
+   "automationBundleId": "com.spotify.client",
+   "title": "Play/pause",
+   "undoable": true,
+   "args": [],
+   "command": "play-pause",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Skips to the next track.",
+   "destructive": false,
+   "app": "spotify",
+   "automationBundleId": "com.spotify.client",
+   "title": "Next track",
+   "undoable": true,
+   "args": [],
+   "command": "next",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Goes to the previous track.",
+   "destructive": false,
+   "app": "spotify",
+   "automationBundleId": "com.spotify.client",
+   "title": "Previous track",
+   "undoable": true,
+   "args": [],
+   "command": "previous",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Raises the app's own volume.",
+   "destructive": false,
+   "app": "spotify",
+   "automationBundleId": "com.spotify.client",
+   "title": "Volume up",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "10",
+     "kind": "number",
+     "help": "Percentage points, 1 to 100",
+     "name": "step",
+     "required": false
+    }
+   ],
+   "command": "volume-up",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Lowers the app's own volume.",
+   "destructive": false,
+   "app": "spotify",
+   "automationBundleId": "com.spotify.client",
+   "title": "Volume down",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "10",
+     "kind": "number",
+     "help": "Percentage points, 1 to 100",
+     "name": "step",
+     "required": false
+    }
+   ],
+   "command": "volume-down",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Returns \"Title by Artist\", or an empty string when stopped.",
+   "destructive": false,
+   "app": "spotify",
+   "automationBundleId": "com.spotify.client",
+   "title": "Now playing",
+   "undoable": true,
+   "args": [],
+   "command": "now-playing",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Creates \"untitled folder\" in the front Finder window (or the Desktop) and selects it.",
+   "destructive": false,
+   "app": "finder",
+   "automationBundleId": "com.apple.finder",
+   "title": "New folder here",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "true",
+     "kind": "bool",
+     "help": "Press Return afterwards to start renaming",
+     "name": "rename",
+     "required": false
+    }
+   ],
+   "command": "new-folder-here",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Shows the Desktop folder in the front Finder window.",
+   "destructive": false,
+   "app": "finder",
+   "automationBundleId": "com.apple.finder",
+   "title": "Show Desktop folder",
+   "undoable": true,
+   "args": [],
+   "command": "reveal-desktop",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Copies the POSIX paths of the selected items (one per line), or of the front folder.",
+   "destructive": false,
+   "app": "finder",
+   "automationBundleId": "com.apple.finder",
+   "title": "Copy path",
+   "undoable": true,
+   "args": [],
+   "command": "copy-path-of-selection",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Opens a terminal window at the front Finder folder.",
+   "destructive": false,
+   "app": "finder",
+   "automationBundleId": "com.apple.finder",
+   "notes": "The terminal itself is opened natively; only Finder is scripted.",
+   "title": "Open terminal here",
+   "undoable": true,
+   "args": [
+    {
+     "defaultValue": "com.apple.Terminal",
+     "kind": "bundleId",
+     "help": "Bundle id of the terminal app (e.g. com.googlecode.iterm2)",
+     "name": "terminal",
+     "required": false
+    }
+   ],
+   "command": "open-terminal-here",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Advances the running slide show; outside a show moves to the next slide (Page Down).",
+   "destructive": false,
+   "app": "powerpoint",
+   "automationBundleId": "com.microsoft.Powerpoint",
+   "title": "Next slide",
+   "undoable": true,
+   "args": [],
+   "command": "next-slide",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Goes back in the running slide show; outside a show Page Up.",
+   "destructive": false,
+   "app": "powerpoint",
+   "automationBundleId": "com.microsoft.Powerpoint",
+   "title": "Previous slide",
+   "undoable": true,
+   "args": [],
+   "command": "previous-slide",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Plays the front presentation.",
+   "destructive": false,
+   "app": "powerpoint",
+   "automationBundleId": "com.microsoft.Powerpoint",
+   "title": "Start presentation",
+   "undoable": true,
+   "args": [],
+   "command": "start-presentation",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Toggles a black screen during the slide show.",
+   "destructive": false,
+   "app": "powerpoint",
+   "automationBundleId": "com.microsoft.Powerpoint",
+   "title": "Black screen",
+   "undoable": true,
+   "args": [],
+   "command": "black-screen",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Left-aligns the selected text (Command-L / E / R).",
+   "destructive": false,
+   "app": "powerpoint",
+   "title": "Align text left",
+   "undoable": true,
+   "args": [],
+   "command": "align-left",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Centers the selected text (Command-L / E / R).",
+   "destructive": false,
+   "app": "powerpoint",
+   "title": "Align text center",
+   "undoable": true,
+   "args": [],
+   "command": "align-center",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Right-aligns the selected text (Command-L / E / R).",
+   "destructive": false,
+   "app": "powerpoint",
+   "title": "Align text right",
+   "undoable": true,
+   "args": [],
+   "command": "align-right",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Advances the running slide show; outside a show moves to the next slide (Page Down).",
+   "destructive": false,
+   "app": "keynote",
+   "automationBundleId": "com.apple.Keynote",
+   "title": "Next slide",
+   "undoable": true,
+   "args": [],
+   "command": "next-slide",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Goes back in the running slide show; outside a show Page Up.",
+   "destructive": false,
+   "app": "keynote",
+   "automationBundleId": "com.apple.Keynote",
+   "title": "Previous slide",
+   "undoable": true,
+   "args": [],
+   "command": "previous-slide",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Plays the front presentation.",
+   "destructive": false,
+   "app": "keynote",
+   "automationBundleId": "com.apple.Keynote",
+   "title": "Start presentation",
+   "undoable": true,
+   "args": [],
+   "command": "start-presentation",
+   "mechanism": "appleScript"
+  },
+  {
+   "summary": "Toggles a black screen during the slide show.",
+   "destructive": false,
+   "app": "keynote",
+   "automationBundleId": "com.apple.Keynote",
+   "title": "Black screen",
+   "undoable": true,
+   "args": [],
+   "command": "black-screen",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Left-aligns the selected text (Command-{ / | / }).",
+   "destructive": false,
+   "app": "keynote",
+   "title": "Align text left",
+   "undoable": true,
+   "args": [],
+   "command": "align-left",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Centers the selected text (Command-{ / | / }).",
+   "destructive": false,
+   "app": "keynote",
+   "title": "Align text center",
+   "undoable": true,
+   "args": [],
+   "command": "align-center",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Right-aligns the selected text (Command-{ / | / }).",
+   "destructive": false,
+   "app": "keynote",
+   "title": "Align text right",
+   "undoable": true,
+   "args": [],
+   "command": "align-right",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Zoom's Command-Shift-A, sent to the Zoom window.",
+   "destructive": false,
+   "app": "zoom",
+   "notes": "Zoom is brought to the front first; its last active window receives the keys.",
+   "title": "Mute/unmute",
+   "undoable": true,
+   "args": [],
+   "command": "toggle-mute",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Zoom's Command-Shift-V, sent to the Zoom window.",
+   "destructive": false,
+   "app": "zoom",
+   "title": "Video on/off",
+   "undoable": true,
+   "args": [],
+   "command": "toggle-video",
+   "mechanism": "keystrokes"
+  },
+  {
+   "summary": "Finds the Meet call tab in Chrome, brings it forward, sends Command-D.",
+   "destructive": false,
+   "app": "meet",
+   "automationBundleId": "com.google.Chrome",
+   "title": "Mute/unmute",
+   "undoable": true,
+   "args": [],
+   "command": "toggle-mute",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Finds the Meet call tab in Chrome, brings it forward, sends Command-E.",
+   "destructive": false,
+   "app": "meet",
+   "automationBundleId": "com.google.Chrome",
+   "title": "Camera on/off",
+   "undoable": true,
+   "args": [],
+   "command": "toggle-video",
+   "mechanism": "appleScriptAndKeys"
+  },
+  {
+   "summary": "Returns the bundle id of the frontmost app.",
+   "destructive": false,
+   "app": "system",
+   "title": "Frontmost app",
+   "undoable": true,
+   "args": [],
+   "command": "frontmost-app-bundle-id",
+   "mechanism": "native"
+  },
+  {
+   "summary": "Returns \"true\" or \"false\".",
+   "destructive": false,
+   "app": "system",
+   "title": "Is app running",
+   "undoable": true,
+   "args": [
+    {
+     "kind": "bundleId",
+     "help": "e.g. com.microsoft.Excel",
+     "name": "bundleId",
+     "required": true
+    }
+   ],
+   "command": "is-app-running",
+   "mechanism": "native"
+  }
+ ],
+ "unsupported": {
+  "finder/toggle-hidden-files": "left out on purpose: it rewrites Finder's preferences and restarts Finder",
+  "safari/pin-tab": "Safari has neither a scripting command nor a default shortcut for pinning a tab",
+  "spotify/like-current": "Spotify's scripting dictionary has no way to like or save a track",
+  "arc/move-tab-to-new-window": "Arc has no scripting command or default shortcut for moving a tab to a new window",
+  "chrome/pin-tab": "Chrome has neither a scripting command nor a default shortcut for pinning a tab"
+ }
+}

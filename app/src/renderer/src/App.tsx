@@ -45,6 +45,16 @@ function useGlobalKeys(): void {
       } else if (/^[1-6]$/.test(e.key) && !s.onboarding) {
         e.preventDefault()
         s.navigate(ROUTES[Number(e.key) - 1]!)
+      } else if (e.key === ',' && !s.onboarding) {
+        e.preventDefault()
+        s.navigate('settings')
+      } else if (e.key === 'n' && !s.onboarding) {
+        e.preventDefault()
+        s.navigate('bindings')
+        useStore.setState({ editingBinding: 'new' })
+      } else if (e.key === 'f' && s.route === 'bindings') {
+        e.preventDefault()
+        window.dispatchEvent(new Event('gk:focus-filter'))
       }
     }
     window.addEventListener('keydown', onKey)
@@ -61,9 +71,37 @@ const SCREENS = {
   settings: SettingsScreen
 } as const
 
+function useWindowFocus(): void {
+  React.useEffect(() => {
+    const on = (): void => useStore.setState({ windowFocused: true })
+    const off = (): void => useStore.setState({ windowFocused: false })
+    window.addEventListener('focus', on)
+    window.addEventListener('blur', off)
+    return () => {
+      window.removeEventListener('focus', on)
+      window.removeEventListener('blur', off)
+    }
+  }, [])
+}
+
+/** VoiceOver hears what the HUD shows: "Left grille, volume down". */
+function Announcer(): React.JSX.Element {
+  const feed = useStore((s) => s.feed)
+  const config = useStore((s) => s.config)
+  const top = feed[0]
+  const zone = top?.gesture.zone ? config?.zones.find((z) => z.id === top.gesture.zone)?.name : null
+  const text = top?.action ? `${zone ?? ''}${zone ? ', ' : ''}${top.action.label}` : ''
+  return (
+    <div className="sr-only" aria-live="polite">
+      {text}
+    </div>
+  )
+}
+
 export function App(): React.JSX.Element {
   useTheme()
   useGlobalKeys()
+  useWindowFocus()
   const route = useStore((s) => s.route)
   const onboarding = useStore((s) => s.onboarding)
   const conn = useStore((s) => s.conn)
@@ -86,7 +124,7 @@ export function App(): React.JSX.Element {
           <Onboarding />
         ) : (
           <>
-            <Sidebar />
+            <Sidebar offline={offline} />
             <main className="relative flex min-w-0 flex-1 flex-col bg-bg shadow-[-1px_0_0_var(--hairline)]">
               {offline ? (
                 <ServiceOffline />
@@ -113,6 +151,7 @@ export function App(): React.JSX.Element {
         )}
       </div>
       <CommandPalette />
+      <Announcer />
       <Toaster
         theme={theme}
         position="bottom-right"
@@ -120,8 +159,7 @@ export function App(): React.JSX.Element {
         toastOptions={{
           unstyled: true,
           classNames: {
-            toast:
-              'flex w-[320px] items-start gap-2.5 rounded-[8px] bg-popover px-3.5 py-3 text-[13px] text-ink shadow-[var(--pop-shadow)]',
+            toast: 'material flex w-[320px] items-start gap-2.5 rounded-[8px] px-3.5 py-3 text-[13px] text-ink',
             title: 'font-medium',
             description: 'text-[12px] text-ink-2 mt-0.5',
             icon: 'mt-px text-ink-2 [&_svg]:size-4'

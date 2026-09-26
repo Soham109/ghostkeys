@@ -21,7 +21,9 @@ const bridge: GhostkeysBridge = {
   onMessage: (cb) => on<DaemonMessage>('daemon-message', cb),
   onConn: (cb) => on<ConnState>('daemon-conn', cb),
   reconnect: () => ipcRenderer.send('daemon-reconnect'),
-  approve: (actions, context) => ipcRenderer.invoke('approve', actions, context) as Promise<string[] | null>
+  setLicense: (key) => ipcRenderer.invoke('set-license', key) as ReturnType<GhostkeysBridge['setLicense']>,
+  pricing: () => ipcRenderer.invoke('pricing') as Promise<unknown>,
+  approve: (actions, context) => ipcRenderer.invoke('approve', actions, context) as Promise<(string | null)[] | null>
 }
 
 contextBridge.exposeInMainWorld('gk', bridge)

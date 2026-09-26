@@ -34,6 +34,39 @@ export type GestureKind =
   | 'cover_hold'
   | 'tilt_left'
   | 'tilt_right'
+  // sound mode (microphone sessions)
+  | 'knock_knuckle'
+  | 'rub'
+  | 'rub_left'
+  | 'rub_right'
+  | 'wave_toward'
+  | 'wave_away'
+  | 'wave_sweep'
+  // camera add-on (camera sessions), zone "air"
+  | 'air_tap'
+  | 'pinch_hold'
+  | 'pinch_drag_left'
+  | 'pinch_drag_right'
+  | 'pinch_drag_up'
+  | 'pinch_drag_down'
+  | 'palm_swipe_left'
+  | 'palm_swipe_right'
+  | 'circle_cw'
+  | 'circle_ccw'
+
+export const SOUND_GESTURES: GestureKind[] = ['knock_knuckle', 'rub', 'rub_left', 'rub_right', 'wave_toward', 'wave_away', 'wave_sweep']
+export const CAMERA_GESTURES: GestureKind[] = [
+  'air_tap',
+  'pinch_hold',
+  'pinch_drag_left',
+  'pinch_drag_right',
+  'pinch_drag_up',
+  'pinch_drag_down',
+  'palm_swipe_left',
+  'palm_swipe_right',
+  'circle_cw',
+  'circle_ccw'
+]
 
 export const GESTURES: GestureKind[] = [
   'tap',
@@ -45,11 +78,27 @@ export const GESTURES: GestureKind[] = [
   'cover',
   'cover_hold',
   'tilt_left',
-  'tilt_right'
+  'tilt_right',
+  ...SOUND_GESTURES,
+  ...CAMERA_GESTURES
 ]
 
-/** Gestures that are not tied to a zone at all. */
-export const ZONELESS_GESTURES: GestureKind[] = ['lid_nudge', 'cover', 'cover_hold', 'tilt_left', 'tilt_right']
+/** Gestures that are not tied to a tap zone (camera gestures use the pseudo zone "air"). */
+export const ZONELESS_GESTURES: GestureKind[] = [
+  'lid_nudge',
+  'cover',
+  'cover_hold',
+  'tilt_left',
+  'tilt_right',
+  'rub',
+  'rub_left',
+  'rub_right',
+  'wave_toward',
+  'wave_away',
+  'wave_sweep',
+  ...CAMERA_GESTURES
+]
+export const AIR_ZONE = 'air'
 
 export type Modifier = 'shift' | 'control' | 'option' | 'command' | 'fn'
 export const MODIFIERS: Modifier[] = ['control', 'option', 'shift', 'command', 'fn']
@@ -82,6 +131,8 @@ export const SYSTEM_OPS: SystemOp[] = [
   'show-desktop'
 ]
 
+export type IntegrationArgValue = string | number | boolean
+
 /** Every action except a macro. Macro steps are drawn from these. */
 export type SimpleAction =
   | { kind: 'keystroke'; key: string; modifiers: Modifier[] }
@@ -89,10 +140,12 @@ export type SimpleAction =
   | { kind: 'mute' }
   | { kind: 'media'; command: MediaCommand }
   | { kind: 'brightness'; step: number }
-  | { kind: 'open'; target: string }
-  | { kind: 'shell'; command: string }
-  | { kind: 'applescript'; source: string }
-  | { kind: 'shortcut'; name: string }
+  // approvedHash: returned by the daemon after approve_action; any edit to the action drops it.
+  | { kind: 'open'; target: string; approvedHash?: string }
+  | { kind: 'shell'; command: string; approvedHash?: string }
+  | { kind: 'applescript'; source: string; approvedHash?: string }
+  | { kind: 'shortcut'; name: string; approvedHash?: string }
+  | { kind: 'integration'; app: string; command: string; args: Record<string, IntegrationArgValue> }
   | { kind: 'text'; text: string }
   | { kind: 'clipboard'; text: string }
   | { kind: 'window'; op: WindowOp }
@@ -123,8 +176,17 @@ export const ACTION_KINDS: ActionKind[] = [
   'clipboard',
   'window',
   'app',
-  'system'
+  'system',
+  'integration'
 ]
+
+export interface KnobSpec {
+  axis: 'x' | 'y'
+  /** Camera pixels of hand movement per step. */
+  stepPx: number
+  /** Runs for steps in the opposite direction. */
+  inverse?: Action | null
+}
 
 export interface Binding {
   id: string
@@ -137,6 +199,15 @@ export interface Binding {
   app: string
   action: Action
   label: string
+  /** pinch_hold only: turn hand movement into repeated steps. */
+  knob?: KnobSpec | null
+}
+
+export interface SessionSettings {
+  enabled: boolean
+  sessionSeconds: number
+  /** Bundle ids where a session starts by itself when that app comes to the front. */
+  autoApps: string[]
 }
 
 export interface Settings {
@@ -146,6 +217,8 @@ export interface Settings {
   minConfidence: number
   hud: boolean
   haptics: boolean
+  sound?: SessionSettings
+  camera?: SessionSettings & { deskMode: boolean }
 }
 
 export interface Config {
@@ -155,7 +228,7 @@ export interface Config {
   settings: Settings
 }
 
-export type Stream = 'imu' | 'lid' | 'light' | 'taps'
+export type Stream = 'imu' | 'lid' | 'light' | 'taps' | 'air'
 
 // ---------------------------------------------------------------- daemon -> app
 
@@ -163,15 +236,20 @@ export interface HelloMsg {
   type: 'hello'
   version: string
   device: { model: string; chip: string; family: DeviceFamily }
-  sensors: { imu: boolean; gyro: boolean; lid: boolean; light: boolean }
-  permissions: { accessibility: boolean }
+  sensors: { imu: boolean; gyro: boolean; lid: boolean; light: boolean; sound?: boolean; camera?: boolean }
+  permissions: { accessibility: boolean; microphone?: MediaPermission; camera?: MediaPermission }
 }
+export type MediaPermission = 'authorized' | 'not_determined' | 'denied'
 export interface StatusMsg {
   type: 'status'
   paused: boolean
+  /** "user" when paused by hand, "rate_limit" when the daemon stopped a runaway burst of actions. */
+  pausedReason?: 'user' | 'rate_limit' | null
   calibrated: boolean
   zones: string[]
   imuHz: number
+  /** Live tap detector, in milli-g. */
+  detector?: { noiseFloorMg: number; thresholdMg: number; level: number }
 }
 export interface ImuMsg {
   type: 'imu'
@@ -197,6 +275,8 @@ export interface TapMsg {
   x: number
   y: number
   strength: number
+  tapType?: 'fingertip' | 'knuckle' | 'nail'
+  source?: 'imu' | 'camera'
 }
 export interface RejectedMsg {
   type: 'rejected'
@@ -211,17 +291,24 @@ export interface GestureMsg {
   zones: string[] | null
   modifiers: Modifier[]
   confidence: number
-  app: string
+  app: string | null
+  hand?: string
+  x?: number
+  y?: number
+  source?: 'imu' | 'sound' | 'camera'
 }
 export interface ActionMsg {
   type: 'action'
   t: number
-  bindingId: string
+  bindingId: string | null
   label: string
   ok: boolean
   error: string | null
 }
 export type CalibrationMsg =
+  | { type: 'calibration'; phase: 'started'; zones: string[]; target: number }
+  | { type: 'calibration'; phase: 'training' }
+  | { type: 'calibration'; phase: 'cancelled' }
   | { type: 'calibration'; phase: 'capturing'; zone: string; count: number; target: number }
   | { type: 'calibration'; phase: 'negatives'; secondsLeft: number }
   | {
@@ -240,6 +327,68 @@ export interface ErrorMsg {
   type: 'error'
   message: string
 }
+/** Continuous camera gesture: pinch_hold, two_hand_zoom, point. */
+export interface AirMsg {
+  type: 'air'
+  t: number
+  phase: 'began' | 'changed' | 'ended'
+  gesture: string
+  confidence?: number
+  hand?: string
+  x?: number
+  y?: number
+  dx?: number
+  dy?: number
+  scale?: number
+}
+export interface SessionMsg {
+  type: 'session'
+  kind: 'air' | 'sound'
+  active: boolean
+  secondsLeft: number
+  reason?: string
+  error?: string
+  trigger?: string
+  simulated?: boolean
+}
+export interface ApprovedMsg {
+  type: 'approved'
+  hash: string
+  kind: string | null
+}
+export interface RevokedMsg {
+  type: 'revoked'
+  hash: string
+  found: boolean
+}
+export interface IntegrationArgSpec {
+  name: string
+  kind: 'string' | 'number' | 'bool' | 'url' | 'bundleId'
+  required: boolean
+  defaultValue?: string | null
+  help: string
+}
+export interface IntegrationCommand {
+  app: string
+  command: string
+  title: string
+  summary: string
+  args: IntegrationArgSpec[]
+  destructive: boolean
+  undoable: boolean
+  automationBundleId?: string | null
+  mechanism: 'appleScript' | 'keystrokes' | 'appleScriptAndKeys' | 'native'
+  notes?: string | null
+}
+export interface IntegrationCatalog {
+  apps: { key: string; name: string; bundleId?: string | null }[]
+  commands: IntegrationCommand[]
+  unsupported: Record<string, string>
+}
+export interface CatalogMsg {
+  type: 'catalog'
+  catalog: IntegrationCatalog
+}
 
 export type DaemonMessage =
   | HelloMsg
@@ -254,6 +403,11 @@ export type DaemonMessage =
   | CalibrationMsg
   | ConfigMsg
   | ErrorMsg
+  | AirMsg
+  | SessionMsg
+  | ApprovedMsg
+  | RevokedMsg
+  | CatalogMsg
 
 export type DaemonMessageType = DaemonMessage['type']
 
@@ -273,8 +427,14 @@ export type AppMessage =
   | { type: 'config_set'; config: Config }
   | { type: 'test_action'; action: Action }
   | { type: 'request_permission'; which: 'accessibility' }
-  /** Sent only after the user approved this exact action in a native dialog (shell, applescript, shortcut, open). */
+  /** Sent only by the main process, after the user approved this exact action in a native dialog. */
   | { type: 'approve_action'; action: SimpleAction }
+  | { type: 'revoke_action'; hash: string }
+  | { type: 'catalog_get' }
+  | { type: 'sound_session_start'; seconds?: number }
+  | { type: 'sound_session_stop' }
+  | { type: 'air_session_start'; seconds?: number }
+  | { type: 'air_session_stop' }
 
 const DAEMON_TYPES: ReadonlySet<string> = new Set([
   'hello',
@@ -288,7 +448,12 @@ const DAEMON_TYPES: ReadonlySet<string> = new Set([
   'action',
   'calibration',
   'config',
-  'error'
+  'error',
+  'air',
+  'session',
+  'approved',
+  'revoked',
+  'catalog'
 ])
 
 /** Parses a text frame. Returns null for anything that is not a known daemon message. */
@@ -316,7 +481,24 @@ export const GESTURE_LABEL: Record<GestureKind, string> = {
   cover: 'Cover sensor',
   cover_hold: 'Cover and hold',
   tilt_left: 'Tilt left',
-  tilt_right: 'Tilt right'
+  tilt_right: 'Tilt right',
+  knock_knuckle: 'Knuckle knock',
+  rub: 'Rub',
+  rub_left: 'Rub left',
+  rub_right: 'Rub right',
+  wave_toward: 'Wave toward',
+  wave_away: 'Wave away',
+  wave_sweep: 'Wave across',
+  air_tap: 'Air tap',
+  pinch_hold: 'Pinch and hold',
+  pinch_drag_left: 'Pinch drag left',
+  pinch_drag_right: 'Pinch drag right',
+  pinch_drag_up: 'Pinch drag up',
+  pinch_drag_down: 'Pinch drag down',
+  palm_swipe_left: 'Palm swipe left',
+  palm_swipe_right: 'Palm swipe right',
+  circle_cw: 'Circle clockwise',
+  circle_ccw: 'Circle counterclockwise'
 }
 
 export const GESTURE_HINT: Record<GestureKind, string> = {
@@ -329,7 +511,24 @@ export const GESTURE_HINT: Record<GestureKind, string> = {
   cover: 'Briefly cover the light sensor next to the camera',
   cover_hold: 'Cover the light sensor for over a second',
   tilt_left: 'Roll the laptop left and back while holding it',
-  tilt_right: 'Roll the laptop right and back while holding it'
+  tilt_right: 'Roll the laptop right and back while holding it',
+  knock_knuckle: 'Knock a zone with a knuckle instead of a fingertip',
+  rub: 'Rub a palm rest or grille with a fingertip',
+  rub_left: 'Rub or swipe leftward on a palm rest or grille',
+  rub_right: 'Rub or swipe rightward on a palm rest or grille',
+  wave_toward: 'Move your hand toward the screen, above the keys',
+  wave_away: 'Move your hand away from the screen, above the keys',
+  wave_sweep: 'Sweep your hand across above the keys',
+  air_tap: 'Pinch and release in the air, quickly',
+  pinch_hold: 'Pinch and hold, then move your hand to turn it like a knob',
+  pinch_drag_left: 'Pinch, move left, release',
+  pinch_drag_right: 'Pinch, move right, release',
+  pinch_drag_up: 'Pinch, move up, release',
+  pinch_drag_down: 'Pinch, move down, release',
+  palm_swipe_left: 'Sweep an open palm to the left',
+  palm_swipe_right: 'Sweep an open palm to the right',
+  circle_cw: 'Draw a circle clockwise with a finger; one step per 30 degrees',
+  circle_ccw: 'Draw a circle counterclockwise; one step per 30 degrees'
 }
 
 export const MODIFIER_GLYPH: Record<Modifier, string> = {
@@ -344,7 +543,7 @@ export const REJECT_LABEL: Record<RejectReason, string> = {
   typing: 'Typing',
   trackpad: 'Trackpad',
   motion: 'Motion',
-  low_confidence: 'Low confidence',
+  low_confidence: 'Unsure',
   burst: 'Burst',
   paused: 'Paused'
 }

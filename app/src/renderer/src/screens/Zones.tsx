@@ -1,21 +1,20 @@
 import * as React from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { Plus, Trash2, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useStore } from '@/lib/store'
-import { cn, slugify } from '@/lib/utils'
+import { cn, slugify, clamp } from '@/lib/utils'
 import { SURFACES, SURFACE_LABEL, type Rect, type Surface, type Zone } from '@shared/protocol'
-import { ZONE_COLORS, defaultZones } from '@shared/defaults'
-import { LAPTOPS, obstacles, rectsOverlap } from '@shared/laptop'
+import { defaultZones } from '@shared/defaults'
+import { LAPTOPS, obstacles, rectsOverlap, surfaceMm, type LaptopSpec } from '@shared/laptop'
 import { bindingsForZone } from '@/lib/bindings'
 import { PageHeader, Empty } from '@/components/Page'
 import { Button } from '@/components/ui/button'
-import { Input, ZoneDot, Tip } from '@/components/ui/controls'
+import { ProTag, ZoneIndex } from '@/components/ui/controls'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Confirm } from '@/components/ui/overlays'
-import { LaptopMap } from '@/components/laptop/LaptopMap'
+import { LaptopMap, normalizeRect } from '@/components/laptop/LaptopMap'
 
-/** Finds a free spot on a surface for a new zone, scanning a coarse grid. */
-function freeRect(surface: Surface, taken: Rect[], family: Parameters<typeof obstacles>[0]): Rect | null {
+/** Finds the largest free spot on a surface for a new zone, scanning a coarse grid. */
+function freeRect(surface: Surface, taken: Rect[], spec: LaptopSpec): Rect | null {
   const size: Record<Surface, { w: number; h: number }> = {
     base: { w: 0.12, h: 0.1 },
     lid: { w: 0.2, h: 0.3 },
@@ -24,7 +23,7 @@ function freeRect(surface: Surface, taken: Rect[], family: Parameters<typeof obs
     front: { w: 0.2, h: 1 }
   }
   const { w, h } = size[surface]
-  const blocked = [...taken, ...obstacles(family, surface)]
+  const blocked = [...taken, ...obstacles(spec, surface)]
   for (let y = 0; y <= 1 - h + 1e-6; y += 0.02) {
     for (let x = 0; x <= 1 - w + 1e-6; x += 0.02) {
       const r = { x: Math.round(x * 100) / 100, y: Math.round(y * 100) / 100, w, h }
@@ -34,16 +33,69 @@ function freeRect(surface: Surface, taken: Rect[], family: Parameters<typeof obs
   return null
 }
 
+const PRO_SURFACE = (z: Zone): boolean => !['left-palm', 'right-palm'].includes(z.id)
+
+/** A millimetre readout you can drag sideways to change, like a pro Mac app. */
+function Scrub({ label, mm, onDelta }: { label: string; mm: number; onDelta: (dMm: number) => void }): React.JSX.Element {
+  const start = React.useRef<number | null>(null)
+  return (
+    <div className="flex flex-col">
+      <span
+        className="tag-mono cursor-ew-resize text-ink-3 select-none"
+        onPointerDown={(e) => {
+          start.current = e.clientX
+          ;(e.target as Element).setPointerCapture(e.pointerId)
+        }}
+        onPointerMove={(e) => {
+          if (start.current === null) return
+          const d = e.clientX - start.current
+          if (Math.abs(d) >= 4) {
+            onDelta(Math.round(d / 4))
+            start.current = e.clientX
+          }
+        }}
+        onPointerUp={() => (start.current = null)}
+        title="Drag sideways to change"
+      >
+        {label}
+      </span>
+      <span className="num text-[12px] text-ink-2">{Math.round(mm)} mm</span>
+    </div>
+  )
+}
+
 function Inspector({ zone, onDelete }: { zone: Zone; onDelete: () => void }): React.JSX.Element {
   const setDraft = useStore((s) => s.setDraft)
   const family = useStore((s) => s.hello?.device.family ?? 'macbook-pro-14')
-  const update = (patch: Partial<Zone>): void =>
-    setDraft((c) => ({ ...c, zones: c.zones.map((z) => (z.id === zone.id ? { ...z, ...patch } : z)) }))
+  const spec = LAPTOPS[family]
+  const mm = surfaceMm(spec, zone.surface)
+  const r = normalizeRect(zone.surface, zone.rect)
+  const [armed, setArmed] = React.useState(false)
+  React.useEffect(() => {
+    if (!armed) return
+    const t = setTimeout(() => setArmed(false), 2000)
+    return () => clearTimeout(t)
+  }, [armed])
+
+  const update = (patch: Partial<Zone>): void => setDraft((c) => ({ ...c, zones: c.zones.map((z) => (z.id === zone.id ? { ...z, ...patch } : z)) }))
+
+  const nudge = (k: keyof Rect, dMm: number): void => {
+    const scale = k === 'x' || k === 'w' ? mm.w : mm.h
+    const next = { ...r, [k]: r[k] + dMm / scale }
+    next.w = clamp(next.w, 0.03, 1)
+    next.h = clamp(next.h, 0.03, 1)
+    next.x = clamp(next.x, 0, 1 - next.w)
+    next.y = clamp(next.y, 0, 1 - next.h)
+    const others = useStore.getState().draft?.zones.filter((z) => z.id !== zone.id && z.surface === zone.surface).map((z) => normalizeRect(z.surface, z.rect)) ?? []
+    const obs = obstacles(spec, zone.surface).filter((o) => !rectsOverlap(r, o))
+    if ([...others, ...obs].some((o) => rectsOverlap(next, o))) return
+    update({ rect: normalizeRect(zone.surface, next) })
+  }
 
   const moveTo = (surface: Surface): void => {
     setDraft((c) => {
-      const taken = c.zones.filter((z) => z.surface === surface && z.id !== zone.id).map((z) => z.rect)
-      const rect = freeRect(surface, taken, LAPTOPS[family])
+      const taken = c.zones.filter((z) => z.surface === surface && z.id !== zone.id).map((z) => normalizeRect(z.surface, z.rect))
+      const rect = freeRect(surface, taken, spec)
       if (!rect) {
         toast('That surface is full', { description: `Make room on the ${SURFACE_LABEL[surface].toLowerCase()} first.` })
         return c
@@ -59,16 +111,18 @@ function Inspector({ zone, onDelete }: { zone: Zone; onDelete: () => void }): Re
       animate={{ opacity: 1, x: 0 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
-      className="flex flex-col gap-5 px-4 py-4"
+      className="flex flex-1 flex-col gap-6 px-4 pt-6 pb-6"
     >
-      <label className="flex flex-col gap-1.5">
-        <span className="label-mono">Name</span>
-        <Input value={zone.name} onChange={(e) => update({ name: e.target.value })} aria-label="Zone name" />
-      </label>
-      <div className="flex flex-col gap-1.5">
+      <input
+        value={zone.name}
+        onChange={(e) => update({ name: e.target.value })}
+        aria-label="Zone name"
+        className="-mx-1.5 rounded-[6px] px-1.5 py-1 text-[15px] font-medium text-ink outline-none hover:shadow-[inset_0_0_0_1px_var(--hairline)] focus:shadow-[inset_0_0_0_1px_var(--ink-3)]"
+      />
+      <div className="flex flex-col gap-1">
         <span className="label-mono">Surface</span>
         <Select value={zone.surface} onValueChange={(v) => moveTo(v as Surface)}>
-          <SelectTrigger aria-label="Surface">
+          <SelectTrigger borderless aria-label="Surface">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -81,39 +135,24 @@ function Inspector({ zone, onDelete }: { zone: Zone; onDelete: () => void }): Re
         </Select>
       </div>
       <div className="flex flex-col gap-2">
-        <span className="label-mono">Color</span>
-        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Zone color">
-          {ZONE_COLORS.map((c) => (
-            <button
-              key={c}
-              role="radio"
-              aria-checked={zone.color === c}
-              aria-label={c}
-              onClick={() => update({ color: c })}
-              className={cn(
-                'size-5 rounded-full transition-shadow duration-150',
-                zone.color === c ? 'shadow-[0_0_0_2px_var(--bg),0_0_0_3px_var(--ink)]' : 'hover:shadow-[0_0_0_2px_var(--bg),0_0_0_3px_var(--hairline-strong)]'
-              )}
-              style={{ background: c }}
-            />
-          ))}
+        <span className="label-mono">Position</span>
+        <div className="grid grid-cols-4 gap-2">
+          <Scrub label="X" mm={r.x * mm.w} onDelta={(d) => nudge('x', d)} />
+          <Scrub label="Y" mm={r.y * mm.h} onDelta={(d) => nudge('y', d)} />
+          <Scrub label="W" mm={r.w * mm.w} onDelta={(d) => nudge('w', d)} />
+          <Scrub label="H" mm={r.h * mm.h} onDelta={(d) => nudge('h', d)} />
         </div>
       </div>
-      <div className="flex flex-col gap-1.5">
-        <span className="label-mono">Position</span>
-        <dl className="grid grid-cols-4 gap-2 font-mono text-[12px]">
-          {(['x', 'y', 'w', 'h'] as const).map((k) => (
-            <div key={k} className="flex flex-col">
-              <dt className="text-[11px] text-ink-3 uppercase">{k}</dt>
-              <dd className="num text-ink-2">{zone.rect[k].toFixed(2)}</dd>
-            </div>
-          ))}
-        </dl>
-      </div>
-      <div>
-        <Button variant="danger" size="md" className="-ml-3" onClick={onDelete}>
-          <Trash2 />
-          Delete zone
+      <div className="mt-auto">
+        <Button
+          variant="text"
+          className={armed ? 'text-ink' : undefined}
+          onClick={() => {
+            if (armed) onDelete()
+            else setArmed(true)
+          }}
+        >
+          {armed ? 'Click again to delete' : 'Delete zone'}
         </Button>
       </div>
     </motion.div>
@@ -125,7 +164,6 @@ export function ZonesScreen(): React.JSX.Element {
   const draft = useStore((s) => s.draft)
   const setDraft = useStore((s) => s.setDraft)
   const [selected, setSelected] = React.useState<string | null>(null)
-  const [confirmDelete, setConfirmDelete] = React.useState<Zone | null>(null)
   const [confirmReset, setConfirmReset] = React.useState(false)
   const family = hello?.device.family ?? 'macbook-pro-14'
   const zones = draft?.zones ?? []
@@ -133,7 +171,7 @@ export function ZonesScreen(): React.JSX.Element {
 
   const addZone = (surface: Surface): void => {
     if (!draft) return
-    const taken = draft.zones.filter((z) => z.surface === surface).map((z) => z.rect)
+    const taken = draft.zones.filter((z) => z.surface === surface).map((z) => normalizeRect(z.surface, z.rect))
     const rect = freeRect(surface, taken, LAPTOPS[family])
     if (!rect) {
       toast('No room left there', { description: `Shrink or move a zone on the ${SURFACE_LABEL[surface].toLowerCase()} first.` })
@@ -144,55 +182,47 @@ export function ZonesScreen(): React.JSX.Element {
     while (draft.zones.some((z) => z.name === name)) name = `Zone ${++n}`
     let id = slugify(name)
     while (draft.zones.some((z) => z.id === id)) id = `${id}-x`
-    const color = ZONE_COLORS.find((c) => !draft.zones.some((z) => z.color === c)) ?? ZONE_COLORS[n % ZONE_COLORS.length]!
-    setDraft((c) => ({ ...c, zones: [...c.zones, { id, name, surface, rect, color }] }))
+    setDraft((c) => ({ ...c, zones: [...c.zones, { id, name, surface, rect, color: '#8A8A90' }] }))
     setSelected(id)
   }
 
   const deleteZone = (z: Zone): void => {
+    const n = draft ? bindingsForZone(draft, z.id).length : 0
     setDraft((c) => ({ ...c, zones: c.zones.filter((x) => x.id !== z.id) }))
     setSelected(null)
+    toast(`Deleted ${z.name}`, { description: n ? `${n} binding${n === 1 ? '' : 's'} used it and will do nothing until you change them.` : 'Recalibrate so Ghostkeys learns the new layout.' })
   }
-
-  const bound = (z: Zone): number => (draft ? bindingsForZone(draft, z.id).length : 0)
 
   React.useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
       const t = e.target as HTMLElement
       if (t.closest('input,textarea,[role=dialog]')) return
-      if ((e.key === 'Backspace' || e.key === 'Delete') && zone) {
-        e.preventDefault()
-        setConfirmDelete(zone)
-      } else if (e.key === 'Escape') setSelected(null)
+      if (e.key === 'Escape') setSelected(null)
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [zone])
+  }, [])
 
   return (
     <>
       <PageHeader
         title="Zones"
-        subtitle={`${zones.length} zones`}
+        subtitle={`${String(zones.length).padStart(2, '0')} zones`}
         actions={
           <>
-            <Tip content="Restore the default zones for this MacBook">
-              <Button variant="ghost" size="icon" aria-label="Restore defaults" onClick={() => setConfirmReset(true)}>
-                <RotateCcw />
-              </Button>
-            </Tip>
+            <Button variant="ghost" onClick={() => setConfirmReset(true)}>
+              Reset
+            </Button>
             <Menu>
               <MenuTrigger asChild>
-                <Button variant="primary">
-                  <Plus />
-                  Add zone
-                </Button>
+                <Button variant="primary">Add zone</Button>
               </MenuTrigger>
               <MenuContent align="end">
                 <MenuLabel>Surface</MenuLabel>
                 {SURFACES.map((s) => (
                   <MenuItem key={s} onSelect={() => addZone(s)}>
-                    {SURFACE_LABEL[s]}
+                    <span className="flex-1">{SURFACE_LABEL[s]}</span>
+                    <ProTag feature="Custom zones" />
                   </MenuItem>
                 ))}
               </MenuContent>
@@ -202,11 +232,8 @@ export function ZonesScreen(): React.JSX.Element {
       />
       <div className="flex min-h-0 flex-1 shadow-[0_-1px_0_var(--hairline)]">
         <div className="relative flex min-w-0 flex-1 flex-col">
-          <div
-            className="pointer-events-none absolute inset-0"
-            style={{ background: 'radial-gradient(60% 55% at 50% 48%, var(--light-behind), transparent 70%)' }}
-          />
-          <div className="relative min-h-0 flex-1 px-10 pt-8 pb-4">
+          <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(60% 55% at 50% 48%, var(--light-behind), transparent 70%)' }} />
+          <div className="relative min-h-0 flex-1 px-8 pt-6 pb-4">
             {draft && (
               <LaptopMap
                 family={family}
@@ -218,57 +245,41 @@ export function ZonesScreen(): React.JSX.Element {
               />
             )}
           </div>
-          <p className="relative px-6 pb-5 text-[12px] text-ink-3">
-            Drag a zone to move it, or a corner to resize. Arrow keys nudge, Option with arrows resizes. Zones snap to a grid and
-            never overlap each other, the keyboard or the trackpad.
-          </p>
+          <p className="relative px-8 pb-6 text-[12px] text-ink-3">Drag to move. Drag a corner to resize. Arrow keys nudge; &#x2325; + arrows resize.</p>
         </div>
-        <aside className="flex w-[300px] shrink-0 flex-col overflow-y-auto shadow-[-1px_0_0_var(--hairline)]">
-          <div className="px-4 pt-4">
-            <p className="label-mono pb-2">All zones</p>
-          </div>
+        <aside className="flex w-[320px] shrink-0 flex-col overflow-y-auto shadow-[-1px_0_0_var(--hairline)]">
+          <p className="label-mono px-4 pt-6 pb-2">All zones</p>
           {zones.length ? (
             <ul className="shadow-[0_-1px_0_var(--hairline)]" role="listbox" aria-label="Zones">
-              {zones.map((z) => (
+              {zones.map((z, i) => (
                 <li key={z.id} role="option" aria-selected={z.id === selected}>
                   <button
                     onClick={() => setSelected(z.id === selected ? null : z.id)}
                     className={cn(
-                      'flex h-9 w-full items-center gap-2.5 px-4 text-left shadow-[0_1px_0_var(--hairline)] transition-colors duration-150',
+                      'flex h-8 w-full items-center gap-2.5 px-4 text-left shadow-[0_1px_0_var(--hairline)] transition-colors duration-150',
                       z.id === selected ? 'bg-fill-active' : 'hover:bg-fill-hover'
                     )}
                   >
-                    <ZoneDot color={z.color} />
+                    <ZoneIndex n={i + 1} className={z.id === selected ? 'text-ink' : undefined} />
                     <span className="flex-1 truncate text-[13px]">{z.name}</span>
-                    <span className="text-[11px] text-ink-3">{SURFACE_LABEL[z.surface]}</span>
+                    {PRO_SURFACE(z) && <ProTag />}
+                    <span className="text-[12px] text-ink-3">{SURFACE_LABEL[z.surface]}</span>
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <Empty title="No zones.">Add one from the button above, or restore the defaults for this MacBook.</Empty>
+            <Empty title="No zones.">Add one, or reset to the defaults for this MacBook.</Empty>
           )}
-          <AnimatePresence mode="wait">{zone && <Inspector key={zone.id} zone={zone} onDelete={() => setConfirmDelete(zone)} />}</AnimatePresence>
+          <AnimatePresence mode="wait">{zone && <Inspector key={zone.id} zone={zone} onDelete={() => deleteZone(zone)} />}</AnimatePresence>
         </aside>
       </div>
       <Confirm
-        open={!!confirmDelete}
-        onOpenChange={(o) => !o && setConfirmDelete(null)}
-        title={`Delete ${confirmDelete?.name ?? 'zone'}?`}
-        body={
-          confirmDelete && bound(confirmDelete) > 0
-            ? `${bound(confirmDelete)} binding${bound(confirmDelete) === 1 ? ' uses' : 's use'} this zone and will stop working. Recalibrate after deleting zones.`
-            : 'Recalibrate after changing zones so Ghostkeys learns the new layout.'
-        }
-        confirmLabel="Delete zone"
-        onConfirm={() => confirmDelete && deleteZone(confirmDelete)}
-      />
-      <Confirm
         open={confirmReset}
         onOpenChange={setConfirmReset}
-        title="Restore the default zones?"
-        body="Your zones are replaced with the defaults for this MacBook. Bindings stay, and you can discard before saving."
-        confirmLabel="Restore defaults"
+        title="Reset to the default zones?"
+        body="Your zones are replaced with the defaults for this MacBook. Bindings stay, and nothing is saved until you press Save."
+        confirmLabel="Reset zones"
         onConfirm={() => {
           setDraft((c) => ({ ...c, zones: defaultZones(family) }))
           setSelected(null)

@@ -1,18 +1,43 @@
 import * as React from 'react'
-import { Play, Trash2, TriangleAlert, Info } from 'lucide-react'
 import { toast } from 'sonner'
-import { GESTURES, GESTURE_HINT, GESTURE_LABEL, ZONELESS_GESTURES, type Action, type Binding, type Config, type GestureKind } from '@shared/protocol'
+import {
+  CAMERA_GESTURES,
+  GESTURES,
+  GESTURE_HINT,
+  GESTURE_LABEL,
+  SOUND_GESTURES,
+  ZONELESS_GESTURES,
+  AIR_ZONE,
+  type Action,
+  type Binding,
+  type Config,
+  type GestureKind
+} from '@shared/protocol'
 import { defaultAction, describeAction, isDestructive } from '@shared/actions'
+import { riskyParts } from '@shared/approval'
 import { client } from '@/lib/client'
+import { useStore } from '@/lib/store'
 import { conflictsFor } from '@/lib/bindings'
-import { ensureApproved } from '@/lib/approval'
-import { ApprovalNote } from './ApprovalBadge'
+import { ensureActionApproved } from '@/lib/approval'
 import { Button } from '../ui/button'
-import { Input, SectionLabel, ZoneDot } from '../ui/controls'
-import { Confirm, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Sheet } from '../ui/overlays'
+import { Input, ProTag, Segmented, SectionLabel, ZoneIndex } from '../ui/controls'
+import { Confirm, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue, Sheet } from '../ui/overlays'
 import { ActionFields, KindSelect } from './ActionForm'
 import { AppPicker } from './AppPicker'
 import { ModifierChips } from './KeystrokeRecorder'
+import { ApprovalNote } from './ApprovalBadge'
+import { findCommand } from './IntegrationFields'
+
+export const PRO_GESTURES: GestureKind[] = ['sequence', 'rhythm', 'lid_nudge', 'cover', 'cover_hold', 'tilt_left', 'tilt_right', ...SOUND_GESTURES, ...CAMERA_GESTURES]
+
+function Row({ label, children, align = 'center' }: { label: string; children: React.ReactNode; align?: 'center' | 'start' }): React.JSX.Element {
+  return (
+    <div className={`grid grid-cols-[96px_1fr] gap-4 ${align === 'start' ? 'items-start' : 'items-center'}`}>
+      <span className={`text-[13px] text-ink-2 ${align === 'start' ? 'pt-1.5' : ''}`}>{label}</span>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
 
 function ZoneSelect({ config, value, onChange, label }: { config: Config; value: string | null; onChange: (id: string) => void; label: string }): React.JSX.Element {
   return (
@@ -21,10 +46,10 @@ function ZoneSelect({ config, value, onChange, label }: { config: Config; value:
         <SelectValue placeholder="Pick a zone" />
       </SelectTrigger>
       <SelectContent>
-        {config.zones.map((z) => (
+        {config.zones.map((z, i) => (
           <SelectItem key={z.id} value={z.id}>
             <span className="flex items-center gap-2">
-              <ZoneDot color={z.color} />
+              <ZoneIndex n={i + 1} />
               {z.name}
             </span>
           </SelectItem>
@@ -32,6 +57,16 @@ function ZoneSelect({ config, value, onChange, label }: { config: Config; value:
       </SelectContent>
     </Select>
   )
+}
+
+/** Gestures the device can actually do: sound and camera ones only when that hardware exists. */
+function gestureGroups(sound: boolean, camera: boolean): { label: string; items: GestureKind[] }[] {
+  const touch = GESTURES.filter((g) => !SOUND_GESTURES.includes(g) && !CAMERA_GESTURES.includes(g))
+  return [
+    { label: 'Taps and motion', items: touch },
+    ...(sound ? [{ label: 'Sound mode', items: SOUND_GESTURES }] : []),
+    ...(camera ? [{ label: 'Camera', items: CAMERA_GESTURES }] : [])
+  ]
 }
 
 export function BindingEditor({
@@ -53,7 +88,9 @@ export function BindingEditor({
 }): React.JSX.Element {
   const [b, setB] = React.useState<Binding | null>(initial)
   const [labelTouched, setLabelTouched] = React.useState(false)
-  const [pendingQuit, setPendingQuit] = React.useState<{ prev: Action; next: Action } | null>(null)
+  const [pending, setPending] = React.useState<{ next: Action; why: string } | null>(null)
+  const hello = useStore((s) => s.hello)
+  const catalog = useStore((s) => s.catalog)
 
   React.useEffect(() => {
     setB(initial)
@@ -68,17 +105,22 @@ export function BindingEditor({
     )
 
   const patch = (p: Partial<Binding>): void => setB((cur) => (cur ? { ...cur, ...p } : cur))
-  const applyAction = (action: Action): void => {
-    patch({ action, ...(labelTouched ? {} : { label: describeAction(action) }) })
+  const applyAction = (action: Action): void => patch({ action, ...(labelTouched ? {} : { label: describeAction(action) }) })
+  const destructiveWhy = (a: Action): string | null => {
+    if (isDestructive(a)) return 'A stray tap would quit the app in front of you. Apps may ask to save first, but not all do.'
+    if (a.kind === 'integration' && findCommand(catalog, a)?.destructive) return 'This command can lose work in the app. Consider a double tap or holding a modifier.'
+    return null
   }
   const setAction = (action: Action): void => {
-    if (isDestructive(action) && !isDestructive(b.action)) setPendingQuit({ prev: b.action, next: action })
+    const why = destructiveWhy(action)
+    if (why && !destructiveWhy(b.action)) setPending({ next: action, why })
     else applyAction(action)
   }
   const setGesture = (g: GestureKind): void => {
-    if (ZONELESS_GESTURES.includes(g)) patch({ gesture: g, zone: null, zones: null })
-    else if (g === 'sequence') patch({ gesture: g, zone: null, zones: [b.zone ?? config.zones[0]?.id ?? '', config.zones[1]?.id ?? ''] })
-    else patch({ gesture: g, zone: b.zone ?? b.zones?.[0] ?? config.zones[0]?.id ?? null, zones: null })
+    if (CAMERA_GESTURES.includes(g)) patch({ gesture: g, zone: AIR_ZONE, zones: null, knob: g === 'pinch_hold' ? (b.knob ?? { axis: 'y', stepPx: 24 }) : null })
+    else if (ZONELESS_GESTURES.includes(g)) patch({ gesture: g, zone: null, zones: null, knob: null })
+    else if (g === 'sequence') patch({ gesture: g, zone: null, zones: [b.zone ?? config.zones[0]?.id ?? '', config.zones[1]?.id ?? ''], knob: null })
+    else patch({ gesture: g, zone: (b.zone === AIR_ZONE ? null : b.zone) ?? b.zones?.[0] ?? config.zones[0]?.id ?? null, zones: null, knob: null })
   }
 
   const preview = { ...config, bindings: isNew ? [...config.bindings, b] : config.bindings.map((x) => (x.id === b.id ? b : x)) }
@@ -89,13 +131,32 @@ export function BindingEditor({
     !(b.action.kind === 'macro' && b.action.steps.length === 0)
 
   const test = async (): Promise<void> => {
-    if (!(await ensureApproved([b.action], 'Testing this action.'))) return
-    if (!client.send({ type: 'test_action', action: b.action })) toast('Could not reach the service')
+    const approved = await ensureActionApproved(b.action, 'Testing this action.')
+    if (!approved) return
+    if (approved !== b.action) patch({ action: approved })
+    if (!client.send({ type: 'test_action', action: approved })) toast('Could not reach the helper')
   }
   const done = async (): Promise<void> => {
-    if (!(await ensureApproved([b.action], `Saving "${b.label.trim() || describeAction(b.action)}".`))) return
-    onSave({ ...b, label: b.label.trim() || describeAction(b.action) })
+    const label = b.label.trim() || describeAction(b.action)
+    const approved = await ensureActionApproved(b.action, `Saving "${label}".`)
+    if (!approved) return
+    let inverse = b.knob?.inverse ?? null
+    if (inverse) {
+      inverse = await ensureActionApproved(inverse, `Saving "${label}", the opposite direction.`)
+      if (!inverse) return
+    }
+    onSave({ ...b, action: approved, label, ...(b.knob ? { knob: { ...b.knob, inverse } } : {}) })
   }
+  const revoke = (): void => {
+    for (const p of riskyParts(b.action)) if (p.approvedHash) client.send({ type: 'revoke_action', hash: p.approvedHash })
+    const strip = (a: Action): Action =>
+      a.kind === 'macro' ? { ...a, steps: a.steps.map((s) => ({ ...s, approvedHash: undefined }) as typeof s) } : ({ ...a, approvedHash: undefined } as Action)
+    patch({ action: JSON.parse(JSON.stringify(strip(b.action))) as Action })
+    toast('Approval revoked', { description: 'It will not run until you approve it again.' })
+  }
+
+  const sensors = hello?.sensors
+  const groups = gestureGroups(!!sensors?.sound, !!sensors?.camera)
 
   return (
     <>
@@ -106,14 +167,12 @@ export function BindingEditor({
         footer={
           <>
             {!isNew && (
-              <Button variant="danger" className="-ml-2" onClick={() => onDelete(b.id)}>
-                <Trash2 />
+              <Button variant="text" onClick={() => onDelete(b.id)}>
                 Delete
               </Button>
             )}
-            <div className="ml-auto flex gap-2">
-              <Button variant="outline" onClick={() => void test()}>
-                <Play />
+            <div className="ml-auto flex items-center gap-5">
+              <Button variant="text" onClick={() => void test()}>
                 Test
               </Button>
               <Button variant="primary" disabled={!valid} onClick={() => void done()}>
@@ -123,55 +182,106 @@ export function BindingEditor({
           </>
         }
       >
-        <div className="flex flex-col px-6 pb-8">
+        <div className="flex flex-col px-6 pb-10">
           <SectionLabel>When</SectionLabel>
-          <div className="flex flex-col gap-4 pt-1 pb-6 shadow-[0_1px_0_var(--hairline)]">
-            <div className="grid grid-cols-[88px_1fr] items-center gap-x-4 gap-y-3">
-              <span className="text-[12px] text-ink-2">Gesture</span>
+          <div className="flex flex-col gap-3 pt-1 pb-6 shadow-[0_1px_0_var(--hairline)]">
+            <Row label="Gesture">
               <Select value={b.gesture} onValueChange={(v) => setGesture(v as GestureKind)}>
                 <SelectTrigger aria-label="Gesture">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {GESTURES.map((g) => (
-                    <SelectItem key={g} value={g}>
-                      {GESTURE_LABEL[g]}
-                    </SelectItem>
+                  {groups.map((g) => (
+                    <SelectGroup key={g.label}>
+                      <SelectLabel>{g.label}</SelectLabel>
+                      {g.items.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          <span className="flex items-center gap-2">
+                            {GESTURE_LABEL[k]}
+                            {PRO_GESTURES.includes(k) && <ProTag />}
+                          </span>
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   ))}
                 </SelectContent>
               </Select>
-              <span />
-              <p className="-mt-1.5 text-[12px] text-ink-3">{GESTURE_HINT[b.gesture]}</p>
+              <p className="mt-1.5 text-[12px] text-ink-3">{GESTURE_HINT[b.gesture]}</p>
+            </Row>
 
-              {b.gesture === 'sequence' ? (
-                <>
-                  <span className="text-[12px] text-ink-2">First</span>
+            {b.gesture === 'sequence' ? (
+              <>
+                <Row label="First">
                   <ZoneSelect config={config} label="First zone" value={b.zones?.[0] ?? null} onChange={(id) => patch({ zones: [id, b.zones?.[1] ?? ''] })} />
-                  <span className="text-[12px] text-ink-2">Then</span>
+                </Row>
+                <Row label="Then">
                   <ZoneSelect config={config} label="Second zone" value={b.zones?.[1] || null} onChange={(id) => patch({ zones: [b.zones?.[0] ?? '', id] })} />
-                </>
-              ) : !ZONELESS_GESTURES.includes(b.gesture) ? (
-                <>
-                  <span className="text-[12px] text-ink-2">Zone</span>
-                  <ZoneSelect config={config} label="Zone" value={b.zone} onChange={(id) => patch({ zone: id })} />
-                </>
-              ) : null}
+                </Row>
+              </>
+            ) : !ZONELESS_GESTURES.includes(b.gesture) ? (
+              <Row label="Zone">
+                <ZoneSelect config={config} label="Zone" value={b.zone} onChange={(id) => patch({ zone: id })} />
+              </Row>
+            ) : null}
 
-              <span className="text-[12px] text-ink-2">Holding</span>
+            {b.gesture === 'pinch_hold' && (
+              <>
+                <Row label="Knob">
+                  <div className="flex items-center gap-3">
+                    <Segmented
+                      aria-label="Knob direction"
+                      value={b.knob?.axis ?? 'y'}
+                      onValueChange={(axis) => patch({ knob: { stepPx: 24, ...b.knob, axis } })}
+                      options={[
+                        { value: 'y', label: 'Up and down' },
+                        { value: 'x', label: 'Left and right' }
+                      ]}
+                    />
+                    <label className="flex h-7 items-center gap-1 rounded-[6px] bg-fill px-2 shadow-[inset_0_0_0_1px_var(--hairline)]">
+                      <span className="tag-mono text-ink-3">Step</span>
+                      <input
+                        type="number"
+                        min={4}
+                        max={200}
+                        value={b.knob?.stepPx ?? 24}
+                        aria-label="Hand movement per step, camera pixels"
+                        onChange={(e) => patch({ knob: { axis: 'y', ...b.knob, stepPx: Math.max(4, Number(e.target.value) || 24) } })}
+                        className="num w-9 bg-transparent text-right text-[12px] text-ink outline-none"
+                      />
+                      <span className="tag-mono text-ink-3">px</span>
+                    </label>
+                  </div>
+                  <p className="mt-1.5 text-[12px] text-ink-3">Each step runs the action below once; moving the other way runs the opposite action.</p>
+                </Row>
+                <Row label="Opposite" align="start">
+                  <div className="flex flex-col gap-3">
+                    <KindSelect
+                      allowMacro={false}
+                      value={b.knob?.inverse?.kind ?? 'volume'}
+                      onChange={(k) => patch({ knob: { axis: 'y', stepPx: 24, ...b.knob, inverse: defaultAction(k) } })}
+                    />
+                    {b.knob?.inverse && <ActionFields compact action={b.knob.inverse} onChange={(a) => patch({ knob: { axis: 'y', stepPx: 24, ...b.knob, inverse: a } })} />}
+                  </div>
+                </Row>
+              </>
+            )}
+
+            <Row label="While holding">
               <ModifierChips label="Modifier keys held" value={b.modifiers} onChange={(modifiers) => patch({ modifiers })} />
+            </Row>
 
-              <span className="text-[12px] text-ink-2">In</span>
-              <AppPicker value={b.app} onChange={(app) => patch({ app })} />
-            </div>
+            <Row label="In">
+              <div className="flex items-center gap-2">
+                <div className="flex-1">
+                  <AppPicker value={b.app} onChange={(app) => patch({ app })} />
+                </div>
+                {b.app !== '*' && <ProTag feature="Per-app layers" />}
+              </div>
+            </Row>
             {conflicts.length > 0 && (
-              <ul className="flex flex-col gap-1.5">
+              <ul className="flex flex-col gap-1 pl-[112px]">
                 {conflicts.map((c, i) => (
-                  <li key={i} className="flex gap-2 text-[12px] leading-relaxed text-ink-2">
-                    {c.kind === 'delay' ? (
-                      <Info className="mt-0.5 size-3.5 shrink-0 text-ink-3" />
-                    ) : (
-                      <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-danger" />
-                    )}
+                  <li key={i} className="text-[12px] leading-relaxed text-ink-2">
                     {c.message}
                   </li>
                 ))}
@@ -181,17 +291,17 @@ export function BindingEditor({
 
           <SectionLabel className="mt-4">Do</SectionLabel>
           <div className="flex flex-col gap-4 pt-1">
-            <KindSelect value={b.action.kind} onChange={(k) => setAction(defaultAction(k))} />
-            <ActionFields action={b.action} onChange={setAction} />
-            <ApprovalNote action={b.action} />
-            {isDestructive(b.action) && (
-              <p className="flex gap-2 text-[12px] leading-relaxed text-ink-2">
-                <TriangleAlert className="mt-0.5 size-3.5 shrink-0 text-danger" />
-                Quits whichever app is in front. Apps may ask to save first, but not all do.
-              </p>
-            )}
-            <label className="mt-2 flex flex-col gap-1.5">
-              <span className="text-[12px] text-ink-2">Name</span>
+            <Row label="Action">
+              <KindSelect value={b.action.kind} onChange={(k) => setAction(defaultAction(k))} />
+            </Row>
+            <div className={b.action.kind === 'macro' ? '' : 'pl-[112px]'}>
+              <ActionFields action={b.action} onChange={setAction} />
+            </div>
+            <div className="pl-[112px]">
+              <ApprovalNote action={b.action} onRevoke={revoke} />
+            </div>
+            {destructiveWhy(b.action) && <p className="pl-[112px] text-[12px] leading-relaxed text-ink-2">{destructiveWhy(b.action)}</p>}
+            <Row label="Name">
               <Input
                 value={b.label}
                 placeholder={describeAction(b.action)}
@@ -200,20 +310,21 @@ export function BindingEditor({
                   patch({ label: e.target.value })
                 }}
               />
-              <span className="text-[12px] text-ink-3">Shown in the HUD when it runs.</span>
-            </label>
+              <p className="mt-1.5 text-[12px] text-ink-3">Shown at the top of the screen when it runs.</p>
+            </Row>
           </div>
         </div>
       </Sheet>
       <Confirm
-        open={!!pendingQuit}
-        onOpenChange={(o) => !o && setPendingQuit(null)}
-        title="Bind a gesture to quitting apps?"
-        body="A stray tap would quit the app in front of you. Apps may ask to save first, but not all do. Consider a double or triple tap, or holding a modifier."
-        confirmLabel="Use quit"
+        open={!!pending}
+        onOpenChange={(o) => !o && setPending(null)}
+        title="Bind a gesture to something that can lose work?"
+        body={pending?.why ?? ''}
+        confirmLabel="Use it anyway"
+        destructive
         onConfirm={() => {
-          if (pendingQuit) applyAction(pendingQuit.next)
-          setPendingQuit(null)
+          if (pending) applyAction(pending.next)
+          setPending(null)
         }}
       />
     </>
