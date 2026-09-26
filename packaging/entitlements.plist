@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Ghostkeys hardened-runtime entitlements.
+
+  Ghostkeys ships WITHOUT the App Sandbox: the daemon reads low-level IOKit sensor
+  streams and posts synthetic keyboard/media events (see daemon/Sources/ghostkeysd/Actions),
+  neither of which is available to a sandboxed process. Hardened Runtime is still required
+  for notarization, so every capability it gates has to be requested explicitly here instead.
+
+  Keep this list exactly as small as what the daemon actually uses:
+    - automation.apple-events : ActionRunner can drive other apps (e.g. media control,
+      "open app" macro steps) via Apple Events / AppleScript.
+    - device.audio-input      : GhostkeysAcoustics, the optional friction/knuckle-vs-fingertip
+      sound mode, reads the microphone.
+    - device.camera           : GhostkeysVision, the optional M4/M5 Desk View hand-tracking
+      add-on, reads the camera.
+
+  Do not add com.apple.security.app-sandbox=true here — it is intentionally absent.
+-->
+<plist version="1.0">
+<dict>
+  <key>com.apple.security.automation.apple-events</key>
+  <true/>
+  <key>com.apple.security.device.audio-input</key>
+  <true/>
+  <key>com.apple.security.device.camera</key>
+  <true/>
+</dict>
+</plist>

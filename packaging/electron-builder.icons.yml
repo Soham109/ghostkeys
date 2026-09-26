@@ -1,0 +1,22 @@
+# Overrides merged on top of app/electron-builder.yml by build-app.sh (via `electron-builder --config`).
+#
+# This file exists so packaging/ can supply the real app icon and the built daemon binary
+# without editing anything inside app/. Paths below are resolved relative to app/, since that's
+# where electron-builder actually runs (it's the directory with package.json).
+mac:
+  icon: ../assets/icon/AppIcon.icns
+extraResources:
+  - from: ../packaging/build/ghostkeysd
+    to: ghostkeysd
+  - from: ../assets/tray/GhostkeysTemplate.png
+    to: trayTemplate.png
+  - from: ../assets/tray/GhostkeysTemplate@2x.png
+    to: trayTemplate@2x.png
+  - from: ../assets/tray/GhostkeysActive.png
+    to: trayActive.png
+  - from: ../assets/tray/GhostkeysActive@2x.png
+    to: trayActive@2x.png
+  - from: ../assets/tray/GhostkeysPausedTemplate.png
+    to: trayPausedTemplate.png
+  - from: ../assets/tray/GhostkeysPausedTemplate@2x.png
+    to: trayPausedTemplate@2x.png

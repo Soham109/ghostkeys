@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <title>Ghostkeys — Open Graph</title>
+  
+  <defs>
+    <radialGradient id="void" cx="30%" cy="42%" r="75%">
+      <stop offset="0%" stop-color="#141416"/>
+      <stop offset="55%" stop-color="#0A0A0B"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </radialGradient>
+    <filter id="softGlow" x="-200%" y="-200%" width="500%" height="500%">
+      <feGaussianBlur stdDeviation="18"/>
+    </filter>
+    <filter id="markShadow" x="-60%" y="-60%" width="220%" height="220%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <filter id="grain">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" stitchTiles="stitch" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.03 0"/>
+    </filter>
+    <clipPath id="canvasClip"><rect width="1200" height="630"/></clipPath>
+  </defs>
+  <g clip-path="url(#canvasClip)">
+    <rect width="1200" height="630" fill="url(#void)"/>
+    <rect width="1200" height="630" filter="url(#grain)"/>
+    <line x1="0" y1="534" x2="1200" y2="534" stroke="#1F1F23" stroke-width="1"/>
+    
+  <g>
+    <circle cx="218.3" cy="321.7" r="64.2" fill="#FF5B1F" opacity="0.16" filter="url(#softGlow)"/>
+    <rect x="118.3" y="155.0" width="266.7" height="266.7" rx="66.7"
+          fill="none" stroke="#8A8A90" stroke-width="30.0" stroke-opacity="0.4" filter="url(#markShadow)"/>
+    <rect x="85.0" y="188.3" width="266.7" height="266.7" rx="66.7"
+          fill="none" stroke="#EDEDEF" stroke-width="30.0" filter="url(#markShadow)"/>
+    <circle cx="218.3" cy="321.7" r="29.2" fill="#FF5B1F"/>
+    <ellipse cx="209.0" cy="311.8" rx="9.9" ry="6.4" fill="#FFC9A8" opacity="0.85"/>
+  </g>
+    <text x="440" y="256" font-family="Geist Medium" font-size="80" letter-spacing="-2" fill="#EDEDEF">ghostkeys</text>
+    <text x="442" y="322" font-size="34" fill="#8A8A90"><tspan font-family="Geist" font-weight="400">Your MacBook has </tspan><tspan font-family="Instrument Serif" font-style="italic" font-size="38">hidden</tspan><tspan font-family="Geist" font-weight="400"> keys.</tspan></text>
+    <text x="442" y="504" font-family="Geist Mono" font-weight="400" font-size="14" letter-spacing="2" fill="#55555B">8 ZONES</text>
+    <text x="580" y="504" font-family="Geist Mono" font-weight="400" font-size="14" letter-spacing="2" fill="#55555B">0 BUTTONS</text>
+    <circle cx="746" cy="499" r="3" fill="#FF5B1F"/>
+    <text x="442" y="578" font-family="Geist Mono" font-weight="400" font-size="14" letter-spacing="2" fill="#55555B">GHOSTKEYS.COM</text>
+  </g>
+</svg>

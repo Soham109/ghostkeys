@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">
+  <title>Ghostkeys tray icon (active)</title>
+  <defs>
+    <filter id="glow" x="-200%" y="-200%" width="500%" height="500%">
+      <feGaussianBlur stdDeviation="1.400"/>
+    </filter>
+  </defs>
+  <rect x="2.778" y="1.000" width="14.222" height="14.222"
+        rx="3.556" fill="none" stroke="#000000" stroke-width="2.444" opacity="0.4"/>
+  <rect x="1.000" y="2.778" width="14.222" height="14.222"
+        rx="3.556" fill="none" stroke="#000000" stroke-width="2.444"/>
+  <circle cx="8.111" cy="9.889" r="2.333" fill="#FF5B1F" opacity="0.5" filter="url(#glow)"/>
+  <circle cx="8.111" cy="9.889" r="1.556" fill="#FF5B1F"/>
+</svg>
