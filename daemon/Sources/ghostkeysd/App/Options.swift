@@ -6,10 +6,12 @@ struct Options {
     var dryRun = false
     var dumpIMUSeconds: Double?
     var selftest = false
+    var parentPID: Int32?
 
     static let usage = """
-    usage: ghostkeysd [--port N] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest]
+    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest]
       --port N          WebSocket port on 127.0.0.1 (default 47823)
+      --parent-pid PID  exit (restoring the sensors) when this process ends; the parent process is always watched too
       --verbose         debug logging to stderr
       --dry-run         log actions instead of running them
       --dump-imu S      print S seconds of motion samples as CSV to stdout, then exit
@@ -30,6 +32,9 @@ struct Options {
             case "--port":
                 guard let p = UInt16(value()), p > 0 else { fail("invalid port") }
                 o.port = p
+            case "--parent-pid":
+                guard let p = Int32(value()), p > 1 else { fail("invalid parent pid") }
+                o.parentPID = p
             case "--verbose", "-v": o.verbose = true
             case "--dry-run": o.dryRun = true
             case "--dump-imu":

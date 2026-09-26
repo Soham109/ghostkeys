@@ -27,6 +27,9 @@ func installSignalHandlers(_ onSignal: @escaping () -> Void) {
     }
 }
 
+// One daemon at a time: two would fight over the sensor driver settings. Applies to --selftest / --dump-imu too.
+InstanceLock.acquireOrExit(directory: ConfigStore().directory)
+
 if options.selftest {
     installSignalHandlers {}
     exit(SelfTest.run())
@@ -40,6 +43,13 @@ if let seconds = options.dumpIMUSeconds {
 
 let daemon = Daemon(options: options)
 installSignalHandlers { daemon.stop() }
+let parentWatch = ParentWatch { reason in
+    Log.info("\(reason); shutting down")
+    daemon.stop()
+    SPUDriverControl.shared.restore()
+    exit(0)
+}
+parentWatch.start(explicitParent: options.parentPID)
 do {
     try daemon.start()
 } catch {
