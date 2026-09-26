@@ -17,7 +17,7 @@ Read the framing line once, then ask the questions in order. Don't lead the answ
 5. *(Now show Ghostkeys or describe it in one sentence: "It turns blank spots on your MacBook, like the palm rests or the speaker grilles, into tappable buttons using the built-in sensors.")* What's your first reaction?
 6. What's the first thing you'd want to bind to a tap, if you set this up right now?
 7. What would make you *not* trust something like this running in the background all the time?
-8. Would you pay for this? If yes, does a one-time $24 purchase feel fair, or does it feel like it should be free / a subscription / something else?
+8. Would you pay for this? If yes, does a one-time $29 purchase feel fair ($19 at launch), or does it feel like it should be free / a subscription / something else?
 
 ## Part 2: Hands-on test protocol (about 2 minutes of active use)
 

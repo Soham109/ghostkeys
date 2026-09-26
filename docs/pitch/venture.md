@@ -21,12 +21,18 @@ This is a "prosumer" purchase (a serious hobbyist or power user buying for thems
 
 ## Pricing
 
-| Tier | Price | What's included |
-| --- | --- | --- |
-| Free | $0 | The default zone set (palm rests, grilles, top strip, edges, lid), basic gestures (tap, double), one global binding set |
-| Pro | $24 one-time | Unlimited custom zones, the full gesture grammar (triple, sequence, rhythm, lid nudge, tilt, cover), per-app binding layers, macros, the full preset library, HUD customization |
+The full feature matrix and licensing model live in `docs/pricing/PRICING.md`; the tiers:
 
-One-time, not a subscription. That's a deliberate stance against subscription fatigue, and it matches how the closest comparable tool in this space, BetterTouchTool, already prices: pay once for capability, with no unfamiliar billing model stacked on top of an unfamiliar product.
+| Tier | Price | For |
+| --- | --- | --- |
+| Free | $0 | Both palm rests, tap/double/triple tap, 10 bindings, full calibration, browsing all 200+ presets |
+| Pro | $29 one-time, with 12 months of updates (launch price $19 for the first 14 days) | Every surface and zone you draw, the full gesture grammar, per-app layers, macros, app integrations, sound mode, camera add-on, and the AI macro composer |
+| Pro Student | $15 one-time, same as Pro | Verified students and teachers |
+| Teams | $49 per seat per year, 3 seat minimum | Everything in Pro, plus IT deployment, the finance preset pack, and priority support |
+
+After the first 12 months, Pro buyers keep whatever version they're on; another year of updates is $15, optional, or $59 once for updates forever. The first 1,000 buyers are "Founding" users: lifetime updates, a name in the credits, and a vote on the preset roadmap.
+
+One-time, not a subscription, matches how Mac utility buyers already spend: BetterTouchTool and Keyboard Maestro both sell one-time licenses. Ghostkeys has no per-user server cost (detection, calibration, and actions all run on the laptop), so the one genuinely recurring cost is the optional AI macro composer, and that's the only thing metered: free and unlimited with your own model key, 100 credits included with Pro, then $5 per 500 credits that never expire.
 
 ## Market signal
 
@@ -38,11 +44,26 @@ Two other signals worth having on hand alongside that number:
 - **Knock** already charges $1.99 for essentially the same two-zone knock-counting idea, and people pay it. That's proof that willingness to pay exists even at the simplest possible version of this feature.
 - At least two more entrants (**spank**, a novelty single-gesture app, and **sonar.cool**, hand-wave gestures sensed a different way) have shown up in the same window. When four separate teams converge on "use the sensors already in the laptop as input" in the same month, that's a category forming, not a coincidence. And every one of them has shipped a much narrower version of the idea than what's in `docs/PROTOCOL.md` here.
 
+## What the numbers could look like
+
+These come straight from `docs/pricing/PRICING.md` and are labeled there, and here, as assumptions: nothing below has been through real app-store or checkout data yet.
+
+- Downloads in the first 12 months, riding the MacTap wave: 200,000 (assumption)
+- Finish calibration, the real "activated" number, not just a download: 100,000, an assumed 50 percent of downloads
+- Buy Pro within 90 days: 4,000, an assumed 4 percent of activated users (freemium utilities typically land at 2 to 5 percent)
+- Blended average price actually collected per Pro sale, once the $19 launch window, the $15 student price, and Founding-user pricing mix in: about $24. That's a blended average, not the sticker price; the sticker price is $29.
+- Pro revenue: about $96,000 (4,000 sales times the ~$24 blended price)
+- Teams: 25 teams of 10 seats at $49 per seat per year, about $12,000 per year
+- Total, year one: about $108,000, against store fees near 7 percent and close to zero server cost (Lemon Squeezy is the store; the app itself runs entirely on the buyer's Mac)
+- Update-renewal assumption for year two: about 30 percent of Pro buyers pay the optional $15 renewal
+
+Worth being direct about which levers matter most: the 200,000-download figure and the 4 percent conversion rate move this outcome more than anything else here, and neither is proven. They're a reasonable starting assumption given MacTap's reach and typical freemium conversion rates, not a forecast to defend under pressure.
+
 ## Competition
 
 | Product | Price | Zones / range | Sensing | What it's missing |
 | --- | --- | --- | --- | --- |
-| **Ghostkeys** | Free / $24 one-time (Pro) | User-drawn zones anywhere on the case, full gesture grammar, per-app layers | Motion sensor + gyro (learned per-user model), lid angle, light | N/A (our own product) |
+| **Ghostkeys** | Free / $29 one-time (Pro), $19 at launch | User-drawn zones anywhere on the case, full gesture grammar, per-app layers | Motion sensor + gyro (learned per-user model), lid angle, light | N/A (our own product) |
 | MacTap | Free | Left/right knock only, no drawn zones | Knock counting | Zone granularity, gesture range, per-app behavior |
 | Knock | $1.99 | ~2 fixed zones | Knock counting | Same ceiling as MacTap, plus it's paid for less |
 | spank | Free / novelty | 1 gesture | Single-purpose | Not a general input surface |
