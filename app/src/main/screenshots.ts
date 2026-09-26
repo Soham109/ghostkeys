@@ -33,7 +33,18 @@ export const SHOTS = [
   'live-feed-enter',
   'first-launch-draw',
   'command-palette',
-  'service-offline'
+  'service-offline',
+  'hands',
+  'guide',
+  'guide-light',
+  'guide-camera',
+  'guide-motion',
+  'guide-sonar',
+  'demo-editor',
+  'demo-picker',
+  'demo-library',
+  'onboarding-gestures',
+  'demo-frames'
 ] as const
 
 /** Shots captured mid-animation: grab the frame right away. */

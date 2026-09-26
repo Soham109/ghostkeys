@@ -24,6 +24,8 @@ async function reset(theme: 'dark' | 'light' = 'dark'): Promise<void> {
     presetsOpen: false,
     forceOffline: false,
     themeOverride: theme,
+    debugHands: false,
+    debugFrames: false,
     route: 'live'
   })
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
@@ -284,6 +286,69 @@ const SHOTS: Record<string, () => Promise<void>> = {
     armDrawIn()
     useStore.getState().navigate('live')
     await sleep(560)
+  },
+  guide: async () => {
+    useStore.getState().navigate('guide')
+    await sleep(1150)
+  },
+  'guide-light': async () => {
+    useStore.getState().navigate('guide')
+    await sleep(500)
+    document.getElementById('g-sequence')?.scrollIntoView({ block: 'start' })
+    await sleep(900)
+  },
+  'guide-camera': async () => {
+    useStore.getState().navigate('guide')
+    await sleep(300)
+    clickText('nav[aria-label="Gesture groups"] button', 'Camera')
+    await sleep(1300)
+  },
+  'guide-motion': async () => {
+    useStore.getState().navigate('guide')
+    await sleep(300)
+    clickText('nav[aria-label="Gesture groups"] button', 'Motion')
+    await sleep(1000)
+  },
+  'guide-sonar': async () => {
+    useStore.getState().navigate('guide')
+    await sleep(300)
+    clickText('nav[aria-label="Gesture groups"] button', 'Sonar')
+    await sleep(1400)
+  },
+  'demo-frames': async () => {
+    useStore.setState({ debugFrames: true })
+    await sleep(500)
+  },
+  'demo-editor': async () => {
+    await openSeed({ id: 'b-demo', enabled: true, gesture: 'sequence', zone: null, zones: ['left-palm', 'right-palm'], modifiers: [], app: '*', label: 'Fill the screen', action: { kind: 'window', op: 'maximize' } })
+    await sleep(400)
+  },
+  'demo-picker': async () => {
+    await openSeed({ id: 'b-demo2', enabled: true, gesture: 'double', zone: 'right-palm', zones: null, modifiers: [], app: '*', label: 'Play or pause', action: { kind: 'media', command: 'playpause' } })
+    ;(document.querySelector('[aria-label="Gesture"]') as HTMLElement | null)?.click()
+    await sleep(300)
+    const opt = document.getElementById('gp-knock_knuckle')
+    opt?.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }))
+    opt?.dispatchEvent(new PointerEvent('pointerenter', { bubbles: false }))
+    await sleep(900)
+  },
+  'demo-library': async () => {
+    useStore.getState().navigate('bindings')
+    await sleep(300)
+    useStore.setState({ presetsOpen: true })
+    await sleep(600)
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    const input = document.querySelector('[role=dialog] [cmdk-input]') as HTMLElement | null
+    input?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }))
+    await sleep(900)
+  },
+  'onboarding-gestures': async () => {
+    useStore.setState({ onboarding: true, onboardingStep: 0 })
+    await sleep(3900)
+  },
+  hands: async () => {
+    useStore.setState({ debugHands: true })
+    await sleep(300)
   },
   'command-palette': async () => {
     useStore.getState().navigate('live')

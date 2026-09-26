@@ -308,6 +308,7 @@ export function BindingsScreen(): React.JSX.Element {
         onOpenChange={(o) => useStore.setState({ presetsOpen: o })}
         onPick={pickPreset}
         onApplyLayout={(l) => setPendingLayout(l)}
+        suggest={(p) => freshBinding(draft, { action: p.action, app: p.app ?? '*' })}
       />
       <Confirm
         open={!!confirmDelete}

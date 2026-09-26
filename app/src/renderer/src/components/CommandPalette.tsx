@@ -10,7 +10,8 @@ const GO: { route: Route; label: string; keys: string }[] = [
   { route: 'bindings', label: 'Gestures and actions', keys: '⌘3' },
   { route: 'calibration', label: 'Calibration', keys: '⌘4' },
   { route: 'sensors', label: 'Sensors', keys: '⌘5' },
-  { route: 'settings', label: 'Settings', keys: '⌘6' }
+  { route: 'settings', label: 'Settings', keys: '⌘6' },
+  { route: 'guide', label: 'Gesture guide', keys: '⌘7' }
 ]
 
 export function CommandPalette(): React.JSX.Element {

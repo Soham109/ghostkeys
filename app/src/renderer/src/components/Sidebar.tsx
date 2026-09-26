@@ -10,7 +10,8 @@ export const NAV: { route: Route; label: string }[] = [
   { route: 'bindings', label: 'Gestures and actions' },
   { route: 'calibration', label: 'Calibration' },
   { route: 'sensors', label: 'Sensors' },
-  { route: 'settings', label: 'Settings' }
+  { route: 'settings', label: 'Settings' },
+  { route: 'guide', label: 'Gesture guide' }
 ]
 
 /** A dot that lights in --signal for a moment whenever a tap is felt, and breathes slowly when idle. */

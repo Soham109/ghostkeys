@@ -2,9 +2,7 @@ import * as React from 'react'
 import { toast } from 'sonner'
 import {
   CAMERA_GESTURES,
-  GESTURES,
   GESTURE_HINT,
-  GESTURE_LABEL,
   SOUND_GESTURES,
   ZONELESS_GESTURES,
   AIR_ZONE,
@@ -21,12 +19,14 @@ import { conflictsFor } from '@/lib/bindings'
 import { ensureActionApproved } from '@/lib/approval'
 import { Button } from '../ui/button'
 import { Input, ProTag, Segmented, SectionLabel, ZoneIndex } from '../ui/controls'
-import { Confirm, Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue, Sheet } from '../ui/overlays'
+import { Confirm, Select, SelectContent, SelectItem, SelectTrigger, SelectValue, Sheet } from '../ui/overlays'
 import { ActionFields, KindSelect } from './ActionForm'
 import { AppPicker } from './AppPicker'
 import { ModifierChips } from './KeystrokeRecorder'
 import { ApprovalNote } from './ApprovalBadge'
 import { findCommand } from './IntegrationFields'
+import { GesturePicker, demoFor } from '../gestures/GesturePicker'
+import { GestureDemo } from '../gestures/GestureDemo'
 
 export const PRO_GESTURES: GestureKind[] = ['sequence', 'rhythm', 'lid_nudge', 'cover', 'cover_hold', 'tilt_left', 'tilt_right', ...SOUND_GESTURES, ...CAMERA_GESTURES]
 
@@ -57,16 +57,6 @@ function ZoneSelect({ config, value, onChange, label }: { config: Config; value:
       </SelectContent>
     </Select>
   )
-}
-
-/** Gestures the device can actually do: sound and camera ones only when that hardware exists. */
-function gestureGroups(sound: boolean, camera: boolean): { label: string; items: GestureKind[] }[] {
-  const touch = GESTURES.filter((g) => !SOUND_GESTURES.includes(g) && !CAMERA_GESTURES.includes(g))
-  return [
-    { label: 'Taps and motion', items: touch },
-    ...(sound ? [{ label: 'Sound mode', items: SOUND_GESTURES }] : []),
-    ...(camera ? [{ label: 'Camera', items: CAMERA_GESTURES }] : [])
-  ]
 }
 
 export function BindingEditor({
@@ -156,7 +146,6 @@ export function BindingEditor({
   }
 
   const sensors = hello?.sensors
-  const groups = gestureGroups(!!sensors?.sound, !!sensors?.camera)
 
   return (
     <>
@@ -186,28 +175,16 @@ export function BindingEditor({
           <SectionLabel>When</SectionLabel>
           <div className="flex flex-col gap-3 pt-1 pb-6 shadow-[0_1px_0_var(--hairline)]">
             <Row label="Gesture">
-              <Select value={b.gesture} onValueChange={(v) => setGesture(v as GestureKind)}>
-                <SelectTrigger aria-label="Gesture">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {groups.map((g) => (
-                    <SelectGroup key={g.label}>
-                      <SelectLabel>{g.label}</SelectLabel>
-                      {g.items.map((k) => (
-                        <SelectItem key={k} value={k}>
-                          <span className="flex items-center gap-2">
-                            {GESTURE_LABEL[k]}
-                            {PRO_GESTURES.includes(k) && <ProTag />}
-                          </span>
-                        </SelectItem>
-                      ))}
-                    </SelectGroup>
-                  ))}
-                </SelectContent>
-              </Select>
+              <GesturePicker value={b.gesture} onChange={setGesture} sound={!!sensors?.sound} camera={!!sensors?.camera} pro={PRO_GESTURES} zone={b.zone} />
               <p className="mt-1.5 text-[12px] text-ink-3">{GESTURE_HINT[b.gesture]}</p>
             </Row>
+            <div className="pl-[112px]">
+              <GestureDemo
+                {...demoFor(b)}
+                className="aspect-[1.5676] w-full rounded-[6px] bg-sunken shadow-[inset_0_0_0_1px_var(--hairline)]"
+                label={`How to do it: ${GESTURE_HINT[b.gesture]}`}
+              />
+            </div>
 
             {b.gesture === 'sequence' ? (
               <>

@@ -102,6 +102,7 @@ export function registerNativeIpc(getMain: () => BrowserWindow | null): void {
         go('calibration', 'Calibration', 4),
         go('sensors', 'Sensors', 5),
         go('settings', 'Settings', 6),
+        go('guide', 'Gesture Guide', 7),
         { type: 'separator' },
         { label: 'Search and Commands', accelerator: 'CommandOrControl+K', click: send('palette') },
         { label: 'Pause or Resume Ghostkeys', accelerator: 'CommandOrControl+Shift+P', click: send('pause-toggle') },
@@ -114,6 +115,7 @@ export function registerNativeIpc(getMain: () => BrowserWindow | null): void {
     {
       role: 'help',
       submenu: [
+        { label: 'Gesture Guide', click: send('go:guide') },
         { label: 'Welcome Tour', click: send('tour') },
         { label: 'Privacy and Safety', click: send('go:settings') },
         ...(dev ? [{ label: 'Open the Guide Folder', click: () => void shell.openPath(`${app.getAppPath()}/../docs/guide`) }] : [])

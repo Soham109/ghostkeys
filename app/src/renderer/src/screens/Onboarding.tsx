@@ -7,15 +7,15 @@ import { defaultZones } from '@shared/defaults'
 import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/Logo'
 import { LaptopMap } from '@/components/laptop/LaptopMap'
-import { pointToSvg } from '@/components/laptop/geometry'
+import { GestureDemo, type DemoId } from '@/components/gestures/GestureDemo'
 
-const TOUR = [
-  { zone: 'right-grille', action: 'Volume up' },
-  { zone: 'left-palm', action: 'Play or pause' },
-  { zone: 'top-strip', action: 'Screenshot' },
-  { zone: 'left-edge', action: 'Next tab' },
-  { zone: 'right-palm', action: 'Fill the screen' }
+/** Three gestures that explain the idea: a touch on blank metal, a knock on the grille, a hand over the sensor. */
+const INTRO: { id: string; gesture: DemoId; zone?: string; label: string; action: string }[] = [
+  { id: 'a', gesture: 'double', zone: 'right-palm', label: 'Double tap, right palm rest', action: 'Play or pause' },
+  { id: 'b', gesture: 'tap', zone: 'left-palm', label: 'Tap, left palm rest', action: 'Volume down' },
+  { id: 'c', gesture: 'cover_hold', label: 'Cover the light sensor', action: 'Lock screen' }
 ]
+
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 
 /** Headline lines rise out of a mask, 80 ms apart. */
@@ -63,9 +63,7 @@ export function Onboarding(): React.JSX.Element {
   const [asked, setAsked] = React.useState(false)
   const setStep = (n: number): void => useStore.setState({ onboardingStep: n })
   const zones = React.useMemo(() => defaultZones(family), [family])
-  const tour = TOUR.filter((t) => zones.some((z) => z.id === t.zone))
   const [beat, setBeat] = React.useState(0)
-  const reduce = useReducedMotion()
   const TOTAL = 4
 
   React.useEffect(() => {
@@ -74,9 +72,8 @@ export function Onboarding(): React.JSX.Element {
     return () => clearInterval(t)
   }, [step])
 
-  const demo = tour[beat % tour.length]!
-  const demoIndex = zones.findIndex((z) => z.id === demo.zone)
-  const demoZone = zones[demoIndex]!
+  const introIndex = Math.floor(beat / 2) % INTRO.length
+  const intro = INTRO[introIndex]!
 
   const sensors = hello?.sensors
   const sensorRows: { label: string; key: keyof NonNullable<typeof sensors>; use: string }[] = [
@@ -185,51 +182,35 @@ export function Onboarding(): React.JSX.Element {
         <div className="relative flex min-h-0 flex-col py-10">
           <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(55% 50% at 50% 48%, var(--light-behind), transparent 72%)' }} />
           <div className="relative min-h-0 flex-1" style={{ opacity: step === 2 ? 0.35 : 1, transition: 'opacity 600ms var(--ease-snap)' }}>
-            <LaptopMap
-              family={family}
-              zones={zones}
-              mode="static"
-              showLabels={step !== 2}
-              focusId={step === 0 ? demoZone.id : null}
-              overlay={(layout, px) => {
-                if (step !== 0) return null
-                const r = demoZone.rect
-                const c = pointToSvg(layout, demoZone.surface, demoZone.surface.startsWith('edge') ? 0.5 : r.x + r.w * 0.55, r.y + r.h * 0.5)
-                return (
-                  <g key={beat} pointerEvents="none">
-                    {!reduce &&
-                      [0, 1].map((k) => (
-                        <motion.circle
-                          key={k}
-                          cx={c.x}
-                          cy={c.y}
-                          fill="none"
-                          stroke="var(--signal)"
-                          strokeWidth={1}
-                          vectorEffect="non-scaling-stroke"
-                          initial={{ r: px(6), opacity: k ? 0.7 : 1 }}
-                          animate={{ r: px(44), opacity: 0 }}
-                          transition={{ duration: 0.64, delay: 0.1 + k * 0.09, ease: EASE_OUT }}
-                        />
-                      ))}
-                    <motion.circle cx={c.x} cy={c.y} r={px(2)} fill="var(--signal)" initial={{ opacity: 0 }} animate={{ opacity: [0, 1, 1, 0] }} transition={{ duration: 1.3, times: [0, 0.08, 0.8, 1] }} />
-                  </g>
-                )
-              }}
-            />
+            {step === 0 ? (
+              <AnimatePresence mode="wait">
+                <motion.div
+                  key={intro.id}
+                  className="h-full"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }}
+                >
+                  <GestureDemo gesture={intro.gesture} zone={intro.zone} family={family} zones={zones} className="h-full w-full" label={intro.label} />
+                </motion.div>
+              </AnimatePresence>
+            ) : (
+              <LaptopMap family={family} zones={zones} mode="static" showLabels={step !== 2} />
+            )}
           </div>
           <div className="relative flex h-10 items-center justify-center">
             <AnimatePresence mode="wait">
               {step === 0 && (
                 <motion.p
-                  key={beat}
+                  key={intro.id}
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0, transition: { delay: 0.2, duration: 0.2 } }}
                   exit={{ opacity: 0, transition: { duration: 0.2 } }}
                   className="num text-[11px] tracking-[0.08em] text-ink-2 uppercase"
                 >
-                  <span className="text-signal">{String(demoIndex + 1).padStart(2, '0')}</span>
-                  &nbsp;&nbsp;{demoZone.name}&nbsp;&nbsp;&rarr;&nbsp;&nbsp;{demo.action}
+                  <span className="text-signal">{String(introIndex + 1).padStart(2, '0')}</span>
+                  &nbsp;&nbsp;{intro.label}&nbsp;&nbsp;&rarr;&nbsp;&nbsp;{intro.action}
                 </motion.p>
               )}
             </AnimatePresence>

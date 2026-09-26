@@ -14,6 +14,9 @@ import { CalibrationScreen } from './screens/Calibration'
 import { SensorsScreen } from './screens/Sensors'
 import { SettingsScreen } from './screens/Settings'
 import { Onboarding } from './screens/Onboarding'
+import { GuideScreen } from './screens/Guide'
+import { HandSheet } from './components/gestures/Hand'
+import { FrameSheet } from './components/gestures/FrameSheet'
 
 function useTheme(): void {
   const mode = useStore((s) => s.info?.prefs.theme ?? 'system')
@@ -42,7 +45,7 @@ function useGlobalKeys(): void {
       } else if (e.key === 's') {
         e.preventDefault()
         if (isDirty(s)) void s.saveDraft()
-      } else if (/^[1-6]$/.test(e.key) && !s.onboarding) {
+      } else if (/^[1-7]$/.test(e.key) && !s.onboarding) {
         e.preventDefault()
         s.navigate(ROUTES[Number(e.key) - 1]!)
       } else if (e.key === ',' && !s.onboarding) {
@@ -89,7 +92,8 @@ const SCREENS = {
   bindings: BindingsScreen,
   calibration: CalibrationScreen,
   sensors: SensorsScreen,
-  settings: SettingsScreen
+  settings: SettingsScreen,
+  guide: GuideScreen
 } as const
 
 function useWindowFocus(): void {
@@ -129,6 +133,8 @@ export function App(): React.JSX.Element {
   const everConnected = useStore((s) => s.everConnected)
   const forceOffline = useStore((s) => s.forceOffline)
   const theme = useStore((s) => s.resolvedTheme)
+  const debugHands = useStore((s) => s.debugHands)
+  const debugFrames = useStore((s) => s.debugFrames)
   const [grace, setGrace] = React.useState(true)
   React.useEffect(() => {
     const t = setTimeout(() => setGrace(false), 1400)
@@ -173,6 +179,8 @@ export function App(): React.JSX.Element {
       </div>
       <CommandPalette />
       <Announcer />
+      {debugHands && <HandSheet />}
+      {debugFrames && <FrameSheet />}
       <Toaster
         theme={theme}
         position="bottom-right"

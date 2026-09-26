@@ -17,8 +17,8 @@ import type {
 import type { AppInfo, AppPrefs, DaemonState } from '@shared/ipc'
 import { FREE_LICENSE, type LicenseState } from '@shared/license'
 
-export type Route = 'live' | 'zones' | 'bindings' | 'calibration' | 'sensors' | 'settings'
-export const ROUTES: Route[] = ['live', 'zones', 'bindings', 'calibration', 'sensors', 'settings']
+export type Route = 'live' | 'zones' | 'bindings' | 'calibration' | 'sensors' | 'settings' | 'guide'
+export const ROUTES: Route[] = ['live', 'zones', 'bindings', 'calibration', 'sensors', 'settings', 'guide']
 
 export interface FeedItem {
   id: number
@@ -61,6 +61,9 @@ interface State {
   /** A ready-made binding to open in the editor as new (used by scripted screenshots). */
   editorSeed: Binding | null
   windowFocused: boolean
+  /** Screenshot mode: show the hand drawing sheet. */
+  debugHands: boolean
+  debugFrames: boolean
 
   navigate: (r: Route) => void
   setDraft: (fn: (c: Config) => Config) => void
@@ -111,6 +114,8 @@ export const useStore = create<State>()((set, get) => ({
   editingBinding: null,
   editorSeed: null,
   windowFocused: true,
+  debugHands: false,
+  debugFrames: false,
 
   navigate: (route) => set({ route, paletteOpen: false }),
   setDraft: (fn) => {

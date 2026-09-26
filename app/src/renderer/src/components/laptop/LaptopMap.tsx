@@ -102,7 +102,7 @@ export function normalizeRect(surface: Surface, r: Rect): Rect {
 
 // ---------------------------------------------------------------- static drawing
 
-const Chassis = React.memo(function Chassis({ layout, pxUnit, drawIn }: { layout: Layout; pxUnit: number; drawIn: boolean }): React.JSX.Element {
+export const Chassis = React.memo(function Chassis({ layout, pxUnit, drawIn }: { layout: Layout; pxUnit: number; drawIn: boolean }): React.JSX.Element {
   const { spec, surfaces, corner } = layout
   const base = surfaces.base
   const lid = surfaces.lid
