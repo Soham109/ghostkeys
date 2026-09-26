@@ -30,9 +30,20 @@ public struct DetectionSettings: Codable, Sendable {
     public var doubleWindowMs: Double = 350
     public var minConfidence: Double = 0.8
     public init() {}
+
+    // Tolerant decoding: a config written by an older or newer app may lack some keys (or carry
+    // extra ones such as hud/haptics); missing keys keep their defaults.
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        sensitivity = try c.decodeIfPresent(Double.self, forKey: .sensitivity) ?? sensitivity
+        typingGateMs = try c.decodeIfPresent(Double.self, forKey: .typingGateMs) ?? typingGateMs
+        doubleWindowMs = try c.decodeIfPresent(Double.self, forKey: .doubleWindowMs) ?? doubleWindowMs
+        minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence) ?? minConfidence
+    }
 }
 
-/// Feature vector of one tap candidate (fixed length, see Features.swift).
+/// Feature vector of one tap candidate (fixed length, see Features/FeatureExtractor.swift for the index table).
 public struct TapFeatures: Codable, Sendable {
     public var values: [Double]
     public var t: Double
@@ -49,6 +60,10 @@ public struct TapEvent: Sendable {
     public var y: Double
     public var strength: Double
     public var modifiers: Set<String>
+    public init(t: Double, zone: String, confidence: Double, x: Double, y: Double, strength: Double, modifiers: Set<String>) {
+        self.t = t; self.zone = zone; self.confidence = confidence; self.x = x; self.y = y
+        self.strength = strength; self.modifiers = modifiers
+    }
 }
 
 public struct GestureEvent: Sendable {
@@ -58,6 +73,10 @@ public struct GestureEvent: Sendable {
     public var zones: [String]
     public var modifiers: Set<String>
     public var confidence: Double
+    public init(t: Double, gesture: String, zone: String?, zones: [String], modifiers: Set<String>, confidence: Double) {
+        self.t = t; self.gesture = gesture; self.zone = zone; self.zones = zones
+        self.modifiers = modifiers; self.confidence = confidence
+    }
 }
 
 public enum DetectorEvent: Sendable {
