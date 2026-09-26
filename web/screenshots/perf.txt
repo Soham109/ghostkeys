@@ -1,0 +1,6 @@
+Ghostkeys landing scroll performance (2026-09-26T22:39:51.836Z)
+Viewport 1440x900 at devicePixelRatio 2, headless Chromium, ANGLE on Metal, Apple M5 Pro
+Frames measured: 629
+Average frame: 16.67 ms (60.0 fps)
+Median: 16.70 ms, p95: 16.80 ms, p99: 16.80 ms, worst: 16.80 ms
+Frames over 20 ms: 0 (0.0%), over 33 ms: 0

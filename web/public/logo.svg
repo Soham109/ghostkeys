@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128" fill="none" stroke="#ffffff" stroke-width="6" stroke-linejoin="round">
+  <title>Ghostkeys</title>
+  <!-- Ghost echo: the key that is not there. Same keycap, offset +8x / -8y, 35% opacity. -->
+  <rect x="36" y="28" width="64" height="64" rx="16" opacity="0.35"/>
+  <!-- Front keycap -->
+  <rect x="28" y="36" width="64" height="64" rx="16"/>
+  <!-- Touch point: where the tap lands -->
+  <circle cx="60" cy="68" r="7" fill="#ffffff" stroke="none"/>
+</svg>

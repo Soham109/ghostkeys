@@ -481,7 +481,7 @@
         {
           "id": "macos",
           "title": "macOS on Apple silicon",
-          "description": "MacBooks with M1 Pro or M1 Max, or any M2 or later, on macOS 14 or later. Base M1 and Intel Macs get light-sensor gestures only.",
+          "description": "MacBook Air and Pro, M1 and later, macOS 14 or later.",
           "free": true,
           "pro": true,
           "teams": true
