@@ -119,5 +119,10 @@ Action kinds:
 | `applescript` | `source` | NSAppleScript |
 | `shortcut` | `name` | `/usr/bin/shortcuts run` |
 | `text` | `text` | types the text via CGEvent unicode events |
+| `macro` | `steps` (array of any actions above, each may carry `delayMs` to wait before it) | runs steps in order on a background queue; stops at the first failure; max 50 steps, max 30 s total |
+| `clipboard` | `text` | puts text on the pasteboard |
+| `window` | `op`: `left`, `right`, `top`, `bottom`, `maximize`, `center`, `next-display`, `minimize`, `fullscreen` | moves or resizes the frontmost window via the Accessibility API |
+| `app` | `op`: `hide`, `quit`, `switch-next`, `switch-previous` | acts on the frontmost app (quit is destructive: the UI must confirm when binding it) |
+| `system` | `op`: `lock`, `sleep-display`, `screenshot`, `screenshot-area`, `dnd-toggle`, `mission-control`, `launchpad`, `show-desktop` | built-in macOS commands, never anything that needs admin rights |
 
 Samples and models live in `~/Library/Application Support/Ghostkeys/model/`.
