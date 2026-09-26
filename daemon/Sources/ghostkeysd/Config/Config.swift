@@ -13,6 +13,17 @@ struct Zone: Codable, Equatable, Sendable {
     var color: String
 }
 
+/// Knob mode for a `pinch_hold` binding: while the pinch is held, the action fires once per `stepPx` of travel along
+/// `axis` (camera pixels at 640x480). Positive travel is right (x) or up (y); travel the other way runs `inverse` if set.
+struct KnobSpec: Codable, Equatable, Sendable {
+    var axis: String          // "x" or "y"
+    var stepPx: Double
+    var inverse: JSONValue?
+
+    /// Step as a fraction of the camera frame (landmark coordinates are 0...1).
+    var stepFraction: Double { max(1, stepPx) / (axis == "y" ? 480 : 640) }
+}
+
 struct Binding: Codable, Equatable, Sendable {
     var id: String
     var enabled: Bool
@@ -23,6 +34,7 @@ struct Binding: Codable, Equatable, Sendable {
     var app: String
     var action: JSONValue
     var label: String?
+    var knob: KnobSpec?
 
     init(id: String, enabled: Bool, gesture: String, zone: String?, zones: [String]? = nil, modifiers: [String] = [],
          app: String = "*", action: JSONValue, label: String?) {
@@ -42,6 +54,10 @@ struct Binding: Codable, Equatable, Sendable {
         app = try c.decodeIfPresent(String.self, forKey: .app) ?? "*"
         action = try c.decodeIfPresent(JSONValue.self, forKey: .action) ?? .object([:])
         label = try c.decodeIfPresent(String.self, forKey: .label)
+        knob = try c.decodeIfPresent(KnobSpec.self, forKey: .knob)
+        if let k = knob, !["x", "y"].contains(k.axis) || !k.stepPx.isFinite || k.stepPx <= 0 {
+            throw DecodingError.dataCorruptedError(forKey: .knob, in: c, debugDescription: "knob needs axis x|y and stepPx > 0")
+        }
     }
 
     func encode(to encoder: Encoder) throws {
@@ -55,9 +71,10 @@ struct Binding: Codable, Equatable, Sendable {
         try c.encode(app, forKey: .app)
         try c.encode(action, forKey: .action)
         try c.encode(label, forKey: .label)
+        try c.encodeIfPresent(knob, forKey: .knob)
     }
 
-    private enum CodingKeys: String, CodingKey { case id, enabled, gesture, zone, zones, modifiers, app, action, label }
+    private enum CodingKeys: String, CodingKey { case id, enabled, gesture, zone, zones, modifiers, app, action, label, knob }
 }
 
 /// Optional sound mode (GhostkeysAcoustics). Off by default; the mic opens only in short sessions.

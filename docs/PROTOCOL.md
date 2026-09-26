@@ -98,19 +98,40 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 
 ```jsonc
 { "type": "hello", "version": "0.1.0", "device": { "model": "Mac17,8", "chip": "Apple M5 Pro", "family": "macbook-pro-14" },
-  "sensors": { "imu": true, "gyro": true, "lid": true, "light": true }, "permissions": { "accessibility": false } }
+  "sensors": { "imu": true, "gyro": true, "lid": true, "light": true, "sound": true, "camera": true },
+  "permissions": { "accessibility": false, "microphone": "authorized", "camera": "not_determined" } }
+  // sensors.sound / camera: the hardware exists (checked without opening it). microphone / camera permission:
+  // "authorized" | "denied" | "not_determined" (not_determined: only a session the app starts may show the macOS prompt)
 { "type": "status", "paused": false, "pausedReason": null, "calibrated": true, "zones": ["left-palm", "..."], "imuHz": 797,
   "detector": { "noiseFloorMg": 1.2, "thresholdMg": 17.5, "level": 3.1 } }   // pausedReason: "user" | "rate_limit" | null
 { "type": "imu", "t": 1234.5, "a": [0.01, -0.02, -0.99], "g": [0.1, 0.0, -0.2] }      // only when subscribed; ~60 Hz decimated
 { "type": "lid", "t": 1234.5, "angle": 112 }                                               // only when subscribed; on change
 { "type": "light", "t": 1234.5, "value": 0.42 }                                            // only when subscribed; 0..1 normalized
-{ "type": "tap", "t": 1234.5, "zone": "right-grille", "confidence": 0.93, "x": 0.91, "y": 0.2, "strength": 0.6 }  // every accepted tap
+{ "type": "tap", "t": 1234.5, "zone": "right-grille", "confidence": 0.93, "x": 0.91, "y": 0.2, "strength": 0.6, "source": "imu" }  // every accepted tap
+  // "taps" stream. source: "imu" (motion sensor) or "camera" (desk mode touch confirmed by an IMU tap).
+  // tapType: "fingertip" | "knuckle" | "nail", only while a sound session with a tap-type model runs (the message may
+  // then arrive up to 150 ms late, while the sound is classified).
+{ "type": "air", "t": 1234.5, "gesture": "pinch_hold", "phase": "changed", "hand": "right", "x": 0.5, "y": 0.4, "dx": 0.0, "dy": -0.004, "confidence": 0.9 }
+  // "air" stream: continuous camera gestures (pinch_hold with dx/dy, two_hand_zoom with scale, point with x/y);
+  // phase: began | changed | ended. Discrete camera gestures arrive as "gesture" messages with zone "air" plus hand/x/y.
+{ "type": "session", "kind": "sound", "active": true, "secondsLeft": 30, "trigger": "request", "sonar": false, "tapTypes": true }
+  // kind: "sound" | "air". Sent on start, stop, every 5 s while active, and to each new client on connect.
+  // trigger (active only): "request" (app asked) | "auto" (pinned app in settings). reason (on stop): "timeout" |
+  // "requested" | "paused" | "app_changed" | "no_hand" | "lid_closed" | "error" (then "error": "...").
+  // sound only: sonar (pilot tone playing), tapTypes (tap-type model loaded). simulated: true under --no-hardware-sessions.
 { "type": "rejected", "t": 1234.5, "reason": "typing" }        // reason: typing | trackpad | motion | low_confidence | burst | paused
 { "type": "gesture", "t": 1234.5, "gesture": "double", "zone": "right-grille", "zones": ["right-grille"], "modifiers": ["shift"], "confidence": 0.91, "app": "com.microsoft.Excel" }
 { "type": "action", "t": 1234.5, "bindingId": "b1", "label": "Volume up", "ok": true, "error": null }
 { "type": "calibration", "phase": "capturing", "zone": "left-palm", "count": 7, "target": 20 }
 { "type": "calibration", "phase": "negatives", "secondsLeft": 42 }
 { "type": "calibration", "phase": "done", "accuracy": { "left-palm": 0.97 }, "overall": 0.95, "confusion": [[...]], "labels": ["..."] }
+{ "type": "calibration", "phase": "taptype_capturing", "tapType": "knuckle", "count": 4, "target": 15, "types": ["fingertip", "knuckle", "nail"] }
+  // tap-type calibration: make `target` taps of `tapType`; the daemon moves to the next type by itself.
+  // "missed": true means the motion sensor felt a tap but the microphone heard no clear onset (not counted).
+{ "type": "calibration", "phase": "taptype_training" }
+{ "type": "calibration", "phase": "taptype_done", "accuracy": 0.93, "counts": { "fingertip": 15, "knuckle": 15, "nail": 15 }, "types": ["..."] }
+  // accuracy: leave-one-out over the captured taps. The model is saved to model/tap-types.json and used at once.
+{ "type": "calibration", "phase": "taptype_failed", "error": "..." }   // also: "taptype_cancelled" with "reason"
 { "type": "config", "config": { /* full config, see below */ } }
 { "type": "error", "message": "..." }
 { "type": "approved", "hash": "<64 hex>", "kind": "shell" }  // reply to approve_action, only to the requester
@@ -121,7 +142,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 ## App to daemon
 
 ```jsonc
-{ "type": "subscribe", "streams": ["imu", "lid", "light", "taps"] }
+{ "type": "subscribe", "streams": ["imu", "lid", "light", "taps", "air"] }
 { "type": "unsubscribe", "streams": ["imu"] }
 { "type": "pause" }  { "type": "resume" }
 { "type": "calibration_start", "zones": ["left-palm", "right-palm"], "target": 20 }
@@ -136,6 +157,16 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "approve_action", "action": { "kind": "shell", "command": "..." } }  // only after the user confirmed natively
 { "type": "revoke_action", "hash": "<64 hex>" }              // or { "action": { ... } }
 { "type": "catalog_get" }                                    // daemon replies { "type": "catalog", "catalog": IntegrationCatalog.json }
+{ "type": "sound_session_start", "seconds": 30 }             // opens the mic (orange dot) for up to 120 s; seconds defaults to settings.sound.sessionSeconds
+{ "type": "sound_session_stop" }
+{ "type": "air_session_start", "camera": "front", "seconds": 30 }  // camera: "front" | "desk_view" (desk_view needs settings.camera.deskMode)
+{ "type": "air_session_stop" }
+{ "type": "calibration_taptype_start", "types": ["fingertip", "knuckle", "nail"], "target": 15 }
+  // needs an active sound session (extended to 120 s); taps are labeled in the order of `types`, target 3...50
+{ "type": "calibration_taptype_cancel" }
+// Test-only, accepted only when the daemon runs with --no-hardware-sessions (simulated sessions):
+// { "type": "sim_tap", "zone": "right-grille" }  { "type": "sim_tap_type", "tapType": "knuckle" }
+// { "type": "sim_air", "phase": "began|changed|ended", "dx": 0.05, "dy": 0 }
 ```
 
 ## Config file (`~/Library/Application Support/Ghostkeys/config.json`)
@@ -148,11 +179,28 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
     { "id": "b1", "enabled": true, "gesture": "double", "zone": "right-grille", "zones": null,
       "modifiers": [], "app": "*",                     // "*" or a bundle id; app-specific wins over "*"
       "action": { "kind": "volume", "step": 6 } ,
-      "label": "Volume up" }
+      "label": "Volume up" },
+    { "id": "k1", "enabled": true, "gesture": "pinch_hold", "zone": "air", "zones": null, "modifiers": [], "app": "*",
+      "action": { "kind": "volume", "step": 2 }, "label": "Volume knob",
+      "knob": { "axis": "y", "stepPx": 24, "inverse": { "kind": "volume", "step": -2 } } }
   ],
-  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "hud": true, "haptics": false }
+  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "hud": true, "haptics": false,
+    "sound":  { "enabled": false, "sessionSeconds": 30, "autoApps": [] },
+    "camera": { "enabled": false, "sessionSeconds": 30, "autoApps": [], "deskMode": false } }
 }
 ```
+
+- `knob` (only on `pinch_hold` bindings): while the pinch is held, `action` runs once per `stepPx` of travel along
+  `axis` (camera pixels at 640x480, so 24 px is 5% of the frame height). Positive travel is right (`x`) or up (`y`);
+  travel the other way runs `inverse` if present. The hold itself does not fire the action. Steps go through the
+  action limits but never auto-pause: a step over 5/s or 60/min, or with 3 steps of that binding still queued, is dropped.
+- `settings.sound` / `settings.camera`: sessions never start at launch. They start when the app sends
+  `sound_session_start` / `air_session_start`, or, when `enabled` is true, automatically while an app listed in
+  `autoApps` (bundle ids) is frontmost and a binding for sound (or camera) gestures exists; they stop when that app
+  loses focus. Sessions end after `sessionSeconds` (max 120), on pause, and (camera) after 10 s without a hand or when
+  the lid closes. `deskMode` allows `"camera": "desk_view"` sessions (experimental).
+- Knuckle taps: while a sound session with a tap-type model runs, an IMU `tap` gesture in a zone that has a
+  `knock_knuckle` binding waits up to 150 ms for the sound; exactly one of `tap` or `knock_knuckle` is emitted.
 
 Action kinds:
 

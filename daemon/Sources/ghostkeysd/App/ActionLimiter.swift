@@ -17,6 +17,8 @@ struct ActionLimiter {
 
     private var lastRun: [String: Double] = [:]
     private var running: Set<String> = []
+    private var knobInFlight: [String: Int] = [:]
+    static let maxKnobInFlight = 3
     private var recent: [Double] = []
 
     mutating func admit(bindingId: String, gesture: String, now: Double) -> Verdict {
@@ -39,7 +41,20 @@ struct ActionLimiter {
         return .ok
     }
 
-    mutating func finished(bindingId: String) { running.remove(bindingId) }
+    mutating func finished(bindingId: String) {
+        if let n = knobInFlight[bindingId], n > 0 { knobInFlight[bindingId] = n - 1 } else { running.remove(bindingId) }
+    }
+
+    /// One knob step. Steps never trip the auto-pause: a step that would exceed a global limit, or that finds 3 steps of
+    /// the same binding still queued or running, is dropped instead.
+    mutating func admitKnobStep(bindingId: String, now: Double) -> Bool {
+        guard knobInFlight[bindingId, default: 0] < Self.maxKnobInFlight else { return false }
+        recent = recent.filter { now - $0 < 60 }
+        guard recent.filter({ now - $0 < 1 }).count < Self.perSecond, recent.count < Self.perMinute else { return false }
+        recent.append(now)
+        knobInFlight[bindingId, default: 0] += 1
+        return true
+    }
 
     /// On resume: start counting afresh (running bindings stay tracked until they finish).
     mutating func reset() { recent.removeAll() }

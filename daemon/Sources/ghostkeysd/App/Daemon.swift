@@ -25,6 +25,8 @@ final class Daemon: @unchecked Sendable {
     private var lastPermissionPrompt = -100.0
     /// Optional sound (mic) and air (camera) sessions. Off unless the app asks or the user pinned an app.
     private var sessions: SessionCoordinator!
+    /// pinch_hold knob in progress: the binding and the travel accumulated since the last step.
+    private var knob: (binding: Binding, spec: KnobSpec, travel: Double)?
     private lazy var catalog: Any = (try? JSONSerialization.jsonObject(with: Data(IntegrationCatalog.json.utf8))) ?? [:]
 
     private var config: Config
@@ -145,6 +147,7 @@ final class Daemon: @unchecked Sendable {
             switch event {
             case .candidate(let f):
                 captureCandidate(f, now: now)
+                if sessions.tapCalibrating { sessions.tapCandidate(t: f.t) }
             case .rejected(let t, let reason):
                 server.broadcast(["type": "rejected", "t": Clock.protocolMs(t), "reason": reason.rawValue], stream: "taps")
             case .tap(let tap):
@@ -153,6 +156,10 @@ final class Daemon: @unchecked Sendable {
                 // During a sound session the message may wait (at most 150 ms) for its tapType.
                 if !sessions.imuTap(t: tap.t, zone: tap.zone, message: msg) { server.broadcast(msg, stream: "taps") }
             case .gesture(let g):
+                // In zones a knock_knuckle binding could claim, the plain tap waits (<= 150 ms) for the tap type.
+                if g.gesture == "tap", sessions.holdTapGesture(t: g.t, zone: g.zone, release: { [weak self] in self?.onGesture(g) }) {
+                    continue
+                }
                 onGesture(g)
             }
         }
@@ -199,10 +206,15 @@ final class Daemon: @unchecked Sendable {
                                   "app": app ?? NSNull()]
         for (k, v) in extra where msg[k] == nil { msg[k] = v }
         server.broadcast(msg)
-        // No actions while calibrating: the user is tapping zones on purpose.
-        guard calibration == nil else { return }
+        // No actions while calibrating: the user is tapping zones (or tap types) on purpose.
+        guard calibration == nil, !sessions.tapCalibrating else { return }
         guard let binding = BindingResolver.resolve(g, bindings: config.bindings, app: app) else { return }
         let label = binding.label ?? binding.id
+        // A pinch_hold binding with a knob fires per step of travel (see onAir), not when the hold begins.
+        if g.gesture == "pinch_hold", let spec = binding.knob {
+            knob = (binding, spec, 0)
+            return
+        }
         switch limiter.admit(bindingId: binding.id, gesture: g.gesture, now: Clock.now()) {
         case .ok: break
         case .cooldown:
@@ -215,6 +227,30 @@ final class Daemon: @unchecked Sendable {
         }
         // Gesture actions are dropped if they would start more than 1 s late (stale).
         runAction(binding.action, bindingId: binding.id, label: label, t: g.t, maxAge: 1)
+    }
+
+    /// Continuous camera messages: forwarded to `air` subscribers and, for pinch_hold, drive an active knob.
+    private func onAir(_ msg: [String: Any]) {
+        server.broadcast(msg, stream: "air")
+        guard (msg["gesture"] as? String) == "pinch_hold", let phase = msg["phase"] as? String else { return }
+        if phase == "ended" || phase == "began" && knob != nil { knob = nil; if phase == "ended" { return } }
+        guard phase == "changed", var k = knob, !paused else { return }
+        // Landmark y points down; the knob's positive y is up.
+        let d = k.spec.axis == "x" ? (msg["dx"] as? Double ?? 0) : -(msg["dy"] as? Double ?? 0)
+        k.travel += d
+        let step = k.spec.stepFraction
+        var fired = 0
+        while abs(k.travel) >= step && fired < 8 {
+            let positive = k.travel > 0
+            k.travel -= positive ? step : -step
+            fired += 1
+            guard let action = positive ? k.binding.action : k.spec.inverse else { continue }
+            let id = k.binding.id + (positive ? "" : "#inverse")
+            guard limiter.admitKnobStep(bindingId: id, now: Clock.now()) else { continue }   // dropped, never pauses
+            runAction(action, bindingId: id, label: (k.binding.label ?? k.binding.id) + (positive ? " +" : " -"),
+                      t: Clock.now(), maxAge: 0.3)
+        }
+        knob = k
     }
 
     /// Too many actions: pause everything and tell the app why (SAFETY_AUDIT H5).
@@ -425,6 +461,27 @@ final class Daemon: @unchecked Sendable {
             } catch {
                 sendError("revoke_action: \(error)", to: c)
             }
+        case "calibration_taptype_start":
+            sessions.startTapCalibration(types: m["types"] as? [String], target: (m["target"] as? NSNumber)?.intValue, client: c)
+        case "calibration_taptype_cancel":
+            sessions.cancelTapCalibration()
+        // Test-only hooks, reachable only with --no-hardware-sessions: they inject events at the points where the
+        // IMU engine, the sound processor and the camera would, so dry-run tests can exercise those paths.
+        case "sim_tap" where options.noHardwareSessions:
+            let t = Clock.now()
+            if sessions.tapCalibrating { sessions.tapCandidate(t: t); break }
+            // An accepted IMU tap and its immediate "tap" gesture, exactly as the engine reports them.
+            let zone = (m["zone"] as? String) ?? "right-grille"
+            let msg: [String: Any] = ["type": "tap", "t": Clock.protocolMs(t), "zone": zone, "confidence": 0.95,
+                                      "x": 0.9, "y": 0.3, "strength": 0.5, "source": "imu"]
+            if !sessions.imuTap(t: t, zone: zone, message: msg) { server.broadcast(msg, stream: "taps") }
+            let g = GestureEvent(t: t, gesture: "tap", zone: zone, zones: [zone], modifiers: [], confidence: 0.95)
+            if !sessions.holdTapGesture(t: t, zone: zone, release: { [weak self] in self?.onGesture(g) }) { onGesture(g) }
+        case "sim_tap_type" where options.noHardwareSessions:
+            sessions.simulateTapType(m["tapType"] as? String)
+        case "sim_air" where options.noHardwareSessions:
+            sessions.simulateAir(phase: (m["phase"] as? String) ?? "changed", dx: (m["dx"] as? NSNumber)?.doubleValue ?? 0,
+                                 dy: (m["dy"] as? NSNumber)?.doubleValue ?? 0)
         case "catalog_get":
             server.send(["type": "catalog", "catalog": catalog], to: c)
         case "sound_session_start":
@@ -518,6 +575,7 @@ extension Daemon: SessionHost {
     }
 
     func broadcast(_ message: [String: Any], stream: String?) { server.broadcast(message, stream: stream) }
+    func deliverAir(_ message: [String: Any]) { onAir(message) }
     func send(_ message: [String: Any], to client: WebSocketServer.Client) { server.send(message, to: client) }
 
     func deliverGesture(name: String, t: Double, zone: String?, confidence: Double, extra: [String: Any]) {

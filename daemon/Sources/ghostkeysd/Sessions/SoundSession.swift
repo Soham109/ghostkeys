@@ -19,6 +19,13 @@ final class SoundSession {
     private(set) var sonarOn = false
     private(set) var tapTypesOn = false
 
+    // Tap-type calibration: IMU onsets waiting for their audio window, and the labeled examples so far.
+    private var calPending: [(t: Double, label: TapType)] = []
+    private(set) var calExamples: [LabeledTap] = []
+    private let calExtractor = TapFeatureExtractor()
+    /// Called on the core queue for each calibration onset: the label and whether a usable window was found.
+    var onCalibrationSample: (_ label: String, _ captured: Bool) -> Void = { _, _ in }
+
     var onGesture: (Gesture) -> Void = { _ in }
     /// onset (Clock seconds) and tap type name, or nil if the sound was not classified.
     var onTapType: (_ onset: Double, _ type: String?) -> Void = { _, _ in }
@@ -120,7 +127,9 @@ final class SoundSession {
 
     private func process(_ chunk: AcousticSession.Chunk) {
         guard let processor, session != nil else { return }
-        for event in processor.process(chunk.samples, time: chunk.time) {
+        let events = processor.process(chunk.samples, time: chunk.time)
+        captureCalibrationWindows(ring: processor.ringBuffer)
+        for event in events {
             switch event {
             case .gesture(let g):
                 var extra: [String: Any] = [:]
@@ -133,5 +142,99 @@ final class SoundSession {
                 break
             }
         }
+    }
+}
+
+// MARK: - Tap-type calibration
+
+extension SoundSession {
+    static let tapTypeNames = TapType.allCases.map(\.rawValue)
+
+    func beginTapCalibration() {
+        calPending.removeAll()
+        calExamples.removeAll()
+    }
+
+    func endTapCalibration() {
+        calPending.removeAll()
+        calExamples.removeAll()
+    }
+
+    /// An IMU onset (Clock seconds) that the user made as a `label` tap. The window is cut once its audio has arrived.
+    func captureOnset(_ t: Double, label: String) {
+        guard let type = TapType(rawValue: label), running else { return }
+        if simulate {
+            // No microphone in simulated sessions: run a synthetic tap of this type through the real feature extractor.
+            let window = Self.syntheticTap(type, seed: UInt64(calExamples.count + calPending.count + 1))
+            calExamples.append(LabeledTap(features: calExtractor.features(window), label: type))
+            onCalibrationSample(label, true)
+            return
+        }
+        calPending.append((t, type))
+    }
+
+    private func captureCalibrationWindows(ring: AudioRingBuffer) {
+        guard !calPending.isEmpty, let range = ring.timeRange else { return }
+        let radius = 0.015, pre = TapWindowAligner.preroll, win = TapFeatureExtractor.windowDuration
+        var keep: [(t: Double, label: TapType)] = []
+        for p in calPending {
+            let start = p.t - radius - pre, end = p.t + radius + win
+            if end > range.upperBound {
+                if p.t - range.upperBound < 0.5 { keep.append(p) }       // audio not here yet
+                continue
+            }
+            let count = Int(((end - start) * AcousticSession.sampleRate).rounded())
+            if start >= range.lowerBound, let stretch = ring.read(from: start, count: count),
+               let window = TapWindowAligner.window(from: stretch, samplesTime: start, expectedOnset: p.t, searchRadius: radius) {
+                calExamples.append(LabeledTap(features: calExtractor.features(window), label: p.label))
+                onCalibrationSample(p.label.rawValue, true)
+            } else {
+                onCalibrationSample(p.label.rawValue, false)             // no clear sound onset near the IMU tap
+            }
+        }
+        calPending = keep
+    }
+
+    /// Trains, saves (tap-types.json, or tap-types.simulated.json in simulated sessions, so a test never replaces a
+    /// real model) and installs the classifier in the running processor. Returns leave-one-out accuracy and counts.
+    func trainTapTypes() throws -> (accuracy: Double, counts: [String: Int], path: String) {
+        let model = try TapTypeClassifier.train(calExamples)
+        let url = simulate ? tapModelURL.deletingPathExtension().appendingPathExtension("simulated.json") : tapModelURL
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let enc = JSONEncoder()
+        try enc.encode(model).write(to: url, options: .atomic)
+        let samplesURL = url.deletingLastPathComponent().appendingPathComponent(
+            simulate ? "tap-type-samples.simulated.json" : "tap-type-samples.json")
+        try enc.encode(calExamples).write(to: samplesURL, options: .atomic)
+        if let processor {
+            processor.tapClassifier = model
+            processor.options.tapTypes = true
+            tapTypesOn = true
+        }
+        let counts = Dictionary(grouping: calExamples, by: { $0.label.rawValue }).mapValues(\.count)
+        return (model.leaveOneOutAccuracy(), counts, url.path)
+    }
+
+    /// Deterministic synthetic 40 ms tap: decaying noise, low-passed. Fingertip: dull and slow; knuckle: mid and fast;
+    /// nail: bright click. Only used in simulated sessions (tests).
+    static func syntheticTap(_ type: TapType, seed: UInt64) -> [Float] {
+        let n = Int(TapFeatureExtractor.windowDuration * AcousticSession.sampleRate)
+        let (tauMs, alpha): (Double, Float) = { switch type {
+            case .fingertip: return (12, 0.08)
+            case .knuckle: return (5, 0.35)
+            case .nail: return (2, 0.9)
+        } }()
+        var state = seed &* 6364136223846793005 &+ 1442695040888963407
+        var y: Float = 0
+        var out = [Float](repeating: 0, count: n)
+        let onset = Int(0.002 * AcousticSession.sampleRate)
+        for i in onset..<n {
+            state = state &* 6364136223846793005 &+ 1442695040888963407
+            let noise = Float(Int64(bitPattern: state >> 11) % 2000) / 1000 - 1
+            let env = Float(exp(-Double(i - onset) / (tauMs * AcousticSession.sampleRate / 1000)))
+            y += alpha * (noise - y)
+            out[i] = 0.5 * env * y
+        }
+        return out
     }
 }

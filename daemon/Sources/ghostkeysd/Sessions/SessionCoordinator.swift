@@ -12,6 +12,8 @@ protocol SessionHost: AnyObject {
     func send(_ message: [String: Any], to client: WebSocketServer.Client)
     /// Runs a gesture through the normal path (paused check, gesture message, binding resolution, limiter).
     func deliverGesture(name: String, t: Double, zone: String?, confidence: Double, extra: [String: Any])
+    /// Continuous `air` message (pinch_hold also drives knob bindings).
+    func deliverAir(_ message: [String: Any])
 }
 
 /// Owns the optional sound (microphone) and air (camera) sessions: when they may start, how long they run, and how
@@ -37,6 +39,14 @@ final class SessionCoordinator {
     private var tapTimes: [Double] = []
     // Tap messages held back briefly while a tap-type classification may still arrive.
     private var heldTaps: [(t: Double, message: [String: Any])] = []
+    // IMU "tap" gestures held back in zones that also have a knock_knuckle binding: exactly one of the two fires.
+    private var heldGestures: [(t: Double, zone: String, release: () -> Void)] = []
+    static let holdWindow = 0.15
+
+    // Tap-type calibration state.
+    private struct TapCalibration { var types: [String]; var target: Int; var index = 0; var counts: [String: Int] = [:] }
+    private var tapCal: TapCalibration?
+    var tapCalibrating: Bool { tapCal != nil }
 
     init(queue: DispatchQueue, simulate: Bool, modelDirectory: URL, host: SessionHost) {
         self.queue = queue
@@ -63,6 +73,7 @@ final class SessionCoordinator {
         }
         sound.onGesture = { [weak self] g in self?.soundGesture(g) }
         sound.onTapType = { [weak self] onset, type in self?.tapTypeArrived(onset: onset, type: type) }
+        sound.onCalibrationSample = { [weak self] label, ok in self?.tapCalibrationSample(label: label, captured: ok) }
         air.onOutput = { [weak self] o in self?.airOutput(o) }
         air.onStopped = { [weak self] reason in
             guard let self, self.airTimer.active else { return }
@@ -99,9 +110,11 @@ final class SessionCoordinator {
 
     func stopSound(reason: String) {
         guard soundTimer.active || sound.running else { return }
+        if tapCal != nil { cancelTapCalibration(reason: "sound session ended (\(reason))") }
         sound.stop()
         soundTimer.end()
         flushHeldTaps()
+        releaseAllHeldGestures()
         report(.sound, reason: reason)
     }
 
@@ -174,7 +187,8 @@ final class SessionCoordinator {
 
     func lidChanged(angle: Double) {
         // Lid (nearly) closed: the camera cannot see anything useful and should not stay on.
-        if angle < 20 { stopAir(reason: "lid_closed") }
+        // (Simulated sessions have no camera, so the rule does not apply to them.)
+        if angle < 20 && !air.simulate { stopAir(reason: "lid_closed") }
     }
 
     // MARK: IMU taps
@@ -199,8 +213,36 @@ final class SessionCoordinator {
         return tapTimes.contains { abs($0 - t) < 0.15 }
     }
 
-    private func tapTypeArrived(onset: Double, type: String?) {
+    fileprivate func tapTypeArrived(onset: Double, type: String?) {
         releaseTap(onset: onset, type: type)
+        // A knuckle tap becomes knock_knuckle (emitted by the sound processor): drop the held "tap" gesture.
+        // Anything else (fingertip, nail, unclassified) releases the plain "tap".
+        while let i = heldGestures.firstIndex(where: { abs($0.t - onset) < 0.03 }) {
+            let h = heldGestures.remove(at: i)
+            if type != "knuckle" { h.release() }
+        }
+    }
+
+    /// Called for each IMU "tap" gesture. Returns true if it was held (the caller must not deliver it now):
+    /// a sound session with tap types is running and a knock_knuckle binding could claim this zone.
+    func holdTapGesture(t: Double, zone: String?, release: @escaping () -> Void) -> Bool {
+        guard let host, let zone, sound.running, sound.tapTypesOn, tapCal == nil else { return false }
+        let claims = host.currentConfig.bindings.contains {
+            $0.enabled && $0.gesture == "knock_knuckle" && ($0.zone == nil || $0.zone == zone)
+        }
+        guard claims else { return false }
+        heldGestures.append((t, zone, release))
+        queue.asyncAfter(deadline: .now() + Self.holdWindow) { [weak self] in
+            guard let self, let i = self.heldGestures.firstIndex(where: { $0.t == t && $0.zone == zone }) else { return }
+            self.heldGestures.remove(at: i).release()      // no classification in time: it was a plain tap
+        }
+        return true
+    }
+
+    private func releaseAllHeldGestures() {
+        let all = heldGestures
+        heldGestures.removeAll()
+        for h in all { h.release() }
     }
 
     private func releaseTap(onset: Double, type: String?) {
@@ -216,9 +258,78 @@ final class SessionCoordinator {
         for h in all { host?.broadcast(h.message, stream: "taps") }
     }
 
+    // MARK: Tap-type calibration
+
+    /// `calibration_taptype_start`: needs a running sound session. Captures `target` taps of each type in order
+    /// (the app shows which one to make), then trains, saves model/tap-types.json and reports taptype_done.
+    func startTapCalibration(types requested: [String]?, target: Int?, client: WebSocketServer.Client) {
+        guard sound.running else { return calError("start a sound session first (sound_session_start)", client) }
+        let valid = SoundSession.tapTypeNames
+        let types = (requested ?? valid).filter { valid.contains($0) }.reduce(into: [String]()) { if !$0.contains($1) { $0.append($1) } }
+        guard types.count >= 2 else { return calError("need at least two of \(valid.joined(separator: ", "))", client) }
+        let target = max(3, min(50, target ?? 15))
+        tapCal = TapCalibration(types: types, target: target)
+        sound.beginTapCalibration()
+        // Calibration takes longer than a normal session: extend it to the maximum.
+        soundTimer.begin(seconds: Self.maxSeconds, reason: soundTimer.reason ?? "request")
+        report(.sound)
+        tapCalProgress()
+    }
+
+    func cancelTapCalibration(reason: String = "cancelled") {
+        guard tapCal != nil else { return }
+        tapCal = nil
+        sound.endTapCalibration()
+        host?.broadcast(["type": "calibration", "phase": "taptype_cancelled", "reason": reason], stream: nil)
+    }
+
+    /// Every IMU tap candidate during tap-type calibration (onset time, Clock seconds).
+    func tapCandidate(t: Double) {
+        guard let cal = tapCal, cal.index < cal.types.count else { return }
+        sound.captureOnset(t, label: cal.types[cal.index])
+    }
+
+    private func tapCalibrationSample(label: String, captured: Bool) {
+        guard var cal = tapCal, cal.index < cal.types.count, cal.types[cal.index] == label else { return }
+        if !captured { return tapCalProgress(missed: true) }
+        cal.counts[label, default: 0] += 1
+        if cal.counts[label, default: 0] >= cal.target { cal.index += 1 }
+        tapCal = cal
+        if cal.index >= cal.types.count { finishTapCalibration() } else { tapCalProgress() }
+    }
+
+    private func tapCalProgress(missed: Bool = false) {
+        guard let cal = tapCal, cal.index < cal.types.count else { return }
+        let type = cal.types[cal.index]
+        var m: [String: Any] = ["type": "calibration", "phase": "taptype_capturing", "tapType": type,
+                                "count": cal.counts[type] ?? 0, "target": cal.target, "types": cal.types]
+        if missed { m["missed"] = true }     // the IMU saw a tap but the sound had no clear onset
+        host?.broadcast(m, stream: nil)
+    }
+
+    private func finishTapCalibration() {
+        guard let cal = tapCal else { return }
+        tapCal = nil
+        host?.broadcast(["type": "calibration", "phase": "taptype_training"], stream: nil)
+        do {
+            let r = try sound.trainTapTypes()
+            Log.info("tap-type model trained: leave-one-out accuracy \(r.accuracy), saved to \(r.path)")
+            host?.broadcast(["type": "calibration", "phase": "taptype_done", "accuracy": (r.accuracy * 1000).rounded() / 1000,
+                             "counts": r.counts, "types": cal.types, "simulated": sound.simulate], stream: nil)
+        } catch {
+            host?.broadcast(["type": "calibration", "phase": "taptype_failed", "error": "\(error)"], stream: nil)
+        }
+        sound.endTapCalibration()
+        report(.sound)
+    }
+
+    private func calError(_ message: String, _ client: WebSocketServer.Client) {
+        host?.send(["type": "calibration", "phase": "taptype_failed", "error": message], to: client)
+    }
+
     // MARK: Session output -> binding path
 
-    private func soundGesture(_ g: SoundSession.Gesture) {
+    fileprivate func soundGesture(_ g: SoundSession.Gesture) {
         guard let host, sound.running else { return }
         // Typing and hands near the keyboard make friction and Doppler noise: suppress while the typing gate is on.
         if host.typingActive {
@@ -234,14 +345,14 @@ final class SessionCoordinator {
         host.deliverGesture(name: g.name, t: g.time, zone: zone, confidence: g.confidence, extra: extra)
     }
 
-    private func airOutput(_ o: AirSession.Output) {
+    fileprivate func airOutput(_ o: AirSession.Output) {
         guard let host, air.running else { return }
         switch o {
         case .gesture(let name, let t, let confidence, var extra):
             extra["source"] = "camera"
             host.deliverGesture(name: name, t: t, zone: "air", confidence: confidence, extra: extra)
         case .air(let msg, _):
-            host.broadcast(msg, stream: "air")
+            host.deliverAir(msg)
         case .deskTap(let zone, let t, let x, let y, let confidence):
             host.broadcast(["type": "tap", "t": Clock.protocolMs(t), "zone": zone, "confidence": confidence,
                             "x": x, "y": y, "strength": 0, "source": "camera"], stream: "taps")
@@ -273,5 +384,31 @@ final class SessionCoordinator {
         var m = message(kind, reason: "error")
         m["error"] = error
         if let client { host?.send(m, to: client) } else { host?.broadcast(m, stream: nil) }
+    }
+}
+
+// MARK: - Test hooks (only reachable with --no-hardware-sessions)
+
+extension SessionCoordinator {
+    /// Stands in for the sound processor classifying the most recent held (or pending) IMU tap.
+    func simulateTapType(_ type: String?) {
+        guard sound.simulate, let onset = heldGestures.last?.t ?? heldTaps.last?.t else { return }
+        tapTypeArrived(onset: onset, type: type)
+        if type == "knuckle" {
+            soundGesture(SoundSession.Gesture(name: "knock_knuckle", time: onset, confidence: 0.9, extra: [:]))
+        }
+    }
+
+    /// Stands in for the camera: a pinch_hold phase with a delta, as AirSession would emit it.
+    func simulateAir(phase: String, dx: Double, dy: Double) {
+        guard air.simulate, air.running else { return }
+        let t = Clock.now()
+        var msg: [String: Any] = ["type": "air", "t": Clock.protocolMs(t), "gesture": "pinch_hold", "phase": phase,
+                                  "hand": "right", "x": 0.5, "y": 0.5, "confidence": 0.9]
+        if phase == "changed" { msg["dx"] = dx; msg["dy"] = dy }
+        airOutput(.air(msg, t: t))
+        if phase == "began" {
+            airOutput(.gesture(name: "pinch_hold", t: t, confidence: 0.9, extra: ["hand": "right", "x": 0.5, "y": 0.5]))
+        }
     }
 }
