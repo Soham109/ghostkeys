@@ -67,9 +67,11 @@ try {
 
     // chapters: [name, chapter id, fraction of the chapter's sticky range]
     const stops = [
-      ["04-zones-a", "zones", 0.12], ["05-zones-b", "zones", 0.5], ["06-zones-c", "zones", 0.85],
-      ["07-air", "air", 0.3], ["08-sound", "air", 0.8], ["09-layers", "layers", 0.5],
-      ["10-try", "try", 0.5], ["11-finale", "finale", 1],
+      ...[0, 1, 2, 3, 4].map((i) => [`04-zones-${i + 1}`, "zones", (i + 0.55) / 5]),
+      ...[0, 1, 2].map((i) => [`05-air-${i + 1}`, "air", 0.6 * ((i + 0.55) / 3)]),
+      ...[0, 1].map((i) => [`06-sound-${i + 1}`, "air", 0.6 + 0.4 * ((i + 0.55) / 2)]),
+      ...[0, 1, 2, 3].map((i) => [`07-layers-${i + 1}`, "layers", (i + 0.55) / 4]),
+      ["08-try", "try", 0.55], ["09-finale", "finale", 1],
     ];
     const chapterY = (id, f) =>
       page.evaluate(([id, f]) => {
@@ -78,7 +80,7 @@ try {
       }, [id, f]);
     for (const [name, id, f] of stops) {
       if (only && !only.includes(name)) continue;
-      await scrollTo(await chapterY(id, f), 2600);
+      await scrollTo(await chapterY(id, f), Number(args.wait ?? 2600));
       await shot(name);
     }
     if (!only || only.includes("12b-try-click")) {

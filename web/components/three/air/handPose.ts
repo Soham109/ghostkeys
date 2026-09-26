@@ -31,10 +31,10 @@ export const BONES: [number, number][] = [
 
 type Finger = { mcp: [number, number, number]; len: [number, number, number]; spread: number };
 const FINGERS: Finger[] = [
-  { mcp: [-0.3, 0.0, -0.86], len: [0.4, 0.235, 0.195], spread: 0.1 },
-  { mcp: [-0.085, 0.012, -0.92], len: [0.45, 0.275, 0.205], spread: 0.0 },
-  { mcp: [0.13, 0.0, -0.875], len: [0.42, 0.26, 0.2], spread: -0.085 },
-  { mcp: [0.32, -0.025, -0.77], len: [0.335, 0.2, 0.18], spread: -0.2 },
+  { mcp: [-0.33, 0.0, -0.86], len: [0.4, 0.235, 0.195], spread: 0.1 },
+  { mcp: [-0.105, 0.015, -0.92], len: [0.45, 0.275, 0.205], spread: 0.0 },
+  { mcp: [0.125, 0.0, -0.88], len: [0.42, 0.26, 0.2], spread: -0.085 },
+  { mcp: [0.335, -0.03, -0.78], len: [0.335, 0.2, 0.18], spread: -0.2 },
 ];
 const THUMB_CMC = new THREE.Vector3(-0.25, -0.07, -0.2);
 const THUMB_LEN = 0.86;
@@ -181,6 +181,9 @@ export function track(keys: readonly (readonly [number, number])[], p: number, e
 
 /* ---------- placing a posed hand in the world ---------- */
 
+/** Global size of the ghost hand relative to a real adult hand (the laptop is to scale). */
+export const HAND_SCALE = 0.8;
+
 export type Anchor = "wrist" | "pinch" | "index" | "palm" | "lowest";
 
 const q = new THREE.Quaternion();
@@ -201,6 +204,7 @@ export function placeHand(
   breath = 0,
 ) {
   solveHand(h, out, mirror, breath);
+  for (let i = 0; i < out.length; i++) out[i] *= HAND_SCALE;
   e.set(rot.pitch, mirror ? -rot.yaw : rot.yaw, mirror ? -rot.roll : rot.roll, "YXZ");
   q.setFromEuler(e);
   let ax = 0, ay = 0, az = 0;

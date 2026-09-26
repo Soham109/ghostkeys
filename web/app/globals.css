@@ -433,3 +433,8 @@ html.lenis body {
   padding-left: 1.2em;
   color: var(--ink);
 }
+/* light theme: a bright scrim over the dark display reads as fog, so keep it faint and tight */
+[data-theme="light"] .scrim {
+  width: min(62vw, 900px);
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--bg) 55%, transparent) 0%, color-mix(in oklab, var(--bg) 25%, transparent) 60%, transparent 100%);
+}

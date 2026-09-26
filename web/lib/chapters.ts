@@ -12,10 +12,10 @@ export const CHAPTER_ORDER: ChapterId[] = ["intro", "zones", "air", "layers", "t
 
 export const CHAPTER_SCREENS: Record<ChapterId, number> = {
   intro: 1.25,
-  zones: 2.0,
-  air: 2.1,
-  layers: 1.6,
-  try: 1.2,
+  zones: 2.6,
+  air: 2.6,
+  layers: 2.2,
+  try: 1.3,
   finale: 1.1,
 };
 
@@ -30,13 +30,11 @@ export const AIR_STEPS = [
   { id: "pinch", caption: "Pinch to grab" },
   { id: "drag", caption: "Pinch and drag" },
   { id: "swipe", caption: "Palm swipe" },
-  { id: "dial", caption: "Turn a dial" },
 ] as const;
 
 /** Sound beat: what the microphone learns to tell apart. */
 export const SOUND_STEPS = [
   { id: "knuckle", caption: "Knuckle or fingertip" },
-  { id: "rub", caption: "Rub the grille" },
   { id: "wave", caption: "Wave a hand" },
 ] as const;
 
@@ -50,3 +48,22 @@ export const LAYER_STEPS = [
 
 /** Which step of a list a progress value maps to. */
 export const stepAt = (progress: number, n: number) => Math.min(n - 1, Math.max(0, Math.floor(progress * n)));
+
+/**
+ * Scroll positions (in pixels) where each beat sits at rest, for snapping: the middle of every step of every chapter.
+ * Reads the DOM, so call it after layout.
+ */
+export function beatPositions(steps: Partial<Record<ChapterId, { from: number; to: number; n: number }[]>>) {
+  const out: number[] = [0];
+  const vh = window.innerHeight;
+  for (const id of CHAPTER_ORDER) {
+    const el = document.querySelector<HTMLElement>(`[data-chapter="${id}"]`);
+    if (!el || id === "intro") continue;
+    const top = el.getBoundingClientRect().top + window.scrollY;
+    const pin = Math.max(0, el.offsetHeight - vh);
+    const beats = steps[id] ?? [{ from: 0, to: 1, n: 1 }];
+    for (const b of beats) for (let i = 0; i < b.n; i++) out.push(Math.round(top + pin * (b.from + (b.to - b.from) * ((i + 0.55) / b.n))));
+  }
+  out.push(document.documentElement.scrollHeight - vh);
+  return out;
+}

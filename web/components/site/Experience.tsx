@@ -7,7 +7,9 @@ import gsap from "gsap";
 import { SplitText } from "gsap/SplitText";
 import { useTier } from "@/lib/device";
 import { bus } from "@/lib/stage";
-import { AIR_SOUND_SPLIT, AIR_STEPS, CHAPTER_SCREENS, LAYER_STEPS, SOUND_STEPS, ZONE_STEPS, stepAt, type ChapterId } from "@/lib/chapters";
+import Snap from "lenis/snap";
+import { scroller } from "@/lib/scroll";
+import { AIR_SOUND_SPLIT, AIR_STEPS, beatPositions, CHAPTER_SCREENS, LAYER_STEPS, SOUND_STEPS, ZONE_STEPS, stepAt, type ChapterId } from "@/lib/chapters";
 import { DOWNLOAD_URL } from "@/lib/site";
 import { PRICING } from "@/lib/pricing";
 import { TryPanel } from "./TryPanel";
@@ -53,12 +55,12 @@ const CHAPTERS: ChapterDef[] = [
     place: "tl",
     beats: [
       { line: <>Gesture in the <em>air.</em></>, tag: "Camera add-on / M4 and M5 / Beta", steps: AIR_STEPS.map((s) => s.caption), from: 0, to: AIR_SOUND_SPLIT },
-      { line: <>Listen <em>closer.</em></>, tag: "Sound mode / Opt-in / On-device", steps: SOUND_STEPS.map((s) => s.caption), from: AIR_SOUND_SPLIT, to: 1 },
+      { line: <>Listen<br /><em>closer.</em></>, tag: "Sound mode / Opt-in / On-device", steps: SOUND_STEPS.map((s) => s.caption), from: AIR_SOUND_SPLIT, to: 1 },
     ],
   },
   {
     id: "layers",
-    place: "bl",
+    place: "tl",
     beats: [{ line: <>Your apps, your <em>layers.</em></>, steps: LAYER_STEPS.map((s) => s.caption), from: 0, to: 1 }],
   },
 ];
@@ -85,6 +87,36 @@ export function Experience() {
       window.removeEventListener("pointermove", onPointer);
     };
   }, []);
+
+  // every beat lands and holds: after the wheel settles, Lenis eases to the nearest beat (proximity, so free scrolling still works)
+  useEffect(() => {
+    if (!tier.ready || tier.reducedMotion) return;
+    let snap: Snap | null = null;
+    let removers: (() => void)[] = [];
+    const build = () => {
+      const lenis = scroller.lenis;
+      if (!lenis) return;
+      removers.forEach((r) => r());
+      snap ??= new Snap(lenis, { type: "proximity", distanceThreshold: "32%", debounce: 180, duration: 0.8, easing: (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2) });
+      const steps = Object.fromEntries(
+        CHAPTERS.map((c) => [c.id, c.beats.map((b) => ({ from: b.from, to: b.to, n: b.steps?.length ?? 1 }))]),
+      );
+      removers = beatPositions(steps).map((y) => snap!.add(y));
+    };
+    const t = window.setTimeout(build, 600);
+    let rt = 0;
+    const onResize = () => {
+      window.clearTimeout(rt);
+      rt = window.setTimeout(build, 300);
+    };
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.clearTimeout(t);
+      window.removeEventListener("resize", onResize);
+      removers.forEach((r) => r());
+      snap?.destroy();
+    };
+  }, [tier.ready, tier.reducedMotion]);
 
   // publish smoothed chapter progress, page progress and velocity; derive the legacy rig position
   useEffect(() => {
@@ -249,15 +281,17 @@ function Chapter({ def, index }: { def: ChapterDef; index: number }) {
   // each beat's lines rise out of their masks inside the chapter's scrubbed range, then rise away
   useSplitLines(el, (lines, line) => {
     const b = def.beats[Number(line.dataset.beat)];
-    const span = b.to - b.from;
-    const enter = b.from + Math.min(0.04, span * 0.06);
-    const exit = b.to === 1 ? 0.86 : b.to - span * 0.14;
+    // fully in before the first beat's rest point, fully out only after the last one: text never sits half-revealed where the scroll snaps
+    const enter = b.from === 0 ? 0 : b.from + 0.005;
+    const inDur = 0.055;
+    const exit = b.to === 1 ? 0.955 : b.to - 0.05;
+    const outDur = 0.04;
     const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: { trigger: el, start: "top top", end: "bottom bottom", scrub: 1 } });
-    tl.fromTo(lines, { yPercent: 118 }, { yPercent: 0, stagger: 0.03, duration: Math.min(0.16, span * 0.25), ease: "power3.out" }, enter)
-      .to(lines, { yPercent: -118, stagger: 0.02, duration: Math.min(0.12, span * 0.18), ease: "power2.in" }, exit)
+    tl.fromTo(lines, { yPercent: 118 }, { yPercent: 0, stagger: 0.01, duration: inDur, ease: "power3.out" }, enter)
+      .to(lines, { yPercent: -118, stagger: 0.008, duration: outDur, ease: "power2.in" }, exit)
       .set({}, {}, 1);
     const em = line.querySelectorAll("em");
-    if (em.length) tl.fromTo(em, { filter: "blur(8px)" }, { filter: "blur(0px)", duration: Math.min(0.14, span * 0.2) }, enter + 0.03);
+    if (em.length) tl.fromTo(em, { filter: "blur(8px)" }, { filter: "blur(0px)", duration: inDur }, enter + 0.01);
   });
 
   // captions and tags follow progress, written straight to the DOM (no React state while scrolling)
@@ -277,7 +311,7 @@ function Chapter({ def, index }: { def: ChapterDef; index: number }) {
       }
       if (reducedRef.current)
         el?.querySelectorAll<HTMLElement>("[data-beat]").forEach((h) => (h.style.opacity = Number(h.dataset.beat) === def.beats.indexOf(beat) ? "1" : "0"));
-      const o = String(Math.max(0, Math.min(1, Math.min(p * 12 - 0.3, (1 - p) * 10))));
+      const o = String(Math.max(0, Math.min(1, Math.min(p * 20, (1 - p) * 20))));
       el?.querySelectorAll<HTMLElement>("[data-chrome]").forEach((c) => (c.style.opacity = o));
     };
     gsap.ticker.add(tick);

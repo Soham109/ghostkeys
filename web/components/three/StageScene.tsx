@@ -14,7 +14,6 @@ import { Laptop, makeLaptopState, type LaptopParts } from "./Laptop";
 import { Internals } from "./Internals";
 import { ZoneLayer, makeZoneRuntime } from "./Zones";
 import { TapLabels } from "./TapLabels";
-import { Particles, PARTICLE_LID, type ParticleControl } from "./Particles";
 import { BackLight, Floor, StudioLight } from "./Studio";
 import { Effects, type FxControl } from "./Effects";
 import { TapField, now } from "./taps";
@@ -56,6 +55,21 @@ const smooth = (a: number, b: number, x: number) => {
   return t * t * (3 - 2 * t);
 };
 
+/** Cold open: two macro camera marks low over the left palm rest, the tap point, and the timing (seconds). */
+const INTRO_END = 2.45;
+const MACRO = {
+  a: { pos: new THREE.Vector3(-2.55, 0.3, 1.95), tgt: new THREE.Vector3(-0.95, 0.0, 0.55) },
+  b: { pos: new THREE.Vector3(-1.75, 0.46, 2.2), tgt: new THREE.Vector3(-0.85, 0.0, 0.5) },
+  fov: 24,
+  tap: { x: -1.02, z: 0.62 },
+};
+const BACK_TARGET = new THREE.Vector3(0.1, 0.72, -0.25);
+/** crawl, whip, crawl (the promo film's speed ramp) */
+const whip = (x: number) => {
+  const t = Math.min(1, Math.max(0, x));
+  return t < 0.5 ? 16 * t ** 5 : 1 - (-2 * t + 2) ** 5 / 2;
+};
+
 function zonePoint(z: Zone, jitter = 0.25) {
   const u = z.rect.x + z.rect.w * (0.5 + (Math.random() - 0.5) * jitter);
   const v = z.rect.y + z.rect.h * (0.5 + (Math.random() - 0.5) * jitter);
@@ -94,8 +108,8 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
   const zrt = useMemo(() => makeZoneRuntime(), []);
   const fx = useMemo<FxControl>(() => ({ dissolve: 0, aberration: 0, focus: new THREE.Vector3(0, 0.3, -0.3), bokeh: 0, hush: 0 }), []);
   const skipIntro = reduced || particleSize === 0;
-  const control = useMemo<ParticleControl>(() => ({ k: 0, noise: 1, mix: 0, opacity: 0, flash: 0, swirl: 0, done: skipIntro }), [skipIntro]);
-  const intro = useMemo(() => ({ lid: skipIntro ? 108 : PARTICLE_LID, open: skipIntro ? 1 : 0 }), [skipIntro]);
+  // cold open clock: -1 until everything is ready, then seconds since the reveal began
+  const intro = useMemo(() => ({ start: -1, speed: 1, t: skipIntro ? 99 : -1, tapped: false }), [skipIntro]);
   const [parts, setParts] = useState<LaptopParts | null>(null);
   const [customZones, setCustomZones] = useState<Zone[]>(() => bus.demo.customZones);
   const load = useRef({ env: false, live: false, compiled: false });
@@ -191,81 +205,27 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     };
   }, [parts, gl, scene, camera]);
 
-  // --- intro: dust in the dark, the mark, then the laptop. One continuous sequence; it holds on the mark until
-  // everything is loaded and compiled, so the laptop can never pop in half-ready.
+  // --- cold open (like the promo film): the laptop is already there in the dark; a studio light sweeps across the
+  // aluminum while the camera glides low over the palm rest, a first tap sends the ring through the metal, and the
+  // camera settles into the hero. It starts only when everything is loaded and compiled (black frame until then).
   useEffect(() => {
-    if (control.done) {
+    if (skipIntro) {
       state.reveal = 1;
       bus.introDone = true;
       bus.loaded = 1;
       return;
     }
-    if (!parts) return;
-    state.reveal = 0;
     bus.introDone = false;
-    const tl = gsap.timeline({ paused: true });
-    tl.to(control, { opacity: 1, duration: 1.2, ease: "power2.out" }, 0)
-      .to(control, { k: 0.085, duration: 2.4, ease: "expo.out" }, 0.5)
-      .to(control, { noise: 0.02, duration: 2.4, ease: "power3.out" }, 0.5)
-      .add(() => bus.cue("swell"), 0.5)
-      .to(control, { flash: 1, duration: 0.25, ease: "power2.out" }, 2.35)
-      .to(control, { flash: 0.35, duration: 1.1, ease: "power2.inOut" }, 2.6)
-      .addLabel("hold", 3.3)
-      .add(() => {
-        // hold on the mark (gently breathing) until the scene is ready
-        const r = load.current;
-        if (!(r.env && r.live && r.compiled)) {
-          tl.pause();
-          const id = window.setInterval(() => {
-            const q = load.current;
-            if (q.env && q.live && q.compiled) {
-              window.clearInterval(id);
-              tl.resume();
-            }
-          }, 60);
-        }
-      }, "hold")
-      .to(control, { flash: 0, duration: 0.5, ease: "power1.in" }, "hold")
-      .to(control, { mix: 1, duration: 2.1, ease: "power2.inOut" }, "hold")
-      .to(control, { swirl: 1, duration: 1.0, ease: "power2.out" }, "hold")
-      .to(control, { swirl: 0, duration: 1.1, ease: "power2.inOut" }, "hold+=1.0")
-      .to(control, { noise: 0.25, duration: 0.5, ease: "power2.out" }, "hold")
-      .to(control, { noise: 0.02, duration: 1.4, ease: "expo.out" }, "hold+=0.5")
-      .to(state, { reveal: 1, duration: 1.1, ease: "power1.inOut" }, "hold+=1.75")
-      .to(control, { opacity: 0, duration: 0.9, ease: "power1.in" }, "hold+=1.95")
-      .to(intro, { lid: 108, duration: 1.7, ease: "power2.inOut" }, "hold+=2.2")
-      .add(() => void (control.done = true), "hold+=2.9")
-      .add(() => {
-        intro.open = 1;
-        bus.introDone = true;
-      }, "hold+=3.9");
-    // the dust appears only once everything is ready (or after 2.5 s at worst), so nothing hitches on screen
     const born = performance.now();
     const gate = window.setInterval(() => {
       const q = load.current;
-      if ((q.env && q.live && q.compiled) || performance.now() - born > 2500) {
+      if ((q.env && q.live && q.compiled) || performance.now() - born > 3000) {
         window.clearInterval(gate);
-        tl.play();
+        intro.start = now();
       }
-    }, 40);
-    // scrolling early speeds the film up instead of cutting it
-    const id = window.setInterval(() => {
-      if (scrollPos() > 0.2 && tl.progress() < 1) tl.timeScale(3.5);
-    }, 150);
-    return () => {
-      window.clearInterval(id);
-      window.clearInterval(gate);
-      tl.kill();
-    };
-  }, [parts, control, state, intro, film]);
-
-  // the mark forms where the hero camera looks, facing it
-  const logo = useMemo(() => {
-    const v = film.sample(0);
-    const center = new THREE.Vector3(0.1, 0.72, -0.25);
-    const m = new THREE.Matrix4().lookAt(new THREE.Vector3(v.px, v.py, v.pz), center, new THREE.Vector3(0, 1, 0));
-    return { center, quat: new THREE.Quaternion().setFromRotationMatrix(m) };
-  }, [film]);
+    }, 30);
+    return () => window.clearInterval(gate);
+  }, [skipIntro, state, intro]);
 
   const camPos = useMemo(() => new THREE.Vector3(3.55, 2.45, 6.1), []);
   const camTgt = useMemo(() => new THREE.Vector3(0, 0.4, -0.35), []);
@@ -273,9 +233,11 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
   const goalT = useMemo(() => new THREE.Vector3(), []);
   const off = useMemo(() => new THREE.Vector3(), []);
   const sph = useMemo(() => new THREE.Spherical(), []);
+  const sweep = useRef<THREE.DirectionalLight>(null);
+  const IA = useMemo(() => ({ pos: new THREE.Vector3(), tgt: new THREE.Vector3() }), []);
   const shift = useRef({ x: 0.16, y: 0.1, fov: 30, init: false });
   const pointerSm = useRef({ x: 0, y: 0 });
-  const sched = useRef({ next: 0, i: 0, zoneStep: -1, layerKey: "", finaleTap: false, revealed: new Set<string>(), g: 0, loc: { id: "intro", local: 0 } });
+  const sched = useRef({ next: 0, i: 0, zoneStep: -1, layerKey: "", finaleTap: false, introDoneHold: false, revealed: new Set<string>(), g: 0, loc: { id: "intro", local: 0 } });
   const air = useRef({ id: "pinch", progress: 0, weight: 0 });
   const sound = useRef({ id: "knuckle", progress: 0, weight: 0 });
   const tryState = useRef<{ zone: string; name: string; count: number; timer: number }>({ zone: "", name: "", count: 0, timer: 0 });
@@ -333,37 +295,88 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     sph.theta += (pointerSm.current.x * 0.06 + Math.sin(t * 0.11) * 0.006 * drift) * (reduced ? 0 : 1);
     sph.phi = THREE.MathUtils.clamp(sph.phi - pointerSm.current.y * 0.035 + Math.sin(t * 0.083 + 1.3) * 0.004 * drift, 0.02, Math.PI - 0.02);
     goalP.setFromSpherical(sph).add(goalT);
-    const k = reduced || !shift.current.init ? 1 : 1 - Math.exp(-dt * 6.5);
+    let fovGoal = ch.fov + (narrow ? 6 : 0);
+    let sxGoal = narrow ? 0 : ch.sx;
+    const copyTop = loc.id === "zones" || loc.id === "air" || loc.id === "try";
+    let syGoal = narrow ? (copyTop ? -0.17 : 0.15) : ch.sy;
+
+    // ---------- cold open: macro glide over the left palm rest, first tap, whip back to the hero
+    let lightUp = 1;
+    let introCam = 0;
+    if (!skipIntro) {
+      if (intro.t < INTRO_END) {
+        // before everything is ready: hold the first macro mark in the dark (nothing visible, nothing loading)
+        if (intro.start >= 0) {
+          if (scrollPos() > 0.12) intro.speed = 3;
+          intro.t = Math.max(0, intro.t) + dt * intro.speed;
+        }
+        const ti = Math.max(0, intro.t);
+        lightUp = intro.start < 0 ? 0 : smooth(0.0, 1.0, ti);
+        // glide: slow and even, like a dolly
+        const g1 = smooth(0, 1.35, ti);
+        IA.pos.lerpVectors(MACRO.a.pos, MACRO.b.pos, g1);
+        IA.tgt.lerpVectors(MACRO.a.tgt, MACRO.b.tgt, g1);
+        // then the whip back to the hero framing: crawl, fast, crawl
+        const wv = whip(Math.min(1, Math.max(0, (ti - 1.4) / (INTRO_END - 1.4))));
+        introCam = 1 - wv;
+        goalP.lerpVectors(IA.pos, goalP, wv);
+        goalT.lerpVectors(IA.tgt, goalT, wv);
+        fovGoal = THREE.MathUtils.lerp(MACRO.fov, fovGoal, wv);
+        // the macro sits in the right half of the frame, clear of the headline
+        sxGoal = THREE.MathUtils.lerp(0.2, sxGoal, wv);
+        syGoal = THREE.MathUtils.lerp(0.08, syGoal, wv);
+        if (ti > 1.15 && !intro.tapped) {
+          intro.tapped = true;
+          const z = zoneById("left-palm");
+          taps.tap(MACRO.tap.x, MACRO.tap.z, 1.1, { zone: ZONE_SHORT["left-palm"] ?? z.name, action: "Play or pause" });
+          zrt.flashes["left-palm"] = t;
+          screen.markTap(MACRO.tap.x / W + 0.5, MACRO.tap.z / D + 0.5, t);
+          screen.showHud("Left palm · Play or pause", t);
+          bus.cue("tap");
+        }
+        if (intro.t >= INTRO_END) {
+          bus.introDone = true;
+          sched.current.next = t + 1.6;
+        }
+      }
+    }
+    const k = reduced || !shift.current.init || introCam > 0.001 ? 1 : 1 - Math.exp(-dt * 6.5);
     shift.current.init = true;
     camPos.lerp(goalP, k);
     camTgt.lerp(goalT, k);
     camera.position.copy(camPos);
     camera.lookAt(camTgt);
-    shift.current.fov += (ch.fov + (narrow ? 6 : 0) - shift.current.fov) * k;
-    shift.current.x += ((narrow ? 0 : ch.sx) - shift.current.x) * k;
+    shift.current.fov += (fovGoal - shift.current.fov) * k;
+    shift.current.x += (sxGoal - shift.current.x) * k;
     // phones: copy spans the width, so the laptop moves to whichever half the chapter's copy is not in
-    const copyTop = loc.id === "zones" || loc.id === "air" || loc.id === "try";
-    shift.current.y += ((narrow ? (copyTop ? -0.17 : 0.15) : ch.sy) - shift.current.y) * k;
+    shift.current.y += (syGoal - shift.current.y) * k;
     camera.fov = shift.current.fov;
     const w = size.width, h = size.height;
     camera.setViewOffset(w, h, -shift.current.x * w, shift.current.y * h, w, h);
     camera.updateProjectionMatrix();
 
     // ---------- laptop pose and light
-    const introOpen = intro.open;
-    state.lid = introOpen >= 1 ? ch.lid : intro.lid;
+    state.lid = ch.lid;
     state.tilt = ch.tilt;
     state.xray = reduced ? 0 : ch.xray;
-    state.screen = ch.screen;
-    state.backlight = ch.backlight * (1 - ch.hush * 0.8);
+    state.screen = ch.screen * smooth(0.55, 1.25, skipIntro ? 9 : intro.t);
+    state.backlight = ch.backlight * (1 - ch.hush * 0.8) * smooth(0.35, 1.2, skipIntro ? 9 : intro.t);
     state.sensor = 0;
     fx.hush = ch.hush;
-    fx.bokeh = reduced ? 0 : ch.bokeh;
+    fx.bokeh = reduced ? 0 : Math.max(ch.bokeh, introCam * 0.75);
     fx.focus = fx.focus ?? new THREE.Vector3();
     if (state.xray > 0.3) fx.focus.copy(SENSOR);
+    else if (introCam > 0.05) fx.focus.set(MACRO.tap.x, 0, MACRO.tap.z);
     else fx.focus.copy(camTgt);
+    // the sweep: a key light that crosses the aluminum once during the cold open, then rests at zero
+    if (sweep.current) {
+      const ti = skipIntro || intro.start < 0 ? -1 : intro.t;
+      const u = smooth(0.05, 1.7, ti);
+      sweep.current.position.set(-7 + u * 14, 3.2, 2.5 - u * 1.5);
+      sweep.current.intensity = ti < 0 || ti > 2.2 ? 0 : Math.sin(Math.PI * u) * 3.2;
+    }
     fx.aberration = Math.min(1, Math.abs(bus.velocity) * 0.25);
-    (scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = 1 - ch.hush * 0.55;
+    (scene as THREE.Scene & { environmentIntensity: number }).environmentIntensity = (1 - ch.hush * 0.55) * lightUp;
 
     const sc = sched.current;
     let mode: ScreenMode = "map";
@@ -374,7 +387,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     }
 
     // ---------- intro: the hero keeps a slow rhythm of taps once the lid is open
-    if (inChapter("intro") && bus.introDone && !reduced && t > sc.next) {
+    if (inChapter("intro") && bus.introDone && !reduced && t > sc.next && !sc.introDoneHold) {
       const gst = HERO_TAPS[sc.i++ % HERO_TAPS.length];
       fireGesture(gst.zone, gst.gesture, gst.action);
       sc.next = t + 2.1;
@@ -584,7 +597,9 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
       <Suspense fallback={null}>
         <StudioLight theme={theme} onReady={onEnvReady} />
       </Suspense>
-      <BackLight theme={theme} target={logo.center} />
+      <BackLight theme={theme} target={BACK_TARGET} />
+      {/* cold-open sweep light (always mounted so the shader programs never change) */}
+      <directionalLight ref={sweep} intensity={0} color="#f4f5f8" position={[-7, 3.2, 2.5]} />
       <Laptop
         state={state}
         taps={taps}
@@ -613,10 +628,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
           </>
         )}
       </Laptop>
-      {!control.done && (
-        <Particles size={particleSize} parts={parts} control={control} logoCenter={logo.center} logoQuat={logo.quat} ink={pal.ink} signal={pal.signal} dark={dark} />
-      )}
-      <Floor theme={theme} quality={quality} dirty={shadowDirty} fade={() => state.reveal * (1 - state.xray * 0.7)} />
+      <Floor theme={theme} quality={quality} dirty={shadowDirty} fade={() => state.reveal * (1 - state.xray * 0.7) * (skipIntro ? 1 : smooth(0, 1, intro.t))} />
       <Effects theme={theme} quality={quality} fx={fx} />
     </>
   );

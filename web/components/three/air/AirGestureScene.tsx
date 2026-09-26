@@ -27,8 +27,15 @@ type Props = {
 export const NOTCH_CAM = new THREE.Vector3(0, 1.98, -1.7);
 
 /** Where the pinch hangs at rest: over the keys, well inside the camera's view. */
-const A0 = new THREE.Vector3(0.3, 0.98, 0.02);
-const NEUTRAL_ROT = { pitch: -0.05, yaw: 0.3, roll: -1.1 };
+const A0 = new THREE.Vector3(0.32, 1.08, -0.3);
+/** Hand raised in front of the screen, palm toward the notch camera, back of the hand toward the viewer. */
+const NEUTRAL_ROT = { pitch: 0.68, yaw: 0.1, roll: 1.7 };
+/**
+ * The single hand is a LEFT hand (the right hand mirrored): from the three-quarter camera at the front right,
+ * its thumb and index sit on the near side, so the pinch is seen in profile instead of hidden behind the palm.
+ * Rotations are given as for a right hand; the mirror flips yaw and roll.
+ */
+const MAIN_MIRROR = true;
 
 type Frame = { pose: HandPose; rot: { pitch: number; yaw: number; roll: number }; anchor: Anchor; at: THREE.Vector3; env: number };
 const makeFrame = (): Frame => ({ pose: makePose(), rot: { ...NEUTRAL_ROT }, anchor: "pinch", at: new THREE.Vector3(), env: 1 });
@@ -198,86 +205,87 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
     let showDial = 0, showKnob = 0;
     let knobAngle = 0;
 
+    // Every gesture holds its key pose from about 0.3 to 0.62 of the step: the site snaps scroll to the step's centre.
     if (id === "pinch" || id === "tap") {
-      pinch = track([[0, 0], [0.14, 0], [0.3, 1], [0.62, 1], [0.8, 0]], p);
+      pinch = track([[0, 0], [0.1, 0], [0.26, 1], [0.62, 1], [0.76, 0]], p);
       mixPose(POSES.ready, POSES.pinch, pinch, f.pose);
-      f.at.y -= 0.035 * pinch;
+      // the wrist leads: the hand drifts in a little before the fingers close, and settles back after
+      const lead = ramp(p, 0, 0.22) - ramp(p, 0.7, 0.95);
+      f.at.z -= 0.06 * lead;
+      f.at.y -= 0.03 * pinch;
+      f.rot.pitch += 0.06 * lead;
     } else if (id.startsWith("drag")) {
-      const dir = id === "drag" ? "sweep" : id.slice(5);
-      pinch = track([[0, 0], [0.1, 0], [0.2, 1], [0.76, 1], [0.88, 0]], p);
-      let mx = 0, my = 0;
-      if (dir === "sweep") {
-        mx = track([[0, 0], [0.22, 0], [0.42, -1], [0.5, -1], [0.7, 1], [0.76, 1], [0.94, 0]], p, expoInOut);
-        ui.dir = p < 0.56 ? "LEFT" : "RIGHT";
-      } else {
-        const m = track([[0, 0], [0.22, 0], [0.5, 1], [0.74, 1], [0.94, 0]], p, expoInOut);
-        mx = dir === "left" ? -m : dir === "right" ? m : 0;
-        my = dir === "up" ? m : dir === "down" ? -m : 0;
-        ui.dir = dir.toUpperCase();
-      }
+      const dir = id === "drag" ? "left" : id.slice(5);
+      pinch = track([[0, 0], [0.06, 0], [0.16, 1], [0.64, 1], [0.74, 0]], p);
+      const m = track([[0, 0], [0.14, 0], [0.32, 1], [0.66, 1], [0.94, 0]], p, expoInOut);
+      const mx = dir === "left" ? -m : dir === "right" ? m : 0;
+      const my = dir === "up" ? m : dir === "down" ? -m : 0;
+      ui.dir = dir.toUpperCase();
       mixPose(POSES.ready, POSES.pinch, pinch, f.pose);
-      f.at.x += mx * 0.55;
-      f.at.y += my * 0.3;
-      f.rot.yaw += mx * 0.12;
+      f.at.x += mx * 0.6;
+      f.at.y += my * 0.32;
+      // the wrist turns into the move
+      f.rot.yaw -= mx * 0.22;
+      f.rot.pitch += my * 0.15;
       ui.dx = mx;
       ui.dy = my;
     } else if (id === "swipe") {
-      const sL = ramp(p, 0.12, 0.42, expoInOut);
-      const sR = ramp(p, 0.56, 0.86, expoInOut);
+      const sL = ramp(p, 0.08, 0.3, expoInOut);
+      const back = ramp(p, 0.66, 0.94);
       copyPose(POSES.open, f.pose);
-      const face = 0.95 - 1.9 * ramp(p, 0.44, 0.54);
-      f.rot.pitch = 0.55;
-      f.rot.yaw = face;
-      f.rot.roll = 0.05;
+      f.pose.spread = 1.5;
+      f.rot.pitch = 0.95;
+      f.rot.roll = 0.35;
+      // the wrist leads the sweep, the fingers trail a little
+      f.rot.yaw = -0.1 - 0.3 * Math.sin(Math.PI * sL) + 0.2 * Math.sin(Math.PI * back);
       f.anchor = "palm";
-      const x = 0.75 - 1.5 * sL + 1.5 * sR;
-      f.at.set(x, 0.78 + 0.05 * Math.sin(Math.PI * (sL + sR)), 0.1);
-      f.env = ramp(p, 0, 0.12) * (1 - ramp(p, 0.88, 1));
-      ui.swipe = sL - sR;
-      ui.dir = p < 0.5 ? "LEFT" : "RIGHT";
+      f.at.set(0.8 - 1.5 * sL + 1.5 * back, 0.72 + 0.05 * Math.sin(Math.PI * sL), -0.05);
+      f.env = ramp(p, 0, 0.08) * (1 - ramp(p, 0.94, 1));
+      ui.swipe = sL - back;
+      ui.dir = "LEFT";
     } else if (id === "dial") {
-      pinch = track([[0, 0], [0.08, 0], [0.2, 1], [0.8, 1], [0.92, 0]], p);
-      const v = 0.32 + 0.44 * ramp(p, 0.24, 0.58) - 0.14 * ramp(p, 0.62, 0.76);
+      pinch = track([[0, 0], [0.06, 0], [0.16, 1], [0.66, 1], [0.76, 0]], p);
+      const turn = ramp(p, 0.16, 0.32) - ramp(p, 0.76, 0.94);
       mixPose(POSES.ready, POSES.pinch, pinch, f.pose);
-      f.rot.roll = NEUTRAL_ROT.roll + (v - 0.32) * 2.3;
-      ui.dial = v;
+      f.rot.roll = NEUTRAL_ROT.roll - 0.35 + turn * 0.9;
+      ui.dial = 0.3 + 0.45 * ramp(p, 0.16, 0.32);
       showDial = pinch;
-      knobAngle = (v - 0.32) * 2.3;
+      knobAngle = turn * 0.9;
     } else if (id === "zoom") {
       twoHands = true;
-      pinch = track([[0, 0], [0.08, 0], [0.2, 1], [0.84, 1], [0.94, 0]], p);
-      const sep = track([[0, 0.42], [0.22, 0.42], [0.5, 0.78], [0.62, 0.78], [0.84, 0.46]], p);
+      pinch = track([[0, 0], [0.06, 0], [0.16, 1], [0.66, 1], [0.76, 0]], p);
+      const sep = track([[0, 0.42], [0.16, 0.42], [0.32, 0.82], [0.66, 0.82], [0.9, 0.46]], p);
       mixPose(POSES.ready, POSES.pinch, pinch, f.pose);
-      f.rot.yaw = 0.3;
-      f.at.set(sep, A0.y, A0.z);
-      ui.zoom = 1 + ((sep - 0.42) / 0.36) * 1.1;
+      f.rot.yaw = NEUTRAL_ROT.yaw + 0.15;
+      f.at.set(-sep, A0.y, A0.z);
+      ui.zoom = 1 + ((sep - 0.42) / 0.4) * 1.1;
     } else if (id === "circle") {
-      const turns = 1.25 * ramp(p, 0.14, 0.86);
+      const turns = 1.25 * ramp(p, 0.1, 0.9);
       const th = Math.PI / 2 - turns * Math.PI * 2;
       copyPose(POSES.point, f.pose);
-      f.rot.pitch = -0.05;
-      f.rot.yaw = 0.25;
-      f.rot.roll = -0.6;
+      f.rot.pitch = 0.7;
+      f.rot.yaw = 0.1;
+      f.rot.roll = -0.4;
       f.anchor = "index";
-      const C = S.ringPt.set(0.2, 0.9, -0.3);
-      f.at.set(C.x + Math.cos(th) * 0.2, C.y + Math.sin(th) * 0.2, C.z);
-      f.env = ramp(p, 0, 0.14) * (1 - ramp(p, 0.88, 1));
+      const C = S.ringPt.set(0.3, 1.02, -0.4);
+      f.at.set(C.x + Math.cos(th) * 0.18, C.y + Math.sin(th) * 0.18, C.z);
+      f.env = ramp(p, 0, 0.1) * (1 - ramp(p, 0.9, 1));
       ui.turns = turns;
       showKnob = f.env;
       knobAngle = -turns * Math.PI * 2;
     } else if (id === "point") {
       const k = ramp(p, 0.1, 0.9);
-      const ox = Math.sin(k * Math.PI * 2) * 0.42;
-      const oy = Math.sin(k * Math.PI * 4) * 0.14;
+      const ox = Math.sin(k * Math.PI * 2) * 0.4;
+      const oy = Math.sin(k * Math.PI * 4) * 0.12;
       copyPose(POSES.point, f.pose);
-      f.rot.pitch = -0.05;
-      f.rot.yaw = 0.25;
-      f.rot.roll = -0.6;
+      f.rot.pitch = 0.7;
+      f.rot.yaw = 0.1;
+      f.rot.roll = -0.4;
       f.anchor = "index";
-      f.at.set(0.15 + ox, 0.88 + oy, -0.3);
-      f.env = ramp(p, 0, 0.12) * (1 - ramp(p, 0.88, 1));
-      ui.px = 0.5 + ox / 0.9;
-      ui.py = 0.5 - oy / 0.3;
+      f.at.set(0.3 + ox, 1.0 + oy, -0.4);
+      f.env = ramp(p, 0, 0.1) * (1 - ramp(p, 0.9, 1));
+      ui.px = 0.5 + ox / 0.85;
+      ui.py = 0.5 - oy / 0.26;
     }
     ui.pinch = pinch;
 
@@ -294,12 +302,12 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
     f.at.x += idleX;
     f.at.y += idleY;
 
-    placeHand(f.pose, f.rot, f.anchor, f.at, S.tmpA, false, breath);
+    placeHand(f.pose, f.rot, f.anchor, f.at, S.tmpA, MAIN_MIRROR, breath);
     if (f.env < 0.999) {
       neutral(S.n);
       S.n.at.x += idleX;
       S.n.at.y += idleY;
-      placeHand(S.n.pose, S.n.rot, S.n.anchor, S.n.at, S.tmpB, false, breath);
+      placeHand(S.n.pose, S.n.rot, S.n.anchor, S.n.at, S.tmpB, MAIN_MIRROR, breath);
       const e = f.env;
       for (let i = 0; i < S.tmpA.length; i++) dR.target[i] = S.tmpB[i] + (S.tmpA[i] - S.tmpB[i]) * e;
     } else dR.target.set(S.tmpA);
@@ -319,7 +327,7 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
       fl.rot.roll = f.rot.roll;
       fl.anchor = "pinch";
       fl.at.set(twoHands ? -f.at.x : -0.9, f.at.y + Math.sin(t * 1.1) * 0.004, f.at.z);
-      placeHand(fl.pose, fl.rot, fl.anchor, fl.at, dL.target, true, breath * 0.8);
+      placeHand(fl.pose, fl.rot, fl.anchor, fl.at, dL.target, !MAIN_MIRROR, breath * 0.8);
       dL.hot.fill(0);
       dL.hot[J.T_TIP] = dL.hot[J.I_TIP] = flash;
       dL.opacity = w * S.leftOn;

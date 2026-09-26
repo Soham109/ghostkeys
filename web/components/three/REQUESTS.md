@@ -132,3 +132,4 @@ Client: "don't make the website unnecessarily long". The landing now has six cha
 - Accent use (QA art item 3): rings still cross the trackpad and other zones; inter-key glow reads as decoration.
 - Screen texture uses blue, green, purple and pink zone colors (QA art item 4, APP_CRITIQUE item 1): monochrome please.
 - Mobile jagged, dashed-looking chassis and trackpad edges at 390 wide, tier 1 (not in the site's area).
+- Light theme: in the sound beat the laptop's black display sits under the headline column at 1440; please frame it further right in air/sound (headline column is the left ~40%).

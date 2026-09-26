@@ -31,7 +31,7 @@ export function SmoothScroll() {
       else window.scrollTo(0, y);
     };
     if (reduced) return () => document.removeEventListener("click", onClick);
-    const lenis = new Lenis({ lerp: 0.08, smoothWheel: true, syncTouch: false, autoRaf: false });
+    const lenis = new Lenis({ lerp: 0.08, smoothWheel: true, syncTouch: false, wheelMultiplier: 0.7, touchMultiplier: 0.8, autoRaf: false });
     scroller.lenis = lenis;
     lenis.on("scroll", ScrollTrigger.update);
     const tick = (time: number) => lenis.raf(time * 1000);
