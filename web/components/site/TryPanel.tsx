@@ -67,7 +67,7 @@ export function TryPanel() {
         <div className="page-x absolute inset-x-0 top-[17svh]">
           <div className="scrim" aria-hidden />
           <h2 data-line className="display max-w-[10ch] text-[length:var(--t-line)] text-ink">
-            Go on. Tap <em>it.</em>
+            Try it <em>here.</em>
           </h2>
           <div data-fade className="mt-12 hidden md:block">
             <ZoneMap />

@@ -27,9 +27,9 @@ export function Pricing() {
     <main className="page-x pt-[24svh] pb-[10svh]">
       <span className="label">Pricing</span>
       <h1 className="display mt-8 text-[length:var(--t-line)] text-ink">
-        Pay once.
+        Pay <em>once.</em>
         <br />
-        <em>Keep it.</em>
+        Keep it.
       </h1>
       {pro.launchPrice && (
         <p className="lede mt-10 max-w-[56ch]">
@@ -95,7 +95,7 @@ export function Pricing() {
 
       <div className="mt-[14svh]">
         <button aria-expanded={open} aria-controls={matrixId} onClick={() => setOpen((o) => !o)} className="group flex w-full items-baseline justify-between border-y hairline py-7 text-left">
-          <span className="display text-[length:var(--t-big)] text-ink">{open ? "Close the comparison" : <>Every feature, <em>side by side.</em></>}</span>
+          <span className="display text-[length:var(--t-big)] text-ink">{open ? "Close the comparison" : <>Compare <em>every</em> feature.</>}</span>
           <span aria-hidden className="label text-[16px] transition-transform duration-300 group-aria-expanded:rotate-45">
             +
           </span>

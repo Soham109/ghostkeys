@@ -133,3 +133,4 @@ Client: "don't make the website unnecessarily long". The landing now has six cha
 - Screen texture uses blue, green, purple and pink zone colors (QA art item 4, APP_CRITIQUE item 1): monochrome please.
 - Mobile jagged, dashed-looking chassis and trackpad edges at 390 wide, tier 1 (not in the site's area).
 - Light theme: in the sound beat the laptop's black display sits under the headline column at 1440; please frame it further right in air/sound (headline column is the left ~40%).
+- Mobile (390 wide), air chapter: the laptop sits mostly below and right of the frame (screenshots/m390-05-air-1.png); the hand is visible but the object is cropped.

@@ -35,13 +35,11 @@ Playwright uses its bundled Chromium (`pnpm exec playwright install chromium` on
 
 | role | face | license |
 | --- | --- | --- |
-| Display (headlines, prices) | Zodiak, weights 300 and 400, with italics | ITF Free Font License (Fontshare), free for commercial use, self-hosted |
-| Text (the rare sentence) | Switzer, weights 300, 400, 500 | ITF Free Font License (Fontshare) |
+| Display (headlines, prices) | Switzer 200, with Switzer 300 italic for the one accent word per headline | ITF Free Font License (Fontshare), free for commercial use, self-hosted |
+| Text | Switzer 300, 400, 500 | ITF Free Font License (Fontshare) |
 | Captions and labels | Fragment Mono 400 | SIL Open Font License 1.1 |
 
-Chosen after rendering three pairings side by side (`screenshots/fonts-pairing-1..3.png`): Zodiak with Switzer and Fragment Mono; Boska with Satoshi and JetBrains Mono; General Sans with Switzer and Fragment Mono. Zodiak's light weight reads as the most refined at display sizes and its italic carries the one accent word per line. `scripts/fetch-fonts.mjs` re-downloads the Fontshare files.
-
-Scale: display lines are fluid (`--t-hero`, `--t-line`) with tracking at -0.03em and leading at 0.94; labels are 11 px mono, uppercase, +0.08em.
+Chosen by the client from three specimens rendered on the real page (`screenshots/fonts-v2-A..C.png`: General Sans, Switzer, Fraunces). `scripts/fetch-fonts.mjs switzer@200,300,301,400,500` re-downloads the files. Display sizes use tracking -0.04em and leading 0.98; labels are 11 px mono, uppercase, +0.08em.
 
 ## Motion and scroll
 

@@ -42,7 +42,7 @@
   --color-signal: var(--signal);
 
   --font-sans: var(--font-text), ui-sans-serif, system-ui, sans-serif;
-  --font-serif: var(--font-display), ui-serif, Georgia, serif;
+  --font-display: var(--font-text), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-mono-face), ui-monospace, monospace;
 
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -113,19 +113,20 @@ html.lenis body {
   padding-inline: var(--page-x);
 }
 
-/* Display type: Zodiak light, tight tracking, generous but controlled leading */
+/* Display type: Switzer 200, tight tracking, one light italic accent word */
 .display {
-  font-family: var(--font-serif);
-  font-weight: 300;
-  letter-spacing: -0.03em;
-  line-height: 0.94;
-  font-feature-settings: "kern", "liga", "dlig";
+  font-family: var(--font-display);
+  font-weight: 200;
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+  font-feature-settings: "kern", "liga";
   text-wrap: balance;
 }
 .display em,
 .display i {
   font-style: italic;
-  letter-spacing: -0.02em;
+  font-weight: 300;
+  letter-spacing: -0.035em;
 }
 
 .lede {
@@ -146,8 +147,8 @@ html.lenis body {
 }
 
 .numeral {
-  font-family: var(--font-serif);
-  font-weight: 300;
+  font-family: var(--font-display);
+  font-weight: 200;
   font-variant-numeric: lining-nums tabular-nums;
   letter-spacing: -0.04em;
   line-height: 0.85;
@@ -313,8 +314,8 @@ html.lenis body {
   margin-top: 1.1em;
 }
 .prose-gk h2 {
-  font-family: var(--font-serif);
-  font-weight: 300;
+  font-family: var(--font-display);
+  font-weight: 200;
   font-size: clamp(1.75rem, 1.2rem + 1.4vw, 2.5rem);
   line-height: 1.1;
   letter-spacing: -0.02em;

@@ -1,10 +1,14 @@
 "use client";
 
 import * as THREE from "three";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { useFrame } from "@react-three/fiber";
 import { Html } from "@react-three/drei";
 import type { TapField, TapLabel } from "./taps";
 import { hitsCopy, project, safeArea } from "./safeArea";
+
+/** pills that would land on copy: hidden (they are short-lived; the screen HUD repeats them) */
+const parked = new Map<string, boolean>();
 
 /** Pill size used for clamping (the pill grows up and right from its anchor). */
 const PILL_W = 250;
@@ -20,7 +24,8 @@ function clampPosition(el: THREE.Object3D, camera: THREE.Camera, size: { width: 
   const x = Math.min(Math.max(p[0], s.x0), s.x1 - PILL_W);
   const y = Math.min(Math.max(p[1], s.y0 + PILL_H), s.y1);
   // never on a headline: park it out of view instead (it is short-lived; the screen HUD repeats it)
-  if (hitsCopy(x, y - PILL_H, x + PILL_W, y)) return [-9999, -9999];
+  const hidden = !project(el, camera, size.width, size.height) || hitsCopy(x, y - PILL_H, x + PILL_W, y);
+  parked.set(el.uuid, hidden);
   return [x, y];
 }
 
@@ -39,17 +44,36 @@ export function TapLabels({ taps, max = 1 }: { taps: TapField; max?: number }) {
   return (
     <>
       {items.map((l) => (
-        <Html key={l.id} position={[l.x, l.y, l.z]} zIndexRange={[30, 0]} style={{ pointerEvents: "none" }} calculatePosition={clampPosition}>
-          <div className="tap-label" style={{ position: "absolute", left: 0, bottom: 0 }}>
-            <div className="hud-pill">
-              <span className="hud-dot" />
-              <span style={{ color: "var(--ink-2)" }}>{l.zone}</span>
-              <span aria-hidden style={{ color: "var(--ink-3)" }}>·</span>
-              <span>{l.action}</span>
-            </div>
-          </div>
-        </Html>
+        <Pill key={l.id} l={l} />
       ))}
+    </>
+  );
+}
+
+function Pill({ l }: { l: TapLabel }) {
+  const anchor = useRef<THREE.Group>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useFrame(() => {
+    if (!anchor.current || !box.current) return;
+    // Html's own group is the anchor's only child; the clamp keyed its verdict on that group
+    const id = anchor.current.children[0]?.uuid;
+    const hide = id ? parked.get(id) ?? true : true;
+    box.current.style.visibility = hide ? "hidden" : "visible";
+  });
+  return (
+    <>
+      <group ref={anchor} position={[l.x, l.y, l.z]}>
+      <Html zIndexRange={[30, 0]} style={{ pointerEvents: "none" }} calculatePosition={clampPosition}>
+        <div ref={box} className="tap-label" style={{ position: "absolute", left: 0, bottom: 0, visibility: "hidden" }}>
+          <div className="hud-pill">
+            <span className="hud-dot" />
+            <span style={{ color: "var(--ink-2)" }}>{l.zone}</span>
+            <span aria-hidden style={{ color: "var(--ink-3)" }}>·</span>
+            <span>{l.action}</span>
+          </div>
+        </div>
+      </Html>
+      </group>
     </>
   );
 }

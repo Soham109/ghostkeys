@@ -2,23 +2,12 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 
-/** Display: Zodiak (Fontshare, ITF Free Font License). Light weight for large type, italic for one accent word. */
-const display = localFont({
-  src: [
-    { path: "./fonts/Zodiak-300.woff2", weight: "300", style: "normal" },
-    { path: "./fonts/Zodiak-300i.woff2", weight: "300", style: "italic" },
-    { path: "./fonts/Zodiak-400.woff2", weight: "400", style: "normal" },
-    { path: "./fonts/Zodiak-400i.woff2", weight: "400", style: "italic" },
-  ],
-  variable: "--font-display",
-  display: "swap",
-  preload: true,
-});
-
-/** Text: Switzer (Fontshare, ITF Free Font License). */
+/** Switzer (Fontshare, ITF Free Font License): 200 for display, 300 italic for the one accent word, 300 to 500 for text. */
 const text = localFont({
   src: [
+    { path: "./fonts/Switzer-200.woff2", weight: "200", style: "normal" },
     { path: "./fonts/Switzer-300.woff2", weight: "300", style: "normal" },
+    { path: "./fonts/Switzer-300i.woff2", weight: "300", style: "italic" },
     { path: "./fonts/Switzer-400.woff2", weight: "400", style: "normal" },
     { path: "./fonts/Switzer-500.woff2", weight: "500", style: "normal" },
   ],
@@ -36,7 +25,7 @@ const mono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Ghostkeys: your laptop has more buttons",
+  title: "Ghostkeys: your MacBook has more buttons",
   description:
     "Ghostkeys turns the palm rests, speaker grilles, edges and lid of your MacBook into buttons you program, using the motion sensor already inside. On-device, no extra hardware.",
   icons: { icon: "/icon.svg" },
@@ -59,7 +48,7 @@ const themeScript = `(function(){try{var p=localStorage.getItem('gk-theme');var 
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" data-theme="dark" suppressHydrationWarning className={`${display.variable} ${text.variable} ${mono.variable}`}>
+    <html lang="en" data-theme="dark" suppressHydrationWarning className={`${text.variable} ${mono.variable}`}>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeScript }} />
       </head>

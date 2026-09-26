@@ -54,14 +54,14 @@ const CHAPTERS: ChapterDef[] = [
     id: "air",
     place: "tl",
     beats: [
-      { line: <>Gesture in the <em>air.</em></>, tag: "Camera add-on / M4 and M5 / Beta", steps: AIR_STEPS.map((s) => s.caption), from: 0, to: AIR_SOUND_SPLIT },
-      { line: <>Listen<br /><em>closer.</em></>, tag: "Sound mode / Opt-in / On-device", steps: SOUND_STEPS.map((s) => s.caption), from: AIR_SOUND_SPLIT, to: 1 },
+      { line: <>Control it <em>without</em> touching it.</>, tag: "Camera add-on / M4 and M5 / Beta", steps: AIR_STEPS.map((s) => s.caption), from: 0, to: AIR_SOUND_SPLIT },
+      { line: <>It hears a <em>knock</em> from a tap.</>, tag: "Sound mode / Opt-in / On-device", steps: SOUND_STEPS.map((s) => s.caption), from: AIR_SOUND_SPLIT, to: 1 },
     ],
   },
   {
     id: "layers",
     place: "tl",
-    beats: [{ line: <>Your apps, your <em>layers.</em></>, steps: LAYER_STEPS.map((s) => s.caption), from: 0, to: 1 }],
+    beats: [{ line: <>A different layout for <em>every</em> app.</>, steps: LAYER_STEPS.map((s) => s.caption), from: 0, to: 1 }],
   },
 ];
 
@@ -252,8 +252,8 @@ function Intro() {
       <div className="pointer-events-none sticky top-0 h-[100svh]">
         <div className="page-x absolute inset-x-0 bottom-[13svh]">
           <div className="scrim invisible" data-intro data-fade aria-hidden />
-          <h1 data-line data-intro className="display invisible max-w-[9ch] text-[length:var(--t-hero)] text-ink">
-            Your laptop has <em>more</em> buttons.
+          <h1 data-line data-intro className="display invisible max-w-[12ch] text-[length:var(--t-hero)] text-ink">
+            Your MacBook has <em>more</em> buttons.
           </h1>
           <div data-intro data-fade className="invisible pointer-events-auto mt-10 flex items-center gap-8">
             <a href={DOWNLOAD_URL} className="btn-ink h-11 px-6 text-[14px]">
@@ -362,7 +362,7 @@ function Finale() {
         <div className="page-x relative pt-[19svh]">
           <div className="scrim" data-fade aria-hidden />
           <h2 data-line className="display max-w-[9ch] text-[length:var(--t-line)] text-ink">
-            The <em>blank</em> space is the interface.
+            The blank space is the <em>interface.</em>
           </h2>
           <div data-fade className="pointer-events-auto mt-12 flex flex-wrap items-center gap-x-8 gap-y-4">
             <a href={DOWNLOAD_URL} className="btn-ink h-12 px-7 text-[15px]">

@@ -6,7 +6,7 @@ import { useFrame } from "@react-three/fiber";
 import { GRILLE, KB, W } from "@/lib/dims";
 import { bus } from "@/lib/stage";
 import { GhostHandMesh } from "./GhostHand";
-import { J, JOINTS, POSES, copyPose, makePose, mixPose, placeHand, ramp, type Anchor, type HandPose } from "./handPose";
+import { J, JOINTS, POSES, copyPose, makePose, mixPose, placeHand, ramp, track, type Anchor, type HandPose } from "./handPose";
 import { HandDriver, MonoLabel, fadeLineMaterial, setBlend } from "./kit";
 import { makeSoundUI, soundOverlay } from "./soundScreen";
 import type { ScreenPainter } from "../screen";
@@ -27,8 +27,11 @@ type Props = {
 const PALM = new THREE.Vector3(1.1, 0.014, 0.6);
 const GRILLE_X = (GRILLE.inner + GRILLE.outer) / 2;
 const GRILLE_Z = (GRILLE.z0 + GRILLE.z1) / 2;
-const KNUCKLE_AT = [0.16, 0.27];
-const TIP_AT = [0.64, 0.75];
+const KNUCKLE_AT = [0.18, 0.27];
+const TIP_AT = [0.74, 0.82];
+/** knuckle height over the palm rest through the step: two knocks, a long rest in contact (the beat centre), two fingertip taps */
+const KNOCK_H: [number, number][] = [[0, 0.3], [0.12, 0.3], [0.16, 0.11], [0.18, 0], [0.215, 0.1], [0.245, 0.1], [0.27, 0], [0.58, 0], [0.64, 0.24], [0.7, 0.2], [0.74, 0], [0.775, 0.11], [0.8, 0.11], [0.82, 0], [0.88, 0.24], [1, 0.3]];
+const REST0 = 0.31, REST1 = 0.56, AUTO = 1.9, AUTO_HIT = 0.34;
 const CONTACTS = [...KNUCKLE_AT, ...TIP_AT];
 const HOT_KNUCKLE = [J.I_PIP, J.M_PIP, J.R_PIP];
 const HOT_TIP = [J.I_TIP];
@@ -85,6 +88,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
       b: new Float32Array(JOINTS * 3),
       prevP: -1,
       prevId: "",
+      prevPhase: 0,
       hitT: -10,
       hitKind: "knuckle" as "knuckle" | "fingertip",
       overlayOn: false,
@@ -180,7 +184,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
   const hover = (f: Frame) => {
     copyPose(POSES.relaxed, f.pose);
     f.rot.pitch = -0.25;
-    f.rot.yaw = 0.95;
+    f.rot.yaw = -0.9;
     f.rot.roll = -0.2;
     f.anchor = "lowest";
     f.at.set(PALM.x, 0.36, PALM.z);
@@ -228,18 +232,29 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
     let rubAmt = 0, waveAmt = 0;
 
     if (id === "knuckle") {
-      const b = ramp(p, 0.42, 0.52);
+      const b = ramp(p, 0.6, 0.68);
       mixPose(POSES.knuckle, POSES.fingertip, b, f.pose);
-      f.rot.pitch = THREE.MathUtils.lerp(-0.1, -0.42, b);
-      f.rot.yaw = 0.95;
+      // seen side on from the three-quarter camera: the forearm crosses the frame, the fist in profile
+      f.rot.pitch = THREE.MathUtils.lerp(0.1, -0.42, b);
+      f.rot.yaw = -0.9;
       f.rot.roll = THREE.MathUtils.lerp(-0.3, -0.25, b);
-      let dip = 0;
-      for (const tc of CONTACTS) {
-        const d = p < tc ? Math.exp(-(((tc - p) / 0.05) ** 2)) : Math.exp(-(((p - tc) / 0.028) ** 2));
-        dip = Math.max(dip, d);
+      let h = track(KNOCK_H, p);
+      // parked on the beat centre: keep knocking in real time, so the moment never goes still
+      const parked = p > REST0 && p < REST1;
+      const ph = t % AUTO;
+      if (parked) {
+        if (ph < AUTO_HIT) h += 0.09 * Math.sin((Math.PI * ph) / AUTO_HIT);
+        if (S.prevPhase < AUTO_HIT && ph >= AUTO_HIT && S.prevP > REST0 && S.prevP < REST1) {
+          taps.tap(PALM.x, PALM.z, 0.9);
+          spawn("knuckle", PALM.x, PALM.z, t);
+          S.hitT = t;
+          S.hitKind = "knuckle";
+          bus.cue("tap");
+        }
       }
-      f.at.set(PALM.x, PALM.y + 0.3 * (1 - dip), PALM.z);
-      f.env = ramp(p, 0, 0.1) * (1 - ramp(p, 0.9, 1));
+      S.prevPhase = ph;
+      f.at.set(PALM.x, PALM.y + h, PALM.z);
+      f.env = ramp(p, 0, 0.1) * (1 - ramp(p, 0.92, 1));
       // contact: a real tap on the deck and a sound wave in the air
       if (S.prevP >= 0 && p - S.prevP < 0.3) {
         for (const tc of CONTACTS) {
@@ -258,9 +273,9 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
       hotJoints = S.hitKind === "knuckle" ? HOT_KNUCKLE : HOT_TIP;
     } else if (id === "rub") {
       copyPose(POSES.fingertip, f.pose);
-      f.rot.pitch = -0.68;
-      f.rot.yaw = 0.15;
-      f.rot.roll = 0.9;
+      f.rot.pitch = -0.5;
+      f.rot.yaw = -0.9;
+      f.rot.roll = -0.25;
       const env = ramp(p, 0.04, 0.18) * (1 - ramp(p, 0.84, 0.96));
       const ph = Math.PI * 2 * (2.2 * p) + t * 4.4;
       const z = GRILLE_Z - 0.18 + Math.sin(ph) * 0.28 * env;
