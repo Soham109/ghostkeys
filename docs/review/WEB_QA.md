@@ -10,6 +10,56 @@ Newest round first.
 
 ---
 
+## Round 3: 2026-09-26 18:22 local (build of `web/` as of 18:19)
+
+Changes since round 2 were in the 3D (`components/three/*`, new `air/` scenes, `director.ts`) and new `public/stills/*.avif`. Nothing in `components/site/`, `lib/` or `app/` changed, so most round 2 site bugs are unchanged.
+
+### Bugs (fix first)
+
+1. **Still open: every "Download" and the skip link are dead.** `#pricing` does not exist on `/`; `lib/site.ts` unchanged. This is the top issue: the primary action of the site does nothing.
+2. **Still open: reduced motion stacks "Gesture in the air." on top of "Listen closer."** (`r3/reduced-04.png`, `-05.png`, and "Go on. Tap it." over "The blank" in `r3/reduced-09.png`). Ripples and key glow still animate under reduced motion (`r3/reduced-01.png`, `-08.png`). The new stills exist in `public/stills/` but the reduced path does not show them.
+3. **Still open: exiting headline line overlaps the next line at rest.** "Your laptop" sits across "has more" 1.4 s after scrolling stops: `r3/art-dark-02.png` (y=413), `r3/390x844-01.png`; "is a key." sliced at `r3/art-dark-06.png`; end headline sliced at `r3/art-dark-33.png`. HUD pill "Left palm · Tap" still sits on "buttons." in `r3/art-dark-02.png`.
+4. **New: two HUD pills stack on each other** in the sound chapter: "Right palm · Knuckle" and "Right palm · Fingertip" overlap by 948px² at 1280, 1920, 2560 and 390 (`r3/1920x1080-07.png`, `r3/390x844-07.png`). On mobile the sound chapter's wireframe fan and bar graph draw straight through "Listen closer." (`r3/390x844-07.png`).
+5. **Still open: 3D labels off-screen**: "Left grille · Tap" at x -145 (1920), -156 (2560), -313 (390); "Paste values", "Previous sheet", "Mute call, pause music" at negative x on 390. Shots `r3/390x844-08.png`, `-09.png`.
+6. **Still open:** mobile `/compatibility/` table overflow ("Lid and tilt" at x 340 to 434); no theme control on mobile.
+
+Clean: no console errors or warnings on any page or viewport, no failed requests, no 404s, no hydration errors, no WebGL context loss, CLS 0.0000 to 0.0065, theme toggle correct with no flash, 45 of 45 Tab stops show a focus ring, all subpages 200.
+
+### Performance (M5 Pro, Metal, 1440x900)
+
+| measure | round 2 | round 3 |
+|---|---|---|
+| First WebGL draw | 466 ms | 456 ms (454 to 472 across viewports) |
+| LCP | 80 ms | 68 ms |
+| Cold scroll pass p50 / p95 / p99 / max | 16.7 / 16.7 / 16.8 / 50 ms | 16.7 / 16.8 / 16.8 / 33.3 ms (1 frame > 32 ms at y 871) |
+| Warm passes and 4x CPU throttle pass | 0 long frames | 0 long frames, max 16.8 ms |
+| JS heap growth over 3 passes | +1.9 MB | +1.7 MB (22.4 to 24.1 MB) |
+| WebGL buffers after pass 1 / 2 / 3 | 406 / 430 / 454 | 496 / 541 / 586 (+45 per pass, worse) |
+| Programs | 92 | 107, all compiled in pass 1 |
+
+- **Load is fixed in spirit.** Filmstrip `r3/load.jpg`: black, then a soft glow fades up, dust gathers, and the mark (two keycaps and the orange touch dot) is formed at ~3.4 s. No brightness step any more, and the backdrop is now near-black. The mark is small (about 150px) and off to the right; it could be larger and centered on the laptop's future position so the hand-off to the laptop reads as one object.
+- **GPU buffer leak grew** to 45 buffers per full scroll pass (was 24). The new `air/` scenes (`GhostHand`, `SoundScene`) are the likely source: check for geometries built in render or in effects without `dispose()`.
+
+### Art direction
+
+**Verdict:** closest yet. The near-black void, the forming mark, the closing-lid ending (`r3/art-dark-35.png`) and the macro grille shot (`r3/art-dark-07.png`) are award-level frames. What keeps it from the top tier is now a short list: dead scroll, text sitting on bright metal, orange overuse, and the subpages.
+
+1. **Ten screens with nothing to read.** Positions 10 to 14 (the lid, 1,030px) and 26 to 30 (the laptop idling before "Go on. Tap it.", 1,030px) have zero words and almost no motion: `r3/art-dark-10.png` to `-14.png`, `-26.png` to `-30.png`. That is 27 percent of the scroll. Cut both holds by at least half, or give each a single mono label and a visible camera move.
+2. **Copy over bright aluminum** is still the biggest legibility problem: "Every blank surface is a key." over lit keys (`r3/art-dark-08.png`), "Your apps, your layers." over the palm rest (`r3/art-dark-24.png`), "the interface." over the palm rest on mobile (`r3/390x844-14.png`). Add a darkening light-well behind copy or frame the laptop away from the copy column.
+3. **Orange is decoration, not signal.** Full-deck ripple rings crossing the trackpad and other zones, inter-key glow, orange on the spreadsheet cell. One ring at the point of touch, nothing else.
+4. **Rainbow zone colors in the on-screen app** (blue, green, purple, pink outlines) are unchanged; brief and `APP_CRITIQUE.md` item 1 say monochrome.
+5. **The closed laptop at the end** reads as three separate slabs with dark gaps between them (`r3/art-dark-35.png`): the lid, a dark band, and the base do not meet, and there is no hinge. Close the gap or add a hinge cylinder and a contact shadow; this is the last frame people see.
+6. **Subpages unchanged** from round 2 (boxed Pro column on `/pricing/`, 186-word screens on `/privacy/`).
+
+### Top 5 for the builder right now
+1. Point every Download link and the skip link at a real target (`/pricing/` for now). One-line fix in `lib/site.ts` plus `app/page.tsx`.
+2. Reduced motion: stop stacking chapter copy, stop the 3D animation, use the new stills.
+3. Fix the headline exit mask so leaving lines do not overlap the next line; keep HUD pills and the sound-chapter wireframe out of the copy column.
+4. Cut the two dead-scroll holds (10 of 37 screens are empty).
+5. Darken behind copy that lands on metal; limit orange to one touch ring.
+
+---
+
 ## Round 2: 2026-09-26 17:55 local (build of `web/` as of 17:53, mid-edit snapshot)
 
 The site was rebuilt between rounds: one pinned `Experience` on `/` (7,425px tall at 1440x900, was 23,972) plus subpages `/guide/ /pricing/ /faq/ /privacy/ /compatibility/`, serif display type, floating pill nav. Round 1 issues are re-checked at the end of this round.
