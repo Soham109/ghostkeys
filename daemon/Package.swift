@@ -10,9 +10,9 @@ let package = Package(
         // The daemon: sensors (IOKit), WebSocket server, actions, config.
         .executableTarget(name: "ghostkeysd", dependencies: ["GhostkeysDetection"]),
         // Optional sound mode: knuckle vs fingertip, rubs and swipes by friction sound, hand waves by inaudible sonar.
-        .target(name: "GhostkeysAcoustics"),
+        .target(name: "GhostkeysAcoustics", exclude: ["README.md"]),
         // Optional camera add-on (M4/M5 Desk View): hand tracking, pinches, air gestures.
-        .target(name: "GhostkeysVision"),
+        .target(name: "GhostkeysVision", exclude: ["README.md"]),
         // Lab tool: record labeled sensor sessions, replay them through detection, report accuracy.
         .executableTarget(name: "ghostkeys-lab", dependencies: ["GhostkeysDetection"], exclude: ["README.md"]),
         .testTarget(name: "GhostkeysAcousticsTests", dependencies: ["GhostkeysAcoustics"],
@@ -22,7 +22,7 @@ let package = Package(
                     swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],
                     linkerSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks", "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])]),
         // App integrations: context-aware commands for Excel, browsers, music, Finder, etc. via Apple Events.
-        .target(name: "GhostkeysIntegrations"),
+        .target(name: "GhostkeysIntegrations", exclude: ["README.md"]),
         .testTarget(name: "GhostkeysIntegrationsTests", dependencies: ["GhostkeysIntegrations"],
                     swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],
                     linkerSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks", "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])]),
