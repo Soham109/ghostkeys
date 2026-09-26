@@ -170,8 +170,17 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
                       "merge": [["left-grille", "left-edge"]], "expectedAccuracy": { "left-palm": 0.97 } } }
   // recommendation: zones to keep, zones to disable (with a plain reason), pairs that are mostly confused with each
   // other (bind the same action to both instead of dropping), expected accuracy of the kept zones.
-{ "type": "calibration", "phase": "recommendation_applied", "disabled": ["lid"], "keep": ["left-palm"], "overall": 0.97,
-  "accuracy": { }, "labels": ["..."] }   // reply to calibration_apply_recommendation (a config message is sent too)
+{ "type": "calibration", "phase": "recommendation_applied", "disabled": ["lid"], "keep": ["left-palm"],
+  "mergeSuggested": [["left-grille", "left-edge"]], "overall": 0.97, "accuracy": { }, "labels": ["..."] }
+  // reply to calibration_apply_recommendation (a config message is sent too). Weak zones that are part of a merge
+  // pair are NOT disabled; they stay listed in mergeSuggested for calibration_apply_merge.
+{ "type": "calibration", "phase": "merge_applied", "zone": "speaker-grilles", "name": "Speaker grilles",
+  "merged": ["right-grille", "left-grille"], "samples": 18,
+  "bindingsChanged": [ { "id": "b1", "label": "Volume up", "gesture": "double", "from": "right-grille", "to": "speaker-grilles" } ],
+  "conflicts": [["b1", "b2"]], "overall": 0.95, "accuracy": { }, "labels": ["..."], "note": "..." }
+  // reply to calibration_apply_merge. conflicts: enabled bindings that became identical (same gesture, zone,
+  // modifiers and app); only the first fires, so the app should ask the user to change or remove the others.
+  // note: present when the two zones were on different surfaces (the merged zone keeps the first one's surface).
 { "type": "calibration", "phase": "taptype_capturing", "tapType": "knuckle", "count": 4, "target": 15, "types": ["fingertip", "knuckle", "nail"] }
   // tap-type calibration: make `target` taps of `tapType`; the daemon moves to the next type by itself.
   // "missed": true means the motion sensor felt a tap but the microphone heard no clear onset (not counted).
@@ -197,7 +206,10 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "calibration_negatives", "seconds": 45 }          // user types/uses the trackpad; everything is labeled none
 { "type": "calibration_finish" }                             // train, save, reply with calibration done
 { "type": "calibration_cancel" }
-{ "type": "calibration_apply_recommendation" }  // disable the zones the last "done" recommended dropping, retrain without them
+{ "type": "calibration_apply_recommendation" }  // disable the recommended drops (except merge-pair zones), retrain
+{ "type": "calibration_apply_merge", "zones": ["right-grille", "left-grille"], "name": "Speaker grilles" }
+  // two confused zones become one: new id from the name (unique), rect = union of both, enabled; both zones' saved
+  // samples are relabeled to it and the model is retrained; bindings on either zone now use the merged zone
 { "type": "config_get" }
 { "type": "config_set", "config": { } }                      // daemon saves and replies with config
 { "type": "test_action", "action": { } }

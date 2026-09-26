@@ -478,6 +478,8 @@ final class Daemon: @unchecked Sendable {
             finishCalibration(c)
         case "calibration_apply_recommendation":
             applyRecommendation(client: c)
+        case "calibration_apply_merge":
+            applyMerge(zones: m["zones"] as? [String], name: m["name"] as? String, client: c)
         case "calibration_cancel":
             negativesTimer?.cancel(); negativesTimer = nil
             calibration = nil
@@ -742,16 +744,101 @@ final class Daemon: @unchecked Sendable {
     /// `calibration_apply_recommendation`: disables the recommended drops in the config and retrains without them.
     private func applyRecommendation(client c: WebSocketServer.Client) {
         guard let rec = pendingRecommendation else { return sendError("no recommendation: finish a calibration first", to: c) }
+        // Zones in a merge pair are not dropped: merging them (calibration_apply_merge) keeps them useful.
+        let inMerge = Set(rec.merge.flatMap { $0 })
+        let toDisable = rec.drop.keys.filter { !inMerge.contains($0) }.sorted()
         var new = config
-        for i in new.zones.indices where rec.drop[new.zones[i].id] != nil { new.zones[i].enabled = false }
+        for i in new.zones.indices where toDisable.contains(new.zones[i].id) { new.zones[i].enabled = false }
         do { try store.save(new) } catch { return sendError("could not save config: \(error)", to: c) }
         config = new
-        pendingRecommendation = nil
+        // Keep only the merge suggestions for later calibration_apply_merge calls.
+        pendingRecommendation = rec.merge.isEmpty ? nil
+            : ZoneRecommendation(keep: rec.keep, drop: [:], merge: rec.merge, expectedAccuracy: rec.expectedAccuracy)
         server.broadcast(configMessage())
         rebuildModel(reason: "recommendation applied") { [weak self] report in
             guard let self else { return }
             var m: [String: Any] = ["type": "calibration", "phase": "recommendation_applied",
-                                    "disabled": rec.drop.keys.sorted(), "keep": rec.keep]
+                                    "disabled": toDisable, "keep": rec.keep, "mergeSuggested": rec.merge]
+            if let report { m["overall"] = report.overall; m["accuracy"] = report.accuracy; m["labels"] = report.labels }
+            self.server.broadcast(m)
+        }
+    }
+
+    /// `calibration_apply_merge {zones: [a, b], name}`: two zones the classifier confuses become one. Their samples
+    /// are relabeled to the new zone, the model is retrained, and bindings on either zone now point at the merged one.
+    private func applyMerge(zones: [String]?, name: String?, client c: WebSocketServer.Client) {
+        guard let zones, zones.count == 2, zones[0] != zones[1],
+              let ia = config.zones.firstIndex(where: { $0.id == zones[0] }),
+              let ib = config.zones.firstIndex(where: { $0.id == zones[1] }) else {
+            return sendError("calibration_apply_merge needs two different zone ids from the config", to: c)
+        }
+        let a = config.zones[ia], b = config.zones[ib]
+        let title = (name?.trimmingCharacters(in: .whitespacesAndNewlines)).flatMap { $0.isEmpty ? nil : $0 } ?? "\(a.name) + \(b.name)"
+        // New id: a slug of the name, unique among the other zones.
+        var slug = title.lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "-" }.joined()
+            .split(separator: "-").joined(separator: "-")
+        if slug.isEmpty { slug = "\(a.id)-\(b.id)" }
+        let others = Set(config.zones.map(\.id)).subtracting([a.id, b.id])
+        var id = slug, n = 2
+        while others.contains(id) || id == "none" { id = "\(slug)-\(n)"; n += 1 }
+
+        // Rect: union of both. Zones on different surfaces keep the first zone's surface (reported below).
+        let x0 = min(a.rect.x, b.rect.x), y0 = min(a.rect.y, b.rect.y)
+        let x1 = max(a.rect.x + a.rect.w, b.rect.x + b.rect.w), y1 = max(a.rect.y + a.rect.h, b.rect.y + b.rect.h)
+        let merged = Zone(id: id, name: title, surface: a.surface, rect: ZoneRect(x: x0, y: y0, w: x1 - x0, h: y1 - y0),
+                          color: a.color, enabled: true)
+        var new = config
+        new.zones[ia] = merged
+        new.zones.removeAll { $0.id == b.id }
+
+        // Bindings: anything on a or b now points at the merged zone.
+        var changed: [[String: Any]] = []
+        for i in new.bindings.indices {
+            var bnd = new.bindings[i]
+            var touched = false
+            if let z = bnd.zone, z == a.id || z == b.id { bnd.zone = id; touched = true }
+            if let zs = bnd.zones, zs.contains(where: { $0 == a.id || $0 == b.id }) {
+                bnd.zones = zs.map { $0 == a.id || $0 == b.id ? id : $0 }; touched = true
+            }
+            guard touched else { continue }
+            let old = new.bindings[i]
+            changed.append(["id": bnd.id, "label": bnd.label ?? bnd.id, "gesture": bnd.gesture,
+                            "from": old.zone ?? (old.zones ?? []).joined(separator: ","),
+                            "to": bnd.zone ?? (bnd.zones ?? []).joined(separator: ",")])
+            new.bindings[i] = bnd
+        }
+        // Two bindings that used to differ only by zone may now collide; only the first would ever fire.
+        var seen: [String: String] = [:], conflicts: [[String]] = []
+        for bnd in new.bindings where bnd.enabled {
+            let key = [bnd.gesture, bnd.zone ?? "", (bnd.zones ?? []).joined(separator: ","),
+                       bnd.modifiers.sorted().joined(separator: "+"), bnd.app].joined(separator: "|")
+            if let first = seen[key] { conflicts.append([first, bnd.id]) } else { seen[key] = bnd.id }
+        }
+
+        // Samples: relabel both zones to the merged one (kept on disk for later retraining).
+        var samples = store.loadSamples()
+        let relabeled = samples.indices.filter { samples[$0].label == a.id || samples[$0].label == b.id }
+        for i in relabeled { samples[i].label = id }
+        do {
+            try store.save(new)
+            if !relabeled.isEmpty { try store.saveSamples(samples) }
+        } catch {
+            return sendError("could not save the merge: \(error)", to: c)
+        }
+        config = new
+        applyConfigToEngine()
+        if var rec = pendingRecommendation {
+            rec.merge.removeAll { Set($0) == Set([a.id, b.id]) }
+            pendingRecommendation = rec.merge.isEmpty ? nil : rec
+        }
+        server.broadcast(configMessage())
+        Log.info("merged zones \(a.id) + \(b.id) into \(id); \(changed.count) binding(s) updated")
+        rebuildModel(reason: "zones merged") { [weak self] report in
+            guard let self else { return }
+            var m: [String: Any] = ["type": "calibration", "phase": "merge_applied", "zone": id, "name": title,
+                                    "merged": [a.id, b.id], "samples": relabeled.count, "bindingsChanged": changed,
+                                    "conflicts": conflicts]
+            if a.surface != b.surface { m["note"] = "the zones were on different surfaces; the merged zone is drawn on \(a.surface)" }
             if let report { m["overall"] = report.overall; m["accuracy"] = report.accuracy; m["labels"] = report.labels }
             self.server.broadcast(m)
         }
