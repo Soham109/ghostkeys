@@ -25,4 +25,4 @@ export {
 export { resolveWebSocketCtor, WS_READY_STATE } from './ws.js'
 export type { WebSocketLike, WebSocketCtor, WebSocketConnectOptions } from './ws.js'
 
-export { readGhostkeysToken } from './token.js'
+export { readGhostkeysToken, tokenFilePaths } from './token.js'

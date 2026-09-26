@@ -107,15 +107,33 @@ Call `flow.cancel()` at any point to send `calibration_cancel` and stop.
 `ghostkeysd` itself is last-write-wins on `config_set`. `GhostkeysClient` adds a client-side guard:
 `getConfig()`/`setConfig()` return a `revision` (a fingerprint of the config), and passing that
 revision back as `setConfig(next, { ifRevision })` throws `ConfigConflictError` *before sending
-anything* if the client's config has moved on since you read it — so you can `getConfig()` again
+anything* if the client's config has moved on since you read it, so you can `getConfig()` again
 and reapply your change instead of clobbering someone else's.
 
 ## Runtime validation
 
 Every incoming frame is parsed with zod (`src/protocol/schemas.ts`) before it becomes a typed
 event. A frame that doesn't match `docs/PROTOCOL.md` (unknown `type`, or a shape mismatch) never
-throws — it's emitted as `protocolError` with the raw text and the zod issue, so a daemon on a
+throws: it's emitted as `protocolError` with the raw text and the zod issue, so a daemon on a
 newer or older protocol version degrades gracefully instead of crashing your app.
+
+## Authentication
+
+The daemon requires an `X-Ghostkeys-Token` handshake header (docs/PROTOCOL.md "Authentication")
+and rejects any handshake that carries an `Origin` header. `GhostkeysClient` sends the token
+automatically, resolved in this order:
+
+1. `GhostkeysClientOptions.token`, if you pass one (pass `null` to explicitly send none).
+2. `GHOSTKEYS_TOKEN` from the environment, if it's at least 32 characters.
+3. `$GHOSTKEYS_CONFIG_DIR/token`, when that variable is set (the daemon treats it as its whole
+   config directory).
+4. `~/Library/Application Support/Ghostkeys/daemon/token`, the daemon's current default location.
+5. `~/Library/Application Support/Ghostkeys/token`, the pre-migration location, as a last resort.
+
+The token is re-resolved on every connection attempt, not cached, since a restarted daemon writes
+a new one. A real browser page can never authenticate to ghostkeysd: it always sends an `Origin`
+header, and the standard `WebSocket` API has no way to set a custom handshake header at all. Only a
+Node-capable client (this SDK using `ws`, or an Electron main process) can.
 
 ## Pluggable WebSocket
 
@@ -124,9 +142,10 @@ import { WebSocket } from 'ws'
 const client = new GhostkeysClient({ webSocket: WebSocket }) // force the `ws` package
 ```
 
-By default the client uses the global `WebSocket` (every browser, and Node 22+), falling back to a
-dynamic `import('ws')` only if neither is available. Pass your own for tests (see this package's
-own `test/fake-server.ts` for an in-process fake daemon built on `ws`).
+By default the client prefers a dynamic `import('ws')` over the global `WebSocket` (every browser,
+and Node 22+), because ghostkeysd's token header requirement means only `ws` can actually complete
+a handshake with it; the global `WebSocket` is used only when `ws` isn't installed. Pass your own
+for tests (see this package's own `test/fake-server.ts` for an in-process fake daemon built on `ws`).
 
 ## Examples
 
