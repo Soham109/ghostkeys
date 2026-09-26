@@ -191,3 +191,60 @@ struct GrammarDriver {
         #expect(events.gestures.count <= 1)
     }
 }
+
+@Suite struct WeakFollowUpTests {
+    func tap(_ zone: String, _ t: Double, _ conf: Double) -> TapEvent {
+        TapEvent(t: t, zone: zone, confidence: conf, x: 0.5, y: 0.5, strength: 0.5, modifiers: [])
+    }
+
+    @Test func strongThenWeakMakesADouble() {
+        var g = GestureGrammar()
+        g.zonesNeedingMultiTap = ["z"]
+        #expect(g.accept(tap("z", 1.0, 0.95)).isEmpty)
+        let (absorbed, out) = g.acceptWeak(tap("z", 1.2, 0.6))
+        #expect(absorbed && out.isEmpty)
+        #expect(g.tick(now: 2, oldestInFlight: nil).map(\.gesture) == ["double"])
+    }
+
+    @Test func weakThenStrongMakesADouble() {
+        var g = GestureGrammar()
+        g.zonesNeedingMultiTap = ["z"]
+        let (absorbed, _) = g.acceptWeak(tap("z", 1.0, 0.6))
+        #expect(!absorbed)
+        #expect(g.accept(tap("z", 1.2, 0.95)).isEmpty)
+        #expect(g.tick(now: 2, oldestInFlight: nil).map(\.gesture) == ["double"])
+    }
+
+    @Test func weakTapsAloneNeverFire() {
+        var g = GestureGrammar()
+        g.zonesNeedingMultiTap = ["z"]
+        _ = g.acceptWeak(tap("z", 1.0, 0.6))
+        _ = g.acceptWeak(tap("z", 1.2, 0.6))
+        #expect(g.tick(now: 2, oldestInFlight: nil).isEmpty)
+        var h = GestureGrammar()
+        h.zonesNeedingMultiTap = ["z"]
+        let (_, out) = h.acceptWeak(tap("z", 1.0, 0.6))
+        _ = h.acceptWeak(tap("z", 1.2, 0.6))
+        let (_, out3) = h.acceptWeak(tap("z", 1.4, 0.6))
+        #expect(out.isEmpty && out3.isEmpty)
+    }
+
+    @Test func weakTapInImmediateZoneIsIgnored() {
+        var g = GestureGrammar()
+        g.zonesNeedingMultiTap = ["other"]
+        let (absorbed, out) = g.acceptWeak(tap("z", 1.0, 0.6))
+        #expect(!absorbed && out.isEmpty)
+        #expect(g.tick(now: 2, oldestInFlight: nil).isEmpty)
+    }
+
+    @Test func weakTapOfAnotherZoneDoesNotBreakASequence() {
+        var g = GestureGrammar()
+        g.zonesNeedingMultiTap = ["a", "b", "c"]
+        _ = g.accept(tap("a", 1.0, 0.95))
+        let (_, closed) = g.acceptWeak(tap("c", 1.1, 0.6))    // a stray weak tap closes a's group
+        #expect(closed.map(\.gesture) == ["tap"])
+        let out = g.accept(tap("b", 1.3, 0.95))                // a then b within 500 ms: still a sequence
+        #expect(out.map(\.gesture) == ["sequence"])
+        #expect(out.first?.zones == ["a", "b"])
+    }
+}

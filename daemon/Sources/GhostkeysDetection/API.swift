@@ -29,17 +29,21 @@ public struct DetectionSettings: Codable, Sendable {
     public var typingGateMs: Double = 450
     public var doubleWindowMs: Double = 350
     public var minConfidence: Double = 0.8
+    /// In zones that need multiple taps, a tap at this confidence (same zone) may complete a double or
+    /// triple whose other tap passed minConfidence. Set equal to minConfidence to disable.
+    public var followUpConfidence: Double = 0.5
     public init() {}
 
     // Tolerant decoding: a config written by an older or newer app may lack some keys (or carry
     // extra ones such as hud/haptics); missing keys keep their defaults.
-    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence }
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sensitivity = try c.decodeIfPresent(Double.self, forKey: .sensitivity) ?? sensitivity
         typingGateMs = try c.decodeIfPresent(Double.self, forKey: .typingGateMs) ?? typingGateMs
         doubleWindowMs = try c.decodeIfPresent(Double.self, forKey: .doubleWindowMs) ?? doubleWindowMs
         minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence) ?? minConfidence
+        followUpConfidence = try c.decodeIfPresent(Double.self, forKey: .followUpConfidence) ?? followUpConfidence
     }
 }
 

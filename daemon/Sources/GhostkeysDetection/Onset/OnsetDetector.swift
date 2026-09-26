@@ -15,10 +15,13 @@
 //   4. Trigger when m > max(absoluteFloor, k * noise). k and absoluteFloor come from sensitivity.
 //   5. Pulse tracking. The pulse ends after 15 ms below max(half the trigger threshold, 30% of the
 //      pulse's own peak). Its width is the time from onset to the last sample at 50% or more of its
-//      peak. Widths over 120 ms are not taps (the laptop is being moved, bumped or carried).
+//      peak. Widths over 160 ms are not taps (the laptop is being moved, bumped or carried).
 //      Measured on the first real recording (laptop on a lap): left-palm taps stay above half their
 //      peak for 50 to 90 ms, right-palm 34 to 39 ms, grille 16 to 41 ms, while handling the machine
-//      mostly lasts 150 ms or more. A width measured against the (noise-driven) trigger threshold
+//      mostly lasts 150 ms or more. The first real calibration then showed right-palm widths bunched
+//      just under the old 120 ms limit (median 97, max 119: the rest had been cut off), so the limit
+//      is 160 ms; handling pulses in the lab recording were mostly 196 ms or longer.
+//      A width measured against the (noise-driven) trigger threshold
 //      instead made most palm taps "too long" in that recording, because lap noise sat near it.
 //   6. Refractory: 60 ms from onset and until the previous pulse has ended. For 300 ms after a pulse
 //      ends, a new onset must also be a fresh jump: above twice the highest level of the preceding
@@ -40,7 +43,7 @@ enum OnsetOutput {
     case onset(OnsetInfo)
     /// The current pulse ended; width in seconds (onset to the last sample at >= 50% of its peak).
     case pulseEnded(width: Double)
-    /// The pulse stayed above half its peak for more than 120 ms (or never settled within 400 ms).
+    /// The pulse stayed above half its peak for more than 160 ms (or never settled within 400 ms).
     case pulseTooLong
 }
 
@@ -50,7 +53,7 @@ struct OnsetDetector {
     var highPassHz = 15.0
     var refractory = 0.060
     var pulseEndQuiet = 0.015
-    var maxPulseWidth = 0.120
+    var maxPulseWidth = 0.160
     var maxPulseSettle = 0.400         // a pulse that has not ended after this is too long regardless
     var tailGuardDuration = 0.300      // ringing tail guard, see header
     var tailJumpFactor = 2.0

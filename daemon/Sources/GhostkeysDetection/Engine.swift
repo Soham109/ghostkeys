@@ -11,7 +11,7 @@
 //   +80 ms  feature window complete; the pulse has normally ended by then
 //           -> gates -> .candidate -> classify -> .tap (+ .gesture "tap" for immediate zones)
 //   +doubleWindow after the last tap -> .gesture for zones in zonesNeedingMultiTap
-// Pulses that ring longer than 80 ms delay the decision until they end (max 120 ms + 15 ms quiet).
+// Pulses that ring longer than 80 ms delay the decision until they end (the pulse width limit is 160 ms).
 
 import Foundation
 
@@ -180,19 +180,37 @@ public final class TapEngine {
         var out: [DetectorEvent] = [.candidate(features)]
         guard let model else { return out }
 
-        let r = model.classify(features)
-        guard r.zone != ZoneModel.noneLabel, r.confidence >= settings.minConfidence else {
+        let r = model.classifyDetailed(features)
+        guard r.zone != ZoneModel.noneLabel else {
             out.append(.rejected(t: t, reason: .low_confidence))
             return out
         }
+        let strong = r.confidence >= settings.minConfidence
+        if !strong {
+            // Weak tap: may still complete a double/triple in a multi-tap zone (GestureGrammar.swift).
+            let followUp = min(settings.followUpConfidence, settings.minConfidence)
+            guard r.confidence >= followUp, grammar.zonesNeedingMultiTap.contains(r.zone) else {
+                out.append(.rejected(t: t, reason: .low_confidence))
+                return out
+            }
+            let tap = makeTap(f, features, r)
+            let (absorbed, gestures) = grammar.acceptWeak(tap)
+            out.append(absorbed ? .tap(tap) : .rejected(t: t, reason: .low_confidence))
+            for g in gestures { out.append(.gesture(g)) }
+            return out
+        }
+        let tap = makeTap(f, features, r)
+        out.append(.tap(tap))
+        for g in grammar.accept(tap) { out.append(.gesture(g)) }
+        return out
+    }
+
+    private func makeTap(_ f: InFlight, _ features: TapFeatures, _ r: ZoneModel.Result) -> TapEvent {
         // Strength 0...1: 0 at the trigger threshold, 1 at 20x the threshold (log scale).
         let peakMg = pow(10, features[.strength])
         let thrMg = max(f.info.threshold * 1000, 1e-3)
         let strength = Stats.clamp(log10(max(peakMg / thrMg, 1e-9)) / log10(20), 0, 1)
-        let tap = TapEvent(t: t, zone: r.zone, confidence: r.confidence, x: r.x, y: r.y, strength: strength, modifiers: f.modifiers)
-        out.append(.tap(tap))
-        for g in grammar.accept(tap) { out.append(.gesture(g)) }
-        return out
+        return TapEvent(t: f.info.t, zone: r.zone, confidence: r.confidence, x: r.x, y: r.y, strength: strength, modifiers: f.modifiers)
     }
 
     private func recordInput(_ c: InputContext, t: Double) {

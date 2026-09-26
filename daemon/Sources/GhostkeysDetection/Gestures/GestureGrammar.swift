@@ -15,6 +15,14 @@
 //   "sequence" with zones [A, B]. Pending (not yet emitted) taps that form the sequence are consumed;
 //   taps in immediate zones have already been emitted as "tap" and are emitted anyway.
 //
+// - Weak follow-up taps (multi-tap zones only): a tap classified in the zone with a confidence
+//   between followUpConfidence and minConfidence cannot fire anything by itself, but it may complete
+//   a group: a double or triple needs at least one tap that passed minConfidence, the others only
+//   need the same zone at followUpConfidence. On the first real calibration, requiring every tap of
+//   a double to pass 0.8 meant grille doubles registered 45 to 56% of the time (0.67 to 0.75 per
+//   tap, squared); with weak follow-ups the estimate is 75 to 81%, while typing spikes reached 0.5
+//   as a grille in only 2 to 4% of cases (and a false double also needs a strong junk tap first).
+//
 // The daemon should put a zone in `zonesNeedingMultiTap` when any binding for it uses double,
 // triple, rhythm or sequence, so those taps do not also fire a plain "tap".
 
@@ -32,6 +40,8 @@ struct GestureGrammar {
         var times: [Double]
         var confidences: [Double]
         var modifiers: Set<String>
+        /// Taps in the group that passed minConfidence. Groups with none never emit.
+        var strong: Int
     }
     private var pending: Group?
     /// Last tap that could start a sequence (a lone tap), with its confidence and modifiers.
@@ -53,6 +63,8 @@ struct GestureGrammar {
         // Bounce: a second trigger under 80 ms in the same zone is the same tap.
         if let p = pending, p.zone == z, let last = p.times.last, t - last < minGap { return out }
         if let l = lastLone, l.zone == z, t - l.t < minGap, !multi { return out }
+        // A pending group made only of weak taps in another zone is simply dropped.
+        if let p = pending, p.strong == 0, p.zone != z { pending = nil }
 
         // Sequence: lone tap in another zone shortly before.
         if let l = lastLone, l.zone != z, t - l.t <= sequenceWindow {
@@ -83,6 +95,7 @@ struct GestureGrammar {
         if var p = pending {
             p.times.append(t)
             p.confidences.append(tap.confidence)
+            p.strong += 1
             if p.times.count >= 3 {
                 out.append(gesture("triple", zone: z, zones: [z], t: t, confidence: p.confidences.min()!, modifiers: p.modifiers))
                 pending = nil
@@ -92,10 +105,40 @@ struct GestureGrammar {
             }
             lastLone = nil
         } else {
-            pending = Group(zone: z, times: [t], confidences: [tap.confidence], modifiers: tap.modifiers)
+            pending = Group(zone: z, times: [t], confidences: [tap.confidence], modifiers: tap.modifiers, strong: 1)
             lastLone = (z, t, tap.confidence, tap.modifiers)
         }
         return out
+    }
+
+    /// A weak tap (see header). Returns whether it joined a group that already has a strong tap
+    /// (so it counts as accepted), and any gestures that resulted.
+    mutating func acceptWeak(_ tap: TapEvent) -> (absorbed: Bool, gestures: [GestureEvent]) {
+        let z = tap.zone, t = tap.t
+        guard zonesNeedingMultiTap.contains(z) else { return (false, []) }
+        var out: [GestureEvent] = []
+        if var p = pending, p.zone == z, let last = p.times.last {
+            if t - last < minGap { return (false, []) }            // bounce
+            if t - last <= doubleWindow {
+                p.times.append(t)
+                p.confidences.append(tap.confidence)
+                if p.times.count >= 3 {
+                    pending = nil
+                    lastSingle = nil
+                    if p.strong > 0 {
+                        out.append(gesture("triple", zone: z, zones: [z], t: t, confidence: p.confidences.min()!, modifiers: p.modifiers))
+                    }
+                    return (p.strong > 0, out)
+                }
+                pending = p
+                lastLone = nil
+                return (p.strong > 0, out)
+            }
+        }
+        // Start a weak-only group; it waits for a strong tap to complete it.
+        out += close()
+        pending = Group(zone: z, times: [t], confidences: [tap.confidence], modifiers: tap.modifiers, strong: 0)
+        return (false, out)
     }
 
     /// Closes the open group once its window has passed. `oldestInFlight` is the onset time of the
@@ -109,6 +152,7 @@ struct GestureGrammar {
     private mutating func close() -> [GestureEvent] {
         guard let p = pending else { return [] }
         pending = nil
+        guard p.strong > 0 else { return [] }
         let conf = p.confidences.min() ?? 0
         switch p.times.count {
         case 1:

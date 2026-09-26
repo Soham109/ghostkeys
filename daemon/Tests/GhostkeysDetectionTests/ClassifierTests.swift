@@ -142,3 +142,50 @@ import Testing
     }
 }
 
+
+@Suite struct ZoneRecommendationTests {
+    // The first real calibration report (labels, confusion and accuracy as saved by the daemon).
+    static let realReport = CalibrationReport(
+        labels: ["left-edge", "left-grille", "left-palm", "lid", "right-grille", "right-palm", "top-strip", "none"],
+        accuracy: ["left-edge": 0.2857, "left-grille": 0.9, "left-palm": 0.95, "lid": 0.65, "none": 0.645,
+                   "right-grille": 0.9286, "right-palm": 0.95, "top-strip": 0.9],
+        overall: 0.80,
+        confusion: [[2, 1, 0, 3, 1, 0, 0, 0], [0, 18, 0, 2, 0, 0, 0, 0], [0, 0, 19, 0, 0, 1, 0, 0],
+                    [1, 3, 0, 13, 1, 0, 0, 2], [0, 0, 0, 1, 13, 0, 0, 0], [0, 0, 1, 0, 0, 19, 0, 0],
+                    [0, 0, 0, 1, 0, 0, 18, 1], [3, 3, 0, 2, 1, 1, 1, 20]])
+
+    @Test func dropsWeakZonesOfTheRealCalibration() {
+        let r = recommendedZones(Self.realReport)
+        #expect(Set(r.drop.keys) == ["left-edge", "lid"])
+        #expect(r.keep == ["left-grille", "left-palm", "right-grille", "right-palm", "top-strip"])
+        #expect(r.drop["left-edge"]?.contains("7 taps") == true)
+        #expect(!r.keep.contains("none"))
+    }
+
+    @Test func suggestsMergingTwoZonesThatAreConfusedWithEachOther() {
+        let report = CalibrationReport(labels: ["a", "b", "c", "none"], accuracy: ["a": 0.6, "b": 0.65, "c": 0.95],
+                                       overall: 0.73,
+                                       confusion: [[12, 8, 0, 0], [7, 13, 0, 0], [0, 1, 19, 0], [0, 0, 0, 10]])
+        let r = recommendedZones(report)
+        #expect(r.merge == [["a", "b"]])
+        #expect(r.keep == ["c"])
+    }
+
+    @Test func iterativeRecommendationOnSyntheticZones() {
+        let cal = captureCalibration(zones: [.leftPalm, .rightPalm, .topStrip], perZone: 12, keystrokes: 10)
+        let t = Trainer()
+        for (f, l) in zip(cal.features, cal.labels) { t.add(f, label: l) }
+        // Five taps of a fourth zone: too few, must be dropped; the rest kept.
+        let few = captureCalibration(zones: [.lid], perZone: 5, seed: 3)
+        for (f, l) in zip(few.features, few.labels) { t.add(f, label: l) }
+        let r = t.recommendedZones()
+        #expect(Set(r.keep) == ["left-palm", "right-palm", "top-strip"])
+        #expect(Array(r.drop.keys) == ["lid"])
+    }
+
+    @Test func settingsDecodeWithoutNewKeys() throws {
+        // A config written before followUpConfidence existed.
+        let s = try jsonDecodeSettings(#"{"sensitivity":0.4,"minConfidence":0.85,"hud":true}"#)
+        #expect(s.sensitivity == 0.4 && s.minConfidence == 0.85 && s.followUpConfidence == 0.5 && s.typingGateMs == 450)
+    }
+}

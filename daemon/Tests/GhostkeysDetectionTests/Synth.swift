@@ -255,3 +255,7 @@ func captureCalibration(zones: [ZoneSpec], perZone: Int, keystrokes: Int = 0, se
 func jsonRoundTrip<T: Codable>(_ v: T) throws -> T {
     try JSONDecoder().decode(T.self, from: JSONEncoder().encode(v))
 }
+
+func jsonDecodeSettings(_ json: String) throws -> DetectionSettings {
+    try JSONDecoder().decode(DetectionSettings.self, from: Data(json.utf8))
+}

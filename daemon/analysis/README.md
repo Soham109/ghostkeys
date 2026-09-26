@@ -20,6 +20,44 @@ python3 -m venv --system-site-packages .venv          # numpy, scipy, scikit-lea
   - the lab tool's recorded onsets;
   - every engine onset inside a capture phase, labelled with that phase's zone.
 
+- `classifier_sweep.py data/calib1/samples.json`: compares classifier designs (kNN, shrinkage LDA, logistic regression, blends, class balancing) with repeated cross-validation. It reports tap recall, wrong-zone and false-tap rates at several confidence thresholds.
+- `operating_points.py dump.tsv`: the same metrics for the real Swift classifier, from a dump made by the harness below.
+- `harness/`: a temporary Swift test that cross-validates the live classifier path on a `samples.json`, and prints one TSV row per held-out sample. To use it:
+  1. Copy both files into `Tests/GhostkeysDetectionTests/`.
+  2. Run `ZZ_DROP=left-edge,lid scripts/run-tests.sh Detection -- --filter zzLivePath | grep '^ZZ' | sed 's/^ZZ //' > out.tsv`. Set `ZZ_DROP` to the zones you want left out, or leave it empty.
+  3. Remove both files again. They read local user data, so they must not stay in the test target.
+
+Copy the daemon's files before analysing them, and never modify the originals: `cp ~/Library/Application\ Support/Ghostkeys/daemon/model/*.json data/calib1/`.
+
+## Findings from the first real calibration (calib1, 26 Sep 2026)
+
+This calibration has 8 zones and 31 typing negatives. The report said 0.80 overall.
+
+- **Why taps were dropped.** I simulated the live path with 10 repeated 5-fold runs:
+  - Almost every drop was the minConfidence 0.8 gate, usually on a correct zone guess: left-grille 6 of 20, lid 9 of 20, right-grille 3 of 14.
+  - The reject distance dropped 1 tap in 146, and "none" winning dropped 5.
+  - The trigger threshold is not the cause for grilles: their captured peaks are 22 to 45 mg, against a floor of 17.5 mg. Lid may lose about 12%.
+  - The user's only bindings are grille double-taps, and each double needed two taps at 0.8 or above.
+- **Classifier variants did not help.** A different kNN/Gaussian mix, class-balanced votes, LDA, logistic regression and blends all sit on the same recall versus false-tap curve or worse. Class balancing raised false taps. The weak zones are the lever.
+- **Operating points** (all zones, 5-fold x 10; false taps are per typing negative before the typing gate):
+
+  | threshold | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 |
+  |---|---|---|---|---|---|
+  | tap recall | 0.82 | 0.80 | 0.75 | 0.70 | 0.62 |
+  | wrong zone | 0.10 | 0.06 | 0.04 | 0.02 | 0.00 |
+  | false taps | 0.20 | 0.10 | 0.06 | 0.02 | 0.01 |
+
+  Without left-edge and lid:
+
+  | threshold | 0.5 | 0.6 | 0.7 | 0.8 | 0.9 |
+  |---|---|---|---|---|---|
+  | tap recall | 0.95 | 0.95 | 0.93 | 0.91 | 0.84 |
+  | wrong zone | 0.03 | 0.02 | 0.02 | 0.02 | 0.01 |
+  | false taps | 0.33 | 0.21 | 0.11 | 0.05 | 0.02 |
+- **Double-tap success**, estimated as per-tap probability squared, versus the weak follow-up rule:
+  - All 8 zones: left-grille 0.56 to 0.81, right-grille 0.45 to 0.75.
+  - Without left-edge and lid: left-grille 0.93 to 1.00, right-grille 0.57 to 0.76.
+
 ## Findings from session1 (26 Sep 2026)
 
 This recording is partial: left-palm, right-palm and left-grille, with the Mac on a lap.
