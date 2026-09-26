@@ -10,7 +10,7 @@ All inside `web/`, with pnpm.
 | --- | --- |
 | `pnpm install` | install dependencies |
 | `pnpm dev` | local dev server |
-| `pnpm build` | syncs `docs/pricing/features.json` into `content/`, type-checks, and exports a static site to `out/` |
+| `pnpm build` | syncs `docs/pricing/features.json` and `docs/guide/*.md` into `content/`, type-checks, and exports a static site to `out/` |
 | `pnpm serve` | serves `out/` on http://127.0.0.1:4317 (tiny Node server, no global installs) |
 | `pnpm shots` | screenshots of the landing into `screenshots/` (flags: `--theme=light`, `--w= --h=`, `--mobile=1 --dpr=2`, `--reduced=1`, `--path=/pricing/`, `--only=name,name`, `--prefix=`) |
 | `pnpm perf` | scrolls the landing with real wheel input, writes `screenshots/perf.txt` and a gzipped Chromium trace |
@@ -20,14 +20,14 @@ Playwright uses its bundled Chromium (`pnpm exec playwright install chromium` on
 
 ## Structure
 
-- `app/`: `/` (the film), `/guide`, `/pricing`, `/privacy`, `/compatibility`, `/faq`. Fonts live in `app/fonts`.
-- `components/site/`: everything DOM. `Experience.tsx` mounts the fixed canvas once and lays out the chapters; `Nav.tsx` is the floating pill; `Pricing.tsx` renders from `content/features.json`; `Info.tsx` and `Guide.tsx` hold the text pages.
+- `app/`: `/` (the film), `/pricing`, `/guide` plus one page per guide chapter (`/guide/[slug]`, rendered from `docs/guide/*.md` with `marked`, sticky contents), `/privacy`, `/compatibility`, `/faq` (questions parsed from the guide's FAQ chapter). Fonts live in `app/fonts`. Every page is under 6 viewports at 1440x900.
+- `components/site/`: everything DOM. `Experience.tsx` mounts the fixed canvas once and lays out the chapters; `Nav.tsx` is the floating pill; `Pricing.tsx` renders from `content/features.json`; `Info.tsx` holds compatibility, `lib/guide.ts` reads the guide markdown.
 - `components/three/`: the WebGL scene. Owned by the 3D specialist; the site talks to it only through `lib/stage.ts` (`bus`) and `lib/chapters.ts`. Requests from the site side go in `components/three/REQUESTS.md`.
 - `lib/chapters.ts`: chapter ids, heights in viewports, and the step lists (zones, air gestures, sound, app layers) that both the captions and the scene read.
 - `lib/stage.ts`: the shared bus. The DOM writes smoothed progress per chapter, page progress and scroll velocity; the scene reads them in `useFrame`. Nothing calls React `setState` while scrolling.
 - `lib/site.ts`: outbound links. **`DOWNLOAD_URL`, `BUY_URL`, `SALES_URL` and `SOURCE_URL` are placeholders** until the real .dmg, checkout, sales contact and source repo exist.
 - `content/features.json`: copy of `docs/pricing/features.json`, refreshed on every build.
-- `public/video/teaser-540.mp4`: the 10 second vertical teaser, transcoded with ffmpeg from `packages/promo/out/ghostkeys-teaser-vertical.mp4` (540 wide, no audio, 1.4 MB). Loaded only when it scrolls into view on `/pricing`.
+- `public/video/teaser-540.mp4`: the 10 second vertical teaser (540 wide, no audio, 1.4 MB), transcoded from `packages/promo/out/`. Not currently placed: QA read it as a social-story embed on the pricing page.
 - `public/audio/`: the UI sound sprite (synthesized by `scripts/make-sounds.mjs`, 17 KB). Sound is off until the visitor turns it on.
 - `public/gpu-benchmarks/`: detect-gpu's benchmark data, self-hosted so the page makes no third-party requests.
 

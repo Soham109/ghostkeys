@@ -74,6 +74,8 @@ const KEYS: Key[] = [
   ["zones", 0.97, { lid: 108 }],
   ["zones", 1.0, { px: -2.9, py: 2.9, pz: -4.7, tx: 0.0, ty: 0.8, tz: -1.0 }],
 
+  // leaving the lid: swing round the side to the front while the hand arrives (no dead screen between chapters)
+  ["air", -0.55, { px: 4.8, py: 2.3, pz: -0.4, tx: 0.2, ty: 0.55, tz: -0.4, fov: 30, sx: 0.06, sy: -0.04, bokeh: 0 }],
   // air: the hand works above the keys in front of the notch camera; frame from the front, a little high
   ["air", 0.08, { px: 3.4, py: 1.8, pz: 3.7, tx: 0.35, ty: 0.62, tz: -0.2, fov: 30, sx: 0.08, sy: -0.06, bokeh: 0 }],
   ["air", 0.52, { px: 3.1, py: 1.75, pz: 3.8, tx: 0.3, ty: 0.62, tz: -0.25, fov: 30 }],

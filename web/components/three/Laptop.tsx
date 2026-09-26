@@ -120,7 +120,7 @@ void main() {
   float hz = texture2D(uHeight, vDeckUv + vec2(0.0, uTexel.y)).x - texture2D(uHeight, vDeckUv - vec2(0.0, uTexel.y)).x;
   vec3 n = normalize(vUp - (hx * vT + hz * vB) * uNormalAmt);
   csm_FragNormal = normalize(mix(csm_FragNormal, n, vTop));
-  csm_Emissive = csm_Emissive + uSignal * smoothstep(0.02, 0.16, abs(h)) * uRim * vTop;
+  // no colour from the height field: the metal only bends light; orange is drawn by the touch ring alone
 }
 `;
 
@@ -140,7 +140,7 @@ void main() {
   vHi = step(uKeyHi.x, c.x) * step(c.x, uKeyHi.z) * step(uKeyHi.y, c.z) * step(c.z, uKeyHi.w) * uKeyHiAmt;
   vec2 duv = vec2((c.x + uHalf.x) / (2.0 * uHalf.x), (c.z + uHalf.y) / (2.0 * uHalf.y));
   float h = texture2D(uHeight, duv).x;
-  float ring = rippleBand(c.xz, 0.1, 1.35);
+  float ring = touchRing(c.xz, 0.05);
   float lift = clamp(h * 0.05, -0.004, 0.01) + ring * 0.011 - vHi * 0.005;
   csm_Position = position + vec3(0.0, lift, 0.0);
   vec4 lp = instanceMatrix * vec4(position, 1.0);
@@ -161,7 +161,7 @@ varying float vHi;
 void main() {
   float lg = texture2D(uLegend, vLegendUv).r * vTopK;
   csm_DiffuseColor.rgb = mix(csm_DiffuseColor.rgb, vec3(0.55), lg * 0.35);
-  csm_Emissive = csm_Emissive + vec3(0.92, 0.93, 0.95) * lg * uBacklight * 0.55 + uSignal * vWave * (0.08 + lg * 2.2) + vec3(0.95) * vHi * (0.12 + lg * 2.5);
+  csm_Emissive = csm_Emissive + vec3(0.92, 0.93, 0.95) * lg * uBacklight * 0.55 + vec3(0.95) * vHi * (0.12 + lg * 2.5);
 }
 `;
 
@@ -183,11 +183,10 @@ varying vec2 vP;
 float sdRoundRect(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 void main() {
   float mask = 1.0 - smoothstep(-0.02, 0.0, sdRoundRect(vP, uHalf, 0.12));
-  float thin = rippleBand(vP, 0.008, 1.35);
-  float soft = rippleBand(vP, 0.07, 1.35) * 0.28;
-  float echo = rippleBand(vP * 1.0, 0.006, 0.8) * 0.45;
+  float thin = touchRing(vP, 0.006);
+  float soft = touchRing(vP, 0.03) * 0.22;
   float flash = rippleFlash(vP);
-  vec3 col = uSignal * (thin * 2.6 + soft + echo) + mix(uSignal, vec3(1.0), 0.6) * flash * 3.0;
+  vec3 col = uSignal * (thin * 2.4 + soft + flash * 1.6);
   col *= mask * uGain;
   if (uNormal > 0.5) {
     // light theme: normal blending, so encode intensity as alpha instead of adding light
@@ -249,14 +248,15 @@ export function Laptop({
       groups: [...groups.values()],
       legend: legendTexture(keys),
       grain: grainTexture(),
-      block: slab(W, D, PLAN_R, BASE_H - PLATE_T, 0.018, -BASE_H),
+      // small bevels: with a large one the bottom case, top case and lid read as three slabs with grooves between
+      block: slab(W, D, PLAN_R, BASE_H - PLATE_T, 0.006, -BASE_H),
       rim: frame(W - 0.004, D - 0.004, PLAN_R - 0.002, 0.022, -BLOCK_TOP - PLATE_T + 0.0005, BLOCK_TOP),
       plate: slab(W, D, PLAN_R, PLATE_T, 0.006, -PLATE_T),
       liner: flatRoundedRect(W - 0.06, D - 0.06, PLAN_R - 0.03, -PLATE_T - 0.0006).rotateX(Math.PI).translate(0, 2 * (-PLATE_T - 0.0006), 0),
       well: flatRoundedRect(KB.x1 - KB.x0 + 0.03, KB.z1 - KB.z0 + 0.03, 0.02, 0.0004).translate(0, 0, (KB.z0 + KB.z1) / 2),
       padEdge: flatRoundedRect(PAD.x1 - PAD.x0 + 0.012, PAD.z1 - PAD.z0 + 0.012, 0.05, 0.0003).translate(0, 0, (PAD.z0 + PAD.z1) / 2),
       pad: flatRoundedRect(PAD.x1 - PAD.x0, PAD.z1 - PAD.z0, 0.045, 0.0007).translate(0, 0, (PAD.z0 + PAD.z1) / 2),
-      lidShell: slab(W, D - 0.04, PLAN_R - 0.01, LID_T, 0.012, 0),
+      lidShell: slab(W, D - 0.04, PLAN_R - 0.01, LID_T, 0.006, 0),
       dots,
       ringPlane: new THREE.PlaneGeometry(W, D, 1, 1).rotateX(-Math.PI / 2),
     };

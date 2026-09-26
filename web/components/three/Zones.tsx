@@ -2,7 +2,8 @@
 
 import * as THREE from "three";
 import { useMemo, useRef } from "react";
-import { useFrame } from "@react-three/fiber";
+import { useFrame, useThree } from "@react-three/fiber";
+import { hitsCopy, project, safeArea } from "./safeArea";
 import { Html } from "@react-three/drei";
 import { BASE_H, D, W } from "@/lib/dims";
 import type { Surface, Zone } from "@/lib/zones";
@@ -49,7 +50,7 @@ void main() {
   float dotGrid = (1.0 - smoothstep(0.08, 0.14, length(g))) * inside;
   float a = edge * mix(0.28, 1.0, corner) * uLevel + dotGrid * (0.14 * uLevel + uFlash * 0.9) + inside * 0.05 * uHover;
   vec3 col = uInk;
-  col = mix(col, uSignal, clamp(uFlash * 1.2, 0.0, 1.0));
+  // a flash brightens the outline in ink; the orange ring at the touch point says the rest
   a += edge * uFlash + inside * uFlash * 0.04;
   gl_FragColor = vec4(col * (1.0 + uFlash * 1.5), clamp(a, 0.0, 1.0));
 }
@@ -125,6 +126,9 @@ function ZonePlane({ zone, rt, taps, ink, signal, dark, showLabel }: { zone: Zon
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [p],
   );
+  const camera = useThree((st) => st.camera);
+  const size = useThree((st) => st.size);
+  const anchor = useRef<THREE.Group>(null);
   useFrame((_, dt) => {
     const u = mat.current.uniforms;
     u.uInk.value.set(ink);
@@ -140,7 +144,15 @@ function ZonePlane({ zone, rt, taps, ink, signal, dark, showLabel }: { zone: Zon
         textEl.current.textContent = text;
         lastText.current = text;
       }
-      labelEl.current.style.opacity = String(text ? Math.min(1, u.uLevel.value * 1.2) : 0);
+      // a label only shows where its zone is on screen and clear of the copy; it never gets pushed off its zone
+      let inside = false;
+      if (text && anchor.current) {
+        const s = safeArea(size.width, size.height);
+        const q = project(anchor.current, camera, size.width, size.height);
+        const half = text.length * 4 + 12;
+        inside = !!q && !s.narrow && q[0] - half > s.x0 && q[0] + half < s.x1 && q[1] > s.y0 && q[1] < s.y1 && !hitsCopy(q[0] - half, q[1] - 10, q[0] + half, q[1] + 10);
+      }
+      labelEl.current.style.opacity = String(inside ? Math.min(1, u.uLevel.value * 1.2) : 0);
     }
   });
   return (
@@ -160,6 +172,7 @@ function ZonePlane({ zone, rt, taps, ink, signal, dark, showLabel }: { zone: Zon
           polygonOffsetFactor={-2}
         />
       </mesh>
+      <group ref={anchor} position={p.label} />
       {showLabel && (
         <Html position={p.label} center zIndexRange={[20, 0]} style={{ pointerEvents: "none" }}>
           <div ref={labelEl} style={{ opacity: 0, transition: "opacity 240ms var(--ease-snap)" }}>

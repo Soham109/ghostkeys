@@ -6,6 +6,7 @@ import { PerformanceMonitor } from "@react-three/drei";
 import * as THREE from "three";
 import gsap from "gsap";
 import { StageScene } from "./StageScene";
+import StillStage from "./Stills";
 import { EXPOSURE } from "./tone";
 import { useTheme } from "@/lib/theme";
 import { bus } from "@/lib/stage";
@@ -34,10 +35,13 @@ export default function StageCanvas({ tier, active, onCreated }: { tier: Tier; a
     if (new URLSearchParams(location.search).has("debug")) (window as unknown as { __gkBus: typeof bus }).__gkBus = bus;
   }, []);
   const high = tier.tier >= 2 && !tier.mobile;
-  const cap = high ? 1.75 : 1.4;
+  // phones get at least 1.5x so thin metal edges do not stair-step (MSAA covers the rest, see Effects)
+  const cap = high ? 1.75 : 1.5;
   const [dpr, setDpr] = useState(Math.min(cap, typeof window === "undefined" ? 1 : window.devicePixelRatio || 1));
   // about 131k particles on capable GPUs, 65k on mid, 16k on low; none when motion is reduced
   const particleSize = tier.reducedMotion ? 0 : tier.tier >= 3 ? 362 : tier.tier === 2 ? 256 : 128;
+  // reduced motion: no WebGL at all, the pre-rendered stills of the same film
+  if (tier.reducedMotion) return <StillStage />;
   return (
     <Canvas
       frameloop="never"
@@ -55,7 +59,7 @@ export default function StageCanvas({ tier, active, onCreated }: { tier: Tier; a
       <TickerLoop active={active} />
       <PerformanceMonitor
         bounds={() => [50, 58]}
-        onDecline={() => setDpr((d) => Math.max(1, +(d - 0.25).toFixed(2)))}
+        onDecline={() => setDpr((d) => Math.max(high ? 1 : 1.25, +(d - 0.25).toFixed(2)))}
         onIncline={() => setDpr((d) => Math.min(cap, +(d + 0.25).toFixed(2)))}
         flipflops={4}
       >

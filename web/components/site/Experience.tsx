@@ -341,7 +341,7 @@ function Finale() {
             )}
           </div>
           <p data-fade className="label mt-10">
-            On-device / Nothing recorded / No admin rights / Open-source core
+            On-device / No network / No admin rights / Open-source core
           </p>
         </div>
         <footer data-fade className="page-x pointer-events-auto bg-bg pb-7">

@@ -6,7 +6,7 @@ export type ScreenMode = "map" | "sheet" | "design" | "music" | "code" | "compos
 /** The real app's Live screen, used as the display picture in "map" mode (sharp, mipmapped, loaded once). */
 export const LIVE_URL = "/textures/live.webp";
 /** Where the laptop drawing sits inside that screenshot (fractions of the image): taps are marked there. */
-const LIVE_MAP = { x: 0.2345, y: 0.3775, w: 0.4665, h: 0.5105 };
+const LIVE_MAP = { x: 0.234, y: 0.333, w: 0.478, h: 0.492 };
 
 let liveTex: THREE.Texture | null = null;
 let livePromise: Promise<THREE.Texture> | null = null;
@@ -27,6 +27,8 @@ export function loadLiveTexture(): Promise<THREE.Texture> {
 const CW = 1024;
 const CH = 666;
 const SIGNAL = "#ff5b1f";
+/** selection and emphasis on screen: ink, never the accent (orange means a touch was felt, nothing else) */
+const HILITE = "rgba(237,237,239,0.95)";
 const FONT = `-apple-system, "SF Pro Text", "Helvetica Neue", Helvetica, Arial, sans-serif`;
 const MONO = `ui-monospace, "SF Mono", Menlo, monospace`;
 
@@ -175,7 +177,7 @@ export class ScreenPainter {
     roundRect(g, x + 4, 3, 9, 9, 2.4);
     g.stroke();
     g.globalAlpha = 1;
-    g.fillStyle = SIGNAL;
+    g.fillStyle = HILITE;
     g.beginPath();
     g.arc(x + 6, 10, 1.3, 0, Math.PI * 2);
     g.fill();
@@ -301,7 +303,7 @@ export class ScreenPainter {
           g.fillStyle = "rgba(255,255,255,0.06)";
           g.fillRect(cx + 40 + c * 100, cy, 1, chh);
           if (r > 0 && c < 7) {
-            g.fillStyle = r === 7 && c === 2 ? SIGNAL : "rgba(237,237,239,0.62)";
+            g.fillStyle = r === 7 && c === 2 ? HILITE : "rgba(237,237,239,0.62)";
             const v = ((Math.sin(r * 7.1 + c * 3.3) + 1) * 4231).toFixed(2);
             g.fillText(v, cx + 52 + c * 100, cy + r * 25 + 16);
           }
@@ -309,7 +311,7 @@ export class ScreenPainter {
         g.fillStyle = "rgba(237,237,239,0.3)";
         g.fillText(String(r + 1), cx + 12, cy + r * 25 + 16);
       }
-      g.strokeStyle = SIGNAL;
+      g.strokeStyle = HILITE;
       g.lineWidth = 1.5;
       g.strokeRect(cx + 240, cy + 175, 100, 25);
     } else if (mode === "design") {
@@ -324,7 +326,7 @@ export class ScreenPainter {
       g.fill();
       g.fillRect(cx + 320, cy + 360, 180, 14);
       g.fillRect(cx + 320, cy + 384, 120, 8);
-      g.strokeStyle = SIGNAL;
+      g.strokeStyle = HILITE;
       g.lineWidth = 1.5;
       g.strokeRect(cx + 350, cy + 120, 180, 180);
       for (let i = 0; i < 10; i++) {
@@ -345,7 +347,7 @@ export class ScreenPainter {
       g.fillText("The Quiet Keys", cx + 400, cy + 150);
       for (let i = 0; i < 90; i++) {
         const hh = 8 + Math.abs(Math.sin(i * 0.7) * Math.cos(i * 0.23)) * 60;
-        g.fillStyle = i < 38 ? SIGNAL : "rgba(237,237,239,0.25)";
+        g.fillStyle = i < 38 ? HILITE : "rgba(237,237,239,0.25)";
         g.fillRect(cx + 400 + i * 4.4, cy + 260 - hh / 2, 2.4, hh);
       }
       g.font = `400 11px ${MONO}`;
@@ -364,7 +366,7 @@ export class ScreenPainter {
       lines.forEach(([ind, t], i) => {
         g.fillStyle = "rgba(237,237,239,0.28)";
         g.fillText(String(i + 1).padStart(2, " "), cx + 196, cy + 26 + i * 22);
-        g.fillStyle = t.startsWith("//") ? "rgba(237,237,239,0.35)" : i === 9 ? SIGNAL : "rgba(237,237,239,0.78)";
+        g.fillStyle = t.startsWith("//") ? "rgba(237,237,239,0.35)" : i === 9 ? HILITE : "rgba(237,237,239,0.78)";
         g.fillText(t, cx + 230 + ind * 8, cy + 26 + i * 22);
       });
       for (let i = 0; i < 9; i++) {
@@ -414,7 +416,7 @@ export class ScreenPainter {
         g.globalAlpha = 1;
       });
       if (r > 1) {
-        g.fillStyle = SIGNAL;
+        g.fillStyle = HILITE;
         g.beginPath();
         g.arc(x + 38, y + 430, 3.5, 0, Math.PI * 2);
         g.fill();

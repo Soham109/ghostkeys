@@ -25,6 +25,23 @@ float rippleBand(vec2 p, float width, float speed) {
   return acc;
 }
 
+// The touch ring: one thin ring that opens around the point of contact and dies within a few centimetres, so the
+// orange stays where the finger landed instead of sweeping across the deck.
+float touchRing(vec2 p, float width) {
+  float acc = 0.0;
+  for (int i = 0; i < ${MAX_RIPPLES}; i++) {
+    vec4 r = uRip[i];
+    float age = uTime - r.z;
+    if (age < 0.0 || age > 0.95 || r.w <= 0.0) continue;
+    float k = age / 0.95;
+    float rad = 0.03 + (1.0 - pow(1.0 - k, 3.0)) * 0.3 * (0.7 + 0.3 * r.w);
+    float d = distance(p, r.xy);
+    float fade = (1.0 - k) * (1.0 - k);
+    acc += exp(-pow((d - rad) / width, 2.0)) * fade * min(r.w, 1.2);
+  }
+  return acc;
+}
+
 float rippleFlash(vec2 p) {
   float acc = 0.0;
   for (int i = 0; i < ${MAX_RIPPLES}; i++) {

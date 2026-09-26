@@ -85,7 +85,8 @@ export function Effects({ theme, quality, fx }: { theme: Theme; quality: "high" 
   });
   if (quality === "low") {
     return (
-      <EffectComposer multisampling={0} stencilBuffer={false}>
+      // phones and low tiers: real multisampling on the scene buffer, SMAA after tone mapping for what is left
+      <EffectComposer multisampling={4} stencilBuffer={false}>
         <Bloom mipmapBlur intensity={dark ? 0.9 : 0.4} luminanceThreshold={dark ? 1.0 : 6} luminanceSmoothing={0.08} radius={0.62} />
         <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
         <primitive object={dissolve} />

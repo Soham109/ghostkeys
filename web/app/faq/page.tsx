@@ -1,16 +1,19 @@
 import type { Metadata } from "next";
 import { SubPage } from "@/components/site/SubPage";
-import { FaqList } from "@/components/site/Info";
+import { FaqAccordion } from "@/components/site/FaqAccordion";
+import { faqItems } from "@/lib/guide";
 
 export const metadata: Metadata = {
   title: "FAQ | Ghostkeys",
-  description: "Answers about typing, permissions, safety, pausing, open source and Windows.",
+  description: "Typing, the internet, battery, calls, sleep, permissions and more.",
 };
 
 export default function FaqPage() {
   return (
     <SubPage label="FAQ" title={<>Asked <em>often.</em></>}>
-      <FaqList />
+      <div className="mt-[12svh] md:ml-[25%]">
+        <FaqAccordion items={faqItems()} />
+      </div>
     </SubPage>
   );
 }

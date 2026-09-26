@@ -275,7 +275,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
   const sph = useMemo(() => new THREE.Spherical(), []);
   const shift = useRef({ x: 0.16, y: 0.1, fov: 30, init: false });
   const pointerSm = useRef({ x: 0, y: 0 });
-  const sched = useRef({ next: 0, i: 0, zoneStep: -1, layerKey: "", finaleTap: false, g: 0, loc: { id: "intro", local: 0 } });
+  const sched = useRef({ next: 0, i: 0, zoneStep: -1, layerKey: "", finaleTap: false, revealed: new Set<string>(), g: 0, loc: { id: "intro", local: 0 } });
   const air = useRef({ id: "pinch", progress: 0, weight: 0 });
   const sound = useRef({ id: "knuckle", progress: 0, weight: 0 });
   const tryState = useRef<{ zone: string; name: string; count: number; timer: number }>({ zone: "", name: "", count: 0, timer: 0 });
@@ -341,7 +341,9 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     camera.lookAt(camTgt);
     shift.current.fov += (ch.fov + (narrow ? 6 : 0) - shift.current.fov) * k;
     shift.current.x += ((narrow ? 0 : ch.sx) - shift.current.x) * k;
-    shift.current.y += ((narrow ? ch.sy * 0.5 + 0.12 : ch.sy) - shift.current.y) * k;
+    // phones: copy spans the width, so the laptop moves to whichever half the chapter's copy is not in
+    const copyTop = loc.id === "zones" || loc.id === "air" || loc.id === "try";
+    shift.current.y += ((narrow ? (copyTop ? -0.17 : 0.15) : ch.sy) - shift.current.y) * k;
     camera.fov = shift.current.fov;
     const w = size.width, h = size.height;
     camera.setViewOffset(w, h, -shift.current.x * w, shift.current.y * h, w, h);
@@ -425,7 +427,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
       so.id = SOUND_STEPS[is].id;
       so.progress = ps * ns - is;
       // fade in while the chapter scrolls in, cross-fade at the split, fade out as layers begins
-      const inW = smooth(-0.35, -0.05, loc.local) * (1 - smooth(0.97, 1.0, pa));
+      const inW = smooth(-0.6, -0.2, loc.local) * (1 - smooth(0.97, 1.0, pa));
       a.weight = inW * (1 - smooth(split - 0.035, split + 0.005, pa));
       so.weight = inW * smooth(split - 0.005, split + 0.035, pa);
     } else {
@@ -463,7 +465,24 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     } else sc.layerKey = "";
     screen.setMode(mode);
 
-    // ---------- try: all zones outlined, visitor clicks resolve to gestures (handled in onDown)
+    // ---------- try: while the chapter scrolls in, the zones draw on one by one, each with a tap; then all stay
+    // outlined and visitor clicks resolve to gestures (handled in onDown)
+    if (inChapter("try") && loc.local < 0) {
+      ZONES.forEach((z, i) => {
+        const a = -0.85 + i * 0.075;
+        const lv = smooth(a, a + 0.12, loc.local);
+        zrt.levels[z.id] = Math.max(zrt.levels[z.id] ?? 0, lv);
+        const on = lv > 0.5;
+        if (on && !sc.revealed.has(z.id)) {
+          sc.revealed.add(z.id);
+          zrt.flashes[z.id] = t;
+          if (z.surface === "base") {
+            const q = zonePoint(z, 0.2);
+            taps.tap(q.x, q.z, 0.6);
+          }
+        } else if (!on) sc.revealed.delete(z.id);
+      });
+    }
     if (inChapter("try")) {
       for (const z of customZones) zrt.levels[z.id] = Math.max(zrt.levels[z.id] ?? 0, ch.zonesAll);
     }
