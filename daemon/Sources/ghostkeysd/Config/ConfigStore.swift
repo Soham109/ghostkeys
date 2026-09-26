@@ -10,10 +10,82 @@ final class ConfigStore {
     var reportURL: URL { modelDirectory.appendingPathComponent("calibration-report.json") }
     var samplesURL: URL { modelDirectory.appendingPathComponent("samples.json") }
 
-    init() {
+    init(directory: URL = ConfigStore.baseDirectory) {
+        self.directory = directory
+    }
+
+    // MARK: Where the daemon's files live
+
+    /// `~/Library/Application Support/Ghostkeys` (shared with the Electron app's own profile, so the daemon keeps its
+    /// files one level down, in `daemon/`).
+    static var legacyDirectory: URL {
         let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
             ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        directory = base.appendingPathComponent("Ghostkeys", isDirectory: true)
+        return base.appendingPathComponent("Ghostkeys", isDirectory: true)
+    }
+
+    static var defaultDirectory: URL { legacyDirectory.appendingPathComponent("daemon", isDirectory: true) }
+
+    /// Set once at startup (before anything reads it) from `--config-dir`, then `GHOSTKEYS_CONFIG_DIR`, else the default.
+    nonisolated(unsafe) static var baseDirectory: URL = defaultDirectory
+    nonisolated(unsafe) static var isDefaultDirectory = true
+
+    static func configure(override: String?) {
+        let env = ProcessInfo.processInfo.environment["GHOSTKEYS_CONFIG_DIR"]
+        if let path = override ?? (env?.isEmpty == false ? env : nil) {
+            baseDirectory = URL(fileURLWithPath: (path as NSString).expandingTildeInPath, isDirectory: true).standardizedFileURL
+            isDefaultDirectory = false
+        }
+        try? FileManager.default.createDirectory(at: baseDirectory, withIntermediateDirectories: true,
+                                                 attributes: [.posixPermissions: 0o700])
+    }
+
+    /// Exactly the entries the daemon owns. Nothing else in the old shared directory is touched.
+    static let ownedNames = ["config.json", "config.json.bak", "config.json.bad", "token", "approved.json",
+                             "spu-originals.json", "daemon.lock", "model"]
+
+    /// One-time move of the daemon's own files from `~/Library/Application Support/Ghostkeys/` into `daemon/`
+    /// (only for the default location). Refuses to run while an older daemon still holds the old lock.
+    /// Returns a summary, or nil if there was nothing to move.
+    static func migrateLegacyFiles() -> String? {
+        guard isDefaultDirectory else { return nil }
+        let fm = FileManager.default
+        let old = legacyDirectory
+        let present = ownedNames.filter { fm.fileExists(atPath: old.appendingPathComponent($0).path) }
+        guard !present.isEmpty else { return nil }
+
+        // An older ghostkeysd (or lab tool) may still be running with the old lock: do not move files under it.
+        let oldLock = old.appendingPathComponent("daemon.lock").path
+        if fm.fileExists(atPath: oldLock) {
+            let fd = open(oldLock, O_RDWR | O_CLOEXEC)
+            if fd >= 0 {
+                defer { close(fd) }
+                if flock(fd, LOCK_EX | LOCK_NB) != 0 {
+                    Log.error("an older ghostkeysd holds \(oldLock); stop it before starting this version")
+                    exit(4)
+                }
+                flock(fd, LOCK_UN)
+            }
+        }
+        var moved: [String] = []
+        for name in present {
+            let src = old.appendingPathComponent(name), dst = baseDirectory.appendingPathComponent(name)
+            if name == "daemon.lock" || name == "token" {
+                try? fm.removeItem(at: src)        // recreated every launch; nothing to keep
+                continue
+            }
+            guard !fm.fileExists(atPath: dst.path) else {
+                Log.info("migration: kept \(src.path) (\(name) already exists in \(baseDirectory.path))")
+                continue
+            }
+            do { try fm.moveItem(at: src, to: dst); moved.append(name) } catch {
+                Log.error("migration: could not move \(name): \(error)")
+            }
+        }
+        guard !moved.isEmpty else { return nil }
+        let summary = "moved \(moved.joined(separator: ", ")) from \(old.path) to \(baseDirectory.path)"
+        Log.info(summary)
+        return summary
     }
 
     private static let encoder: JSONEncoder = {

@@ -1,7 +1,8 @@
 import Foundation
 import Darwin
 
-/// The same single-instance lock ghostkeysd takes (flock on ~/Library/Application Support/Ghostkeys/daemon.lock),
+/// The same single-instance lock ghostkeysd takes (flock on <config dir>/daemon.lock, default
+/// ~/Library/Application Support/Ghostkeys/daemon/daemon.lock),
 /// so the lab tool and the daemon never drive the sensor drivers at the same time (SAFETY_AUDIT M2).
 /// Held until the process exits; the kernel releases it however the process ends.
 enum LabInstanceLock {
@@ -9,9 +10,15 @@ enum LabInstanceLock {
 
     static func acquire() throws {
         guard fd < 0 else { return }
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
-        let dir = base.appendingPathComponent("Ghostkeys", isDirectory: true)
+        // Same directory rule as ghostkeysd: GHOSTKEYS_CONFIG_DIR, else ~/Library/Application Support/Ghostkeys/daemon.
+        let dir: URL
+        if let env = ProcessInfo.processInfo.environment["GHOSTKEYS_CONFIG_DIR"], !env.isEmpty {
+            dir = URL(fileURLWithPath: (env as NSString).expandingTildeInPath, isDirectory: true)
+        } else {
+            let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
+                ?? URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent("Library/Application Support")
+            dir = base.appendingPathComponent("Ghostkeys/daemon", isDirectory: true)
+        }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let path = dir.appendingPathComponent("daemon.lock").path
         let f = open(path, O_CREAT | O_RDWR | O_CLOEXEC, 0o644)

@@ -104,15 +104,24 @@ enum WindowActions {
 
     // MARK: App
 
-    static func app(_ op: String) throws {
+    /// The refusals for app ops, with no side effects. Called before a real run and in dry-run, so both agree.
+    @discardableResult
+    static func checkApp(_ op: String) throws -> NSRunningApplication {
         guard appOps.contains(op) else { throw ActionError("unknown app op: \(op)") }
         guard let front = NSWorkspace.shared.frontmostApplication else { throw ActionError("no frontmost app") }
+        if op == "quit" {
+            guard front.bundleIdentifier != "com.apple.finder" else { throw ActionError("refusing to quit Finder") }
+            guard front.processIdentifier != getpid() else { throw ActionError("refusing to quit ghostkeysd") }
+        }
+        return front
+    }
+
+    static func app(_ op: String) throws {
+        let front = try checkApp(op)
         switch op {
         case "hide":
             guard front.hide() else { throw ActionError("could not hide \(front.localizedName ?? "app")") }
         case "quit":
-            guard front.bundleIdentifier != "com.apple.finder" else { throw ActionError("refusing to quit Finder") }
-            guard front.processIdentifier != getpid() else { throw ActionError("refusing to quit ghostkeysd") }
             guard front.terminate() else { throw ActionError("could not quit \(front.localizedName ?? "app")") }
         case "switch-next", "switch-previous":
             let order = appsFrontToBack()

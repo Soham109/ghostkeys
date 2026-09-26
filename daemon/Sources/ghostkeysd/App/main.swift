@@ -17,6 +17,11 @@ atexit {
 // Signals are handled on a dedicated queue, never the main thread (SAFETY_AUDIT H1).
 Lifetime.installSignalHandlers()
 
+// Where the daemon keeps its files: --config-dir, then GHOSTKEYS_CONFIG_DIR, else
+// ~/Library/Application Support/Ghostkeys/daemon/ (moving files an older version left one level up).
+ConfigStore.configure(override: options.configDir)
+ConfigStore.migrateLegacyFiles()
+
 // One daemon at a time: two would fight over the sensor driver settings. Applies to every mode.
 InstanceLock.acquireOrExit(directory: ConfigStore().directory)
 

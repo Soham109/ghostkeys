@@ -57,22 +57,20 @@ final class WebSocketServer {
         ws.autoReplyPing = true
         ws.maximumMessageSize = Self.maxMessageBytes
         // Runs on `queue`. Network.framework does not say which connection a handshake belongs to, and a rejected
-        // handshake still reaches `.ready` on the server side. So the verdict is recorded against the one connection
-        // currently mid-handshake, and `.ready` admits only connections with a recorded "accept" (fail closed).
+        // handshake still reaches `.ready` on the server side. So handshakes are serialized (see `admitNext`): exactly
+        // one connection is ever mid-handshake, the verdict is recorded against it, and `.ready` admits only a
+        // connection with a recorded "accept".
         nonisolated(unsafe) weak var weakSelf = self
         let token = self.token
         ws.setClientRequestHandler(queue) { _, headers in
             let verdict = Self.authorize(headers: headers, token: token)
-            guard let server = weakSelf else { return verdict }
-            let waiting = server.clients.values.filter { !$0.ready && $0.authorized == nil }
-            if waiting.count == 1 {
-                waiting[0].authorized = verdict.status == .accept
-                return verdict
+            guard let server = weakSelf, let client = server.handshaking, client.authorized == nil else {
+                // Cannot happen with serialized admissions; refuse rather than guess.
+                Log.error("handshake with no connection in flight; refusing")
+                return NWProtocolWebSocket.Response(status: .reject, subprotocol: nil, additionalHeaders: nil)
             }
-            // Ambiguous (several handshakes at once) or unknown: refuse them all; the app simply reconnects.
-            for c in waiting { c.authorized = false }
-            Log.info("refusing \(waiting.count) simultaneous handshakes (cannot tell them apart)")
-            return NWProtocolWebSocket.Response(status: .reject, subprotocol: nil, additionalHeaders: nil)
+            client.authorized = verdict.status == .accept
+            return verdict
         }
         let params = NWParameters.tcp
         params.defaultProtocolStack.applicationProtocols.insert(ws, at: 0)
@@ -113,22 +111,38 @@ final class WebSocketServer {
 
     func stop() {
         listener?.cancel()
+        admissions.forEach { $0.cancel() }
+        admissions.removeAll()
         for c in clients.values { c.connection.cancel() }
         clients.removeAll()
     }
 
     private var readyCount: Int { clients.values.filter(\.ready).count }
 
+    /// Connections waiting their turn to handshake (not started yet), and the one handshaking now.
+    private var admissions: [NWConnection] = []
+    private var handshaking: Client?
+
     private func accept(_ conn: NWConnection) {
         // Only authenticated (ready) clients count toward maxClients, so failed handshakes cannot lock the app out.
-        guard clients.count - readyCount < Self.maxPending else {
+        guard admissions.count + (handshaking == nil ? 0 : 1) < Self.maxPending else {
             Log.info("refusing a connection: too many handshakes in progress")
             conn.cancel()
             return
         }
+        admissions.append(conn)
+        admitNext()
+    }
+
+    /// Starts the next queued connection once no other handshake is in flight. Simultaneous connections therefore
+    /// just wait their turn (each handshake takes a few milliseconds; a stalled one is cut off after 2 s).
+    private func admitNext() {
+        guard handshaking == nil, !admissions.isEmpty else { return }
+        let conn = admissions.removeFirst()
         let client = Client(id: nextID, connection: conn)
         nextID += 1
         clients[client.id] = client
+        handshaking = client
         // A rejected (or stalled) handshake never becomes ready: close it instead of leaving the peer hanging.
         queue.asyncAfter(deadline: .now() + Self.handshakeTimeout) { [weak self, weak client] in
             guard let self, let client, !client.ready else { return }
@@ -140,6 +154,7 @@ final class WebSocketServer {
             Log.debug("connection \(client.id) state: \(state)")
             switch state {
             case .ready:
+                self.handshakeFinished(client)
                 guard client.authorized == true else {
                     Log.debug("closing connection \(client.id): not authorized")
                     self.drop(client)
@@ -162,7 +177,14 @@ final class WebSocketServer {
         conn.start(queue: queue)
     }
 
+    private func handshakeFinished(_ client: Client) {
+        guard handshaking === client else { return }
+        handshaking = nil
+        queue.async { [weak self] in self?.admitNext() }
+    }
+
     func drop(_ client: Client) {
+        handshakeFinished(client)
         guard clients.removeValue(forKey: client.id) != nil else { return }
         Log.debug("client \(client.id) disconnected")
         client.connection.cancel()

@@ -20,18 +20,38 @@ Every message has `"type"`. Timestamps `t` are milliseconds since daemon start (
   (SIGINT, SIGTERM, normal exit). These reset on reboot anyway.
 - Actions only run in response to a detected gesture or an explicit `test_action` from the UI.
 - `paused` is honored everywhere: when paused, no action runs.
-- Config lives in `~/Library/Application Support/Ghostkeys/` only. Nothing else on disk is written.
+- The daemon writes only inside its config directory (see "Config paths"). Nothing else on disk is written.
 - No network except the loopback WebSocket.
+
+## Config paths
+
+The daemon keeps every file it owns in one directory:
+
+- Default: `~/Library/Application Support/Ghostkeys/daemon/` (mode 0700). The parent
+  `~/Library/Application Support/Ghostkeys/` is the Electron app's own profile (`userData`); the daemon never writes there.
+- Override: `--config-dir <path>`, else the environment variable `GHOSTKEYS_CONFIG_DIR`. The lab tool follows the same
+  rule for its lock.
+- Contents: `config.json` (+ `config.json.bak`, `config.json.bad`), `token`, `approved.json`, `spu-originals.json`
+  (only while sensor settings need restoring), `daemon.lock`, and `model/` (`zone-model.json`,
+  `calibration-report.json`, `samples.json`, `tap-types.json`, `tap-type-samples.json`, `*.bak`).
+- Migration: with the default location, on first start a newer daemon moves exactly those entries (only those names)
+  from `~/Library/Application Support/Ghostkeys/` into `daemon/`. `token` and `daemon.lock` are recreated rather than
+  moved, an entry that already exists in `daemon/` is left in place, and the daemon refuses to start (exit 4) while an
+  older daemon still holds the old `daemon.lock`.
 
 ## Authentication
 
 The daemon only accepts WebSocket handshakes from the app, never from a browser page.
 
 - Token: on every launch the daemon generates 32 random bytes, hex encoded (64 characters), and writes them to
-  `~/Library/Application Support/Ghostkeys/token` with mode 0600, replacing the previous one. If the parent passes
+  `<config dir>/token` (default `~/Library/Application Support/Ghostkeys/daemon/token`) with mode 0600, replacing the
+  previous one. If the parent passes
   `GHOSTKEYS_TOKEN` in the daemon's environment (at least 32 characters), that value is accepted too.
 - Handshake: the client must send the header `X-Ghostkeys-Token: <token>`. A missing or wrong token is rejected.
 - Any handshake that carries an `Origin` header is rejected (browsers always send one; the app must not).
+- Handshakes are served one at a time: connections that arrive together (for example a main window and the HUD) are
+  queued and each is answered in turn, so simultaneous valid connections all succeed without retries. A handshake that
+  does not complete within 2 s is closed; at most 16 connections may be waiting.
 - Limits: at most 8 clients; more than 200 messages per second from one client disconnects it; at most 2
   `test_action` per second per client. A client that stops reading first loses stream frames (`imu`, `light`, `lid`,
   `taps`), then is disconnected once about 1 MB is waiting.
@@ -169,7 +189,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 // { "type": "sim_air", "phase": "began|changed|ended", "dx": 0.05, "dy": 0 }
 ```
 
-## Config file (`~/Library/Application Support/Ghostkeys/config.json`)
+## Config file (`<config dir>/config.json`, default `~/Library/Application Support/Ghostkeys/daemon/config.json`)
 
 ```jsonc
 {
@@ -223,4 +243,4 @@ Action kinds:
 | `integration` | `app` (e.g. `excel`, `chrome`, `safari`, `arc`, `music`, `spotify`, `finder`, `powerpoint`, `keynote`, `zoom`), `command`, `args` | context-aware command implemented by the GhostkeysIntegrations module (e.g. excel `wrap-iferror`, `toggle-absolute`, `cycle-number-format`, `insert-xlookup`); needs Automation permission for that app |
 | `system` | `op`: `lock`, `sleep-display`, `screenshot`, `screenshot-area`, `dnd-toggle`, `mission-control`, `launchpad`, `show-desktop` | built-in macOS commands, never anything that needs admin rights |
 
-Samples and models live in `~/Library/Application Support/Ghostkeys/model/`.
+Samples and models live in `<config dir>/model/`.

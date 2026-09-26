@@ -72,7 +72,9 @@ final class ActionRunner: @unchecked Sendable {
         try execute(kind, action)
     }
 
-    /// Checks fields before anything runs, so dry-run reports the same errors a real run would.
+    /// Checks fields and every policy refusal (approval, command filter, Finder/self quit, unsupported integrations)
+    /// before anything runs, so dry-run reports the same refusals a real run would. Failures that depend on the
+    /// environment at run time (Accessibility not granted, target app not running) only show up in a real run.
     private func validate(_ kind: String, _ a: JSONValue) throws {
         switch kind {
         case "keystroke":
@@ -99,7 +101,9 @@ final class ActionRunner: @unchecked Sendable {
         case "window":
             guard WindowActions.windowOps.contains(a["op"]?.string ?? "") else { throw ActionError("unknown window op") }
         case "app":
-            guard WindowActions.appOps.contains(a["op"]?.string ?? "") else { throw ActionError("unknown app op") }
+            // Includes the frontmost-app refusals (Finder, ghostkeysd itself), so dry-run reports them too.
+            let op = a["op"]?.string ?? ""
+            try onMain { try WindowActions.checkApp(op) }
         case "system":
             guard Self.systemOps.contains(a["op"]?.string ?? "") else { throw ActionError("unknown system op") }
         case "integration":
