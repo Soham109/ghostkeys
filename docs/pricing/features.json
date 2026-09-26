@@ -1,0 +1,525 @@
+{
+  "version": 1,
+  "updated": "2026-09-26",
+  "tiers": [
+    {
+      "id": "free",
+      "name": "Free",
+      "price": 0,
+      "currency": "USD",
+      "billing": "free",
+      "tagline": "Two hidden buttons on your palm rests, free forever.",
+      "cta": "Download"
+    },
+    {
+      "id": "pro",
+      "name": "Pro",
+      "price": 29,
+      "currency": "USD",
+      "billing": "one-time",
+      "updatesMonths": 12,
+      "renewalPrice": 15,
+      "lifetimeUpdatesPrice": 59,
+      "studentPrice": 15,
+      "launchPrice": 19,
+      "launchDays": 14,
+      "foundingSeats": 1000,
+      "foundingPerk": "Lifetime updates at the launch price, name in the credits, a vote on the preset roadmap",
+      "tagline": "Every surface, every gesture, every action. Pay once.",
+      "cta": "Buy Pro"
+    },
+    {
+      "id": "teams",
+      "name": "Teams",
+      "price": 49,
+      "currency": "USD",
+      "billing": "per-seat-yearly",
+      "minSeats": 3,
+      "volumeDiscount": {
+        "fromSeats": 25,
+        "percentOff": 20
+      },
+      "tagline": "Pro for the whole desk, managed by IT.",
+      "cta": "Contact sales"
+    }
+  ],
+  "badges": {
+    "beta": "Shipped, still improving",
+    "soon": "Not shipped yet"
+  },
+  "groups": [
+    {
+      "name": "Surfaces",
+      "features": [
+        {
+          "id": "palm-rests",
+          "title": "Left and right palm rests",
+          "description": "The blank metal beside the trackpad becomes two buttons.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "grilles",
+          "title": "Speaker grilles",
+          "description": "Tap either speaker grille.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "top-strip",
+          "title": "Strip above the keyboard",
+          "description": "The thin band between keys and hinge.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "edges",
+          "title": "Left and right edges",
+          "description": "Tap the sides of the case.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "lid",
+          "title": "Lid",
+          "description": "Tap the back of the screen.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "custom-zones",
+          "title": "Zones you draw",
+          "description": "Mark any blank area as a button.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "light-sensor",
+          "title": "Light sensor",
+          "description": "Cover the sensor near the camera with a hand.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "air",
+          "title": "Air above the keyboard",
+          "description": "The camera sees hand gestures over the keys. M4 and M5 Macs.",
+          "free": false,
+          "pro": true,
+          "teams": true,
+          "badge": "beta"
+        }
+      ]
+    },
+    {
+      "name": "Gestures",
+      "features": [
+        {
+          "id": "tap-counts",
+          "title": "Tap, double tap, triple tap",
+          "description": "Count taps in any zone you own.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "sequence",
+          "title": "Sequence",
+          "description": "Tap two different zones in a row.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "rhythm",
+          "title": "Rhythm",
+          "description": "Tap, pause, then double tap.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "modifier-tap",
+          "title": "Modifier plus tap",
+          "description": "Hold Shift, Control, Option, Command or fn while tapping.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "lid-nudge",
+          "title": "Lid nudge",
+          "description": "Tip the screen back slightly and return it.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "cover",
+          "title": "Cover and cover hold",
+          "description": "Cover the light sensor briefly or hold it.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "tilt",
+          "title": "Tilt",
+          "description": "Roll the laptop left or right and back.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "sound-gestures",
+          "title": "Sound gestures",
+          "description": "Knuckle vs fingertip, rubs and hand-wave sonar. Opt-in, uses the microphone locally.",
+          "free": false,
+          "pro": true,
+          "teams": true,
+          "badge": "beta"
+        },
+        {
+          "id": "air-gestures",
+          "title": "Air gestures",
+          "description": "Pinch, pinch drag, palm swipe and air tap via the camera. Opt-in.",
+          "free": false,
+          "pro": true,
+          "teams": true,
+          "badge": "beta"
+        }
+      ]
+    },
+    {
+      "name": "Detection",
+      "features": [
+        {
+          "id": "calibration",
+          "title": "Calibration to your hands",
+          "description": "About 3 minutes of taps and normal typing trains a model for your Mac.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "rejection",
+          "title": "Ignores typing and trackpad",
+          "description": "Typing, trackpad use and bumps never fire a binding.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "sensitivity",
+          "title": "Sensitivity controls",
+          "description": "Tune how firm a tap must be and how sure detection must be.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "accuracy-report",
+          "title": "Per-zone accuracy report",
+          "description": "See how well each zone was learned.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        }
+      ]
+    },
+    {
+      "name": "Actions",
+      "features": [
+        {
+          "id": "keystroke",
+          "title": "Keystroke",
+          "description": "Press any key combination.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "text-clipboard",
+          "title": "Text and clipboard",
+          "description": "Type a snippet or put it on the clipboard.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "open",
+          "title": "Open app, file or URL",
+          "description": "Launch anything by name, path or link.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "volume-media",
+          "title": "Volume, mute, media, brightness",
+          "description": "The keys you reach for most, on a tap.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "window",
+          "title": "Window controls",
+          "description": "Snap, maximize, center or move to the next display.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "app-system",
+          "title": "App and system controls",
+          "description": "Hide, quit, switch apps, lock, screenshot, Do Not Disturb.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "scripts",
+          "title": "Shell, AppleScript, Shortcuts",
+          "description": "Run your own scripts and Shortcuts. Teams IT can block these.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "macros",
+          "title": "Macros",
+          "description": "Chain up to 50 steps with delays.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        }
+      ]
+    },
+    {
+      "name": "Integrations",
+      "features": [
+        {
+          "id": "excel",
+          "title": "Excel formula tools",
+          "description": "Wrap in IFERROR, toggle absolute references, cycle number formats, insert XLOOKUP.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "browser",
+          "title": "Browser tabs",
+          "description": "Tab controls for Chrome, Safari and Arc.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "music",
+          "title": "Music and Spotify",
+          "description": "Playback and library controls.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "finder",
+          "title": "Finder",
+          "description": "File and window commands in Finder.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "slides",
+          "title": "Slides",
+          "description": "Drive PowerPoint and Keynote presentations.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "calls",
+          "title": "Zoom and Meet",
+          "description": "Mute, camera and hand raise in calls.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        }
+      ]
+    },
+    {
+      "name": "Intelligence",
+      "features": [
+        {
+          "id": "composer-byok",
+          "title": "AI macro composer",
+          "description": "Describe a macro in plain English and get a checked binding. Use your own model key.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "composer-credits",
+          "title": "Included composer credits",
+          "description": "Composed macros without your own key. Packs are $5 for 500.",
+          "free": false,
+          "pro": "100 included",
+          "teams": "300 per seat monthly"
+        }
+      ]
+    },
+    {
+      "name": "Customization",
+      "features": [
+        {
+          "id": "bindings",
+          "title": "Bindings",
+          "description": "How many gesture-to-action rules you can keep.",
+          "free": "10",
+          "pro": "Unlimited",
+          "teams": "Unlimited"
+        },
+        {
+          "id": "per-app",
+          "title": "Per-app layers",
+          "description": "The same tap does different things in different apps.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "presets",
+          "title": "Preset library",
+          "description": "200+ ready-made bindings.",
+          "free": "Browse all, install palm-rest ones",
+          "pro": "All",
+          "teams": "All"
+        },
+        {
+          "id": "layouts",
+          "title": "Saved layouts",
+          "description": "Switch, import and export whole setups.",
+          "free": false,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "hud",
+          "title": "HUD",
+          "description": "A small on-screen confirmation of what fired.",
+          "free": "Yes",
+          "pro": "Restyle",
+          "teams": "Restyle"
+        },
+        {
+          "id": "finance-pack",
+          "title": "Finance preset pack",
+          "description": "Layouts tuned for Excel-heavy modeling work.",
+          "free": false,
+          "pro": false,
+          "teams": true
+        },
+        {
+          "id": "shared-layouts",
+          "title": "Shared team layouts",
+          "description": "One setup pushed to every seat.",
+          "free": false,
+          "pro": false,
+          "teams": true
+        }
+      ]
+    },
+    {
+      "name": "Privacy",
+      "features": [
+        {
+          "id": "no-network",
+          "title": "No network, no telemetry, no account",
+          "description": "Everything runs on your Mac.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "no-typing",
+          "title": "Never reads what you type",
+          "description": "Only asks whether a tap on the case happened.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "offline-license",
+          "title": "Offline license check",
+          "description": "A signed license file checked on your Mac. At most one activation request.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "it-profile",
+          "title": "Managed IT profile",
+          "description": "Deploy through device management, lock settings, block scripts and composer network access.",
+          "free": false,
+          "pro": false,
+          "teams": true
+        }
+      ]
+    },
+    {
+      "name": "Platforms",
+      "features": [
+        {
+          "id": "macos",
+          "title": "macOS on Apple silicon",
+          "description": "MacBook Air and Pro, M1 and later, macOS 14 or later.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "windows",
+          "title": "Windows",
+          "description": "Same license covers it when it ships.",
+          "free": true,
+          "pro": true,
+          "teams": true,
+          "badge": "soon"
+        },
+        {
+          "id": "cli-sdk",
+          "title": "CLI and SDK",
+          "description": "Script and extend Ghostkeys from the terminal or your own code.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "raycast",
+          "title": "Raycast extension",
+          "description": "Control Ghostkeys from Raycast.",
+          "free": true,
+          "pro": true,
+          "teams": true
+        },
+        {
+          "id": "admin",
+          "title": "Seat management, invoices, priority support",
+          "description": "For companies buying many seats.",
+          "free": false,
+          "pro": false,
+          "teams": true
+        }
+      ]
+    }
+  ]
+}
