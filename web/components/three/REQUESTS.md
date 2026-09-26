@@ -100,3 +100,26 @@ Client: "don't make the website unnecessarily long". The landing now has six cha
 ## 9. Contract change: chapter progress now starts when the section pins
 
 `bus.chapters[id]` is 0 until the section's top reaches the top of the viewport, then runs to 1 as it unpins (the same range as the headline reveals). During the scroll-in between chapters, the previous chapter holds at 1 and `bus.chapter` still names it.
+
+## From 3D: air and sound scenes
+
+- New folder `components/three/air/`: `AirGestureScene` (camera add-on) and `SoundScene` (sound mode), plus the shared ghost hand (`GhostHand`, 21 joints like Apple's hand pose: soft points at joints, hairline bones, fading fingertip trails, signal orange only when a pinch closes or a knock lands).
+- Both are mounted by the 3D side inside `StageScene`, in the one persistent canvas, driven by the `air` chapter (`bus.chapters.air`): `AIR_STEPS` for the first part, `SOUND_STEPS` after it. Nothing for the site to place.
+- Air ids: `pinch`, `drag` (left then right), `swipe`, `dial`, plus `zoom` (two hands), `circle`, `point`, `tap`, `drag-left`, `drag-right`, `drag-up`, `drag-down` if you ever want them in `AIR_STEPS`.
+- Sound ids: `knuckle` (knuckle knocks, then fingertip taps, as two kinds of sound wave), `rub` (grille rub, comb of harmonics), `wave` (hand wave bending the 20 kHz field).
+- The laptop screen answers each gesture (window grab and slide, desktops, volume dial, zoom, scrub; knuckle or fingertip verdict, harmonics, 20 kHz echo).
+- Labels drawn next to the hand, in WebGL (no DOM): "M4 AND M5 · CAMERA ADD-ON" and "SOUND MODE · ON-DEVICE". Your DOM caption can stay as is.
+- Each step reads within its own slice of scroll: quick lead-in, the action, a short hold, back to a rest pose by the end, so steps chain without jumps.
+
+## From 3D: state of the scene and what the site can use (latest)
+
+- **Scroll axis.** The camera now runs on raw scroll (viewport heights) built from `CHAPTER_ORDER` and `CHAPTER_SCREENS`, so it keeps moving through the one-viewport scroll-in between chapters (your chapter progress is "top top" to "bottom bottom", which left the scene frozen for a screen between chapters). Assumption: chapter sections are stacked from the top of the page in `CHAPTER_ORDER`, heights `CHAPTER_SCREENS[id]` viewports. If that stops being true, publish `bus.scroll = scrollY / innerHeight` each tick and the scene uses it instead of reading `window.scrollY`.
+- **Captions stay in sync:** zone steps, air/sound steps and layer steps still follow your `bus.chapters[id]` exactly (`stepAt`), the camera just starts travelling during the scroll-in.
+- **Render loop:** the canvas no longer runs its own requestAnimationFrame; it renders from `gsap.ticker`, after Lenis and ScrollTrigger in the same tick. `active=false` stops it.
+- **Loading:** `bus.loaded` goes 0..1 (HDRI, the Live screenshot texture, shader compile and GPU upload). The dust only appears when it reaches 1 (or after 2.5 s), so the intro never hitches. `bus.introDone` flips when the lid is open.
+- **Try chapter:** implemented as in section 3: clicks on zones (custom zones first, newest first), keys and trackpad resolve to tap/double/triple within 340 ms and call `bus.fire`. Edge and lid clicks too.
+- **Finale:** the lid closes and one last ripple lands during the finale's scroll-in (its pinned range is only 0.1 viewport).
+- **Fallback component for reduced motion, tier 0, or no WebGL2:** `components/three/Stills.tsx` (default export `StillStage`, DOM only, no three.js). Mount it where `StageCanvas` would go (same fixed layer). It cross-fades pre-rendered stills of this exact scene by `bus.chapter` (`public/stills/{intro,zones,grille,air,sound,layers,try}-{dark,light}.avif`, 560 KB total, rendered at 1920x1200). Alt text is in `STILL_ALT`. Today the site mounts nothing when `tier === 0`, so those visitors see an empty page behind the copy.
+- **Assets added to public:** `hdr/studio.hdr` (Poly Haven "studio_small_03", CC0, 1k), `textures/live.webp` (the app's Live screen, 84 KB), `stills/*.avif`.
+- **Debug hook:** `?debug` exposes `window.__gkBus` (the bus) for Playwright checks.
+- `MiniStage.tsx` was deleted (unused). `Heatmap.tsx` is kept but not mounted.

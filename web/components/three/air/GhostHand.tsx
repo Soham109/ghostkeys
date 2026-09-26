@@ -5,10 +5,10 @@ import { useEffect, useMemo } from "react";
 import { useFrame } from "@react-three/fiber";
 import { BONES, JOINTS, TIPS } from "./handPose";
 
-const DUST_PER_BONE = 6;
+const DUST_PER_BONE = 0;
 /** fine dust across the palm, so it reads as a surface: triangle fan from the wrist over the knuckles */
 const PALM_TRIS: [number, number, number][] = [[0, 5, 9], [0, 9, 13], [0, 13, 17], [0, 1, 5]];
-const PALM_DUST = 14;
+const PALM_DUST = 5;
 const TRAIL = 34;
 
 const pointVert = /* glsl */ `
@@ -39,8 +39,8 @@ void main() {
   float d2 = dot(c, c) * 4.0;
   if (d2 > 1.0) discard;
   // bright core, soft falloff: a point of light, not a disc
-  float core = exp(-d2 * 9.0);
-  float halo = exp(-d2 * 2.6) * 0.35;
+  float core = exp(-d2 * 7.0) * 0.85;
+  float halo = exp(-d2 * 2.2) * 0.3;
   float a = (core + halo) * vAlpha;
   vec3 col = mix(uInk, uSignal * (uDark > 0.5 ? 2.4 : 1.0), clamp(vHot, 0.0, 1.0));
   gl_FragColor = vec4(col * (uDark > 0.5 ? 1.0 : 1.0), a);
@@ -63,9 +63,9 @@ void main() { gl_FragColor = vec4(uInk, vA); }
 `;
 
 const JOINT_SIZE: number[] = (() => {
-  const s = new Array(JOINTS).fill(0.032);
-  s[0] = 0.04;
-  for (const t of TIPS) s[t] = 0.036;
+  const s = new Array(JOINTS).fill(0.019);
+  s[0] = 0.022;
+  for (const t of TIPS) s[t] = 0.024;
   return s;
 })();
 
@@ -105,7 +105,7 @@ export class GhostHandMesh extends THREE.Group {
     const alpha = new Float32Array(nPts);
     for (let j = 0; j < JOINTS; j++) {
       size[j] = JOINT_SIZE[j];
-      alpha[j] = 0.95;
+      alpha[j] = (TIPS as number[]).includes(j) ? 1 : 0.62;
     }
     let seed = 5;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -120,8 +120,8 @@ export class GhostHandMesh extends THREE.Group {
       this.bary[i * 2] = a;
       this.bary[i * 2 + 1] = b;
       const k = JOINTS + BONES.length * DUST_PER_BONE + i;
-      size[k] = 0.008 + rnd() * 0.008;
-      alpha[k] = 0.18 + rnd() * 0.22;
+      size[k] = 0.006 + rnd() * 0.005;
+      alpha[k] = 0.1 + rnd() * 0.14;
     }
     pg.setAttribute("position", new THREE.BufferAttribute(this.pPos, 3).setUsage(THREE.DynamicDrawUsage));
     pg.setAttribute("aHot", new THREE.BufferAttribute(this.pHot, 1).setUsage(THREE.DynamicDrawUsage));
@@ -147,7 +147,7 @@ export class GhostHandMesh extends THREE.Group {
 
     const bg = new THREE.BufferGeometry();
     this.bPos = new Float32Array(BONES.length * 6);
-    const bA = new Float32Array(BONES.length * 2).fill(0.3);
+    const bA = new Float32Array(BONES.length * 2).fill(0.35);
     bg.setAttribute("position", new THREE.BufferAttribute(this.bPos, 3).setUsage(THREE.DynamicDrawUsage));
     bg.setAttribute("aAlpha", new THREE.BufferAttribute(bA, 1));
     this.lMat = new THREE.ShaderMaterial({

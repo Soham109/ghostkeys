@@ -1,8 +1,6 @@
 "use client";
 
 import * as THREE from "three";
-import { forwardRef } from "react";
-import { Html } from "@react-three/drei";
 import { JOINTS } from "./handPose";
 import type { GhostHandMesh } from "./GhostHand";
 
@@ -64,21 +62,61 @@ export function setBlend(m: THREE.Material, dark: boolean) {
   }
 }
 
-/* ---------- tiny mono label, always mounted, opacity driven from the frame loop ---------- */
+/* ---------- tiny mono label, drawn in WebGL (no DOM, so nothing to mount or unmount) ---------- */
 
-export const MonoLabel = forwardRef<HTMLDivElement, { text: string }>(function MonoLabel({ text }, ref) {
-  return (
-    <Html zIndexRange={[25, 0]} style={{ pointerEvents: "none" }}>
-      <div
-        ref={ref}
-        className="label"
-        style={{ whiteSpace: "nowrap", opacity: 0, color: "var(--ink-2)", transform: "translate(10px, -50%)" }}
-      >
-        {text}
-      </div>
-    </Html>
-  );
-});
+export class MonoLabel extends THREE.Sprite {
+  private canvas = document.createElement("canvas");
+  private tex: THREE.CanvasTexture;
+  private px = 7.7;
+  constructor(private text: string, color = "#ededef") {
+    super(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, depthTest: false, sizeAttenuation: false, toneMapped: false }));
+    this.tex = new THREE.CanvasTexture(this.canvas);
+    this.tex.colorSpace = THREE.SRGBColorSpace;
+    this.tex.minFilter = THREE.LinearFilter;
+    this.tex.generateMipmaps = false;
+    this.material.map = this.tex;
+    this.center.set(0, 0.5);
+    this.renderOrder = 30;
+    this.raycast = () => {};
+    this.draw(color);
+  }
+  draw(color: string) {
+    const scale = 4;
+    const g = this.canvas.getContext("2d")!;
+    let fam = "";
+    try {
+      fam = getComputedStyle(document.documentElement).getPropertyValue("--font-mono-face").trim();
+    } catch {}
+    const font = `400 ${this.px * scale}px ${fam ? fam + ", " : ""}ui-monospace, "SF Mono", Menlo, monospace`;
+    g.font = font;
+    const ls = this.px * 0.08 * scale;
+    const txt = this.text.toUpperCase();
+    const w = Math.ceil(g.measureText(txt).width + ls * txt.length + 8);
+    this.canvas.width = w;
+    this.canvas.height = Math.ceil(this.px * 1.6 * scale);
+    g.font = font;
+    (g as CanvasRenderingContext2D & { letterSpacing: string }).letterSpacing = `${ls}px`;
+    g.fillStyle = color;
+    g.textBaseline = "middle";
+    g.fillText(txt, 2, this.canvas.height / 2);
+    this.tex.needsUpdate = true;
+    this.userData.aspect = this.canvas.width / this.canvas.height;
+  }
+  /** Keep a constant on-screen size: call each frame with the drawing buffer height, fov (radians) and pixel ratio. */
+  fit(viewH: number, fovY: number, dpr: number) {
+    const hPx = this.px * 1.6 * dpr;
+    const sy = (hPx / viewH) * 2 * Math.tan(fovY / 2);
+    this.scale.set(sy * (this.userData.aspect as number), sy, 1);
+  }
+  set opacity(v: number) {
+    this.material.opacity = v;
+    this.visible = v > 0.002;
+  }
+  dispose() {
+    this.tex.dispose();
+    this.material.dispose();
+  }
+}
 
 /* ---------- screen overlay drawing kit (matches screen.ts) ---------- */
 

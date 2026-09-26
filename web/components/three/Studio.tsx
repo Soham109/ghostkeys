@@ -120,6 +120,12 @@ export function StudioLight({ theme, onReady }: { theme: Theme; onReady?: () => 
       <Lightformer form="rect" map={strip} intensity={1.5 * k} scale={[9, 0.4, 1]} position={[6.8, 2.4, -2.2]} rotation={[0, -Math.PI / 2.3, Math.PI / 2]} />
       {/* behind-right high strip: a crisp line along the back of the lid and the hinge */}
       <Lightformer form="rect" map={strip} intensity={1.2 * k} scale={[7, 0.5, 1]} position={[4.5, 5.5, -5.5]} rotation={[-0.6, -0.7, 0]} />
+      {/* high behind: the back of the lid reflects this when the camera looks from behind */}
+      <Lightformer form="rect" map={box} intensity={0.9 * k} scale={[12, 5, 1]} position={[0.5, 7.5, -6.5]} rotation-x={-Math.PI / 4.2 + Math.PI} />
+      {/* floor bounce, low and behind: what the back of the open lid and the chassis walls reflect */}
+      <Lightformer form="rect" map={box} intensity={0.75 * k} scale={[16, 6, 1]} position={[1.5, -4.2, -6]} />
+      {/* front-right low strip: a thin bright line along the front lip in the hero */}
+      <Lightformer form="rect" map={strip} intensity={0.9 * k} scale={[10, 0.7, 1]} position={[6, 0.4, 6.5]} />
       {/* low front fill so the front lip never goes fully black */}
       <Lightformer form="rect" map={strip} intensity={0.3 * k} scale={[14, 1.6, 1]} position={[0, 0.6, 8]} rotation-y={Math.PI} />
       {/* cool top-left accent, very faint, for a hint of temperature contrast against the warm signal */}
@@ -132,6 +138,7 @@ const floorFrag = /* glsl */ `
 uniform sampler2D uTight;
 uniform sampler2D uWide;
 uniform vec3 uBg;
+uniform vec3 uShadow;
 uniform vec3 uPool;
 uniform float uTightAmt;
 uniform float uWideAmt;
@@ -149,7 +156,9 @@ void main() {
   float pool = exp(-r * r * 0.35) * uPoolAmt;
   float edge = 1.0 - smoothstep(4.0, 9.0, length(vP));
   vec3 col = uBg + uPool * pool * edge;
-  col *= 1.0 - shade * uFade;
+  // interpolate in log space: the tone curve is close to logarithmic, so the shadow darkens evenly on screen
+  // in both themes (a plain multiply barely shows on the light theme's bright floor)
+  col = exp(mix(log(max(col, vec3(1e-4))), log(uShadow), shade * uFade));
   col += (hash(gl_FragCoord.xy) - 0.5) / 255.0;
   gl_FragColor = vec4(col, 1.0);
 }
@@ -205,6 +214,8 @@ export function Floor({ theme, quality, dirty, fade }: { theme: Theme; quality: 
   const pal = PALETTE[theme];
   const res = quality === "high" ? 512 : 256;
   const bgLin = useMemo(() => sceneBg(pal.bg), [pal.bg]);
+  // what full occlusion looks like on screen: near black on dark, a soft warm grey on light
+  const shadowLin = useMemo(() => sceneBg(dark ? "#020202" : "#a9a9a4"), [dark]);
   const floorY = -BASE_H - 0.001;
   const SIZE = 7.2;
 
@@ -247,11 +258,12 @@ export function Floor({ theme, quality, dirty, fade }: { theme: Theme; quality: 
     [rig],
   );
 
-  const uniforms = useMemo(
+  const uniformsInit = useMemo(
     () => ({
       uTight: { value: rig.tight.texture },
       uWide: { value: rig.wide.texture },
       uBg: { value: new THREE.Color(pal.bg) },
+      uShadow: { value: new THREE.Color() },
       uPool: { value: new THREE.Color(pal.ink) },
       uTightAmt: { value: 0.85 },
       uWideAmt: { value: 0.75 },
@@ -275,12 +287,16 @@ export function Floor({ theme, quality, dirty, fade }: { theme: Theme; quality: 
     gl.render(rig.quadScene, rig.ortho);
   };
 
+  const floorMat = useRef<THREE.ShaderMaterial>(null!);
   useFrame(() => {
+    // R3F copies uniform objects onto the material, so scalar writes must go to the material's own uniforms
+    const uniforms = floorMat.current.uniforms as typeof uniformsInit;
     uniforms.uBg.value.copy(bgLin);
+    uniforms.uShadow.value.copy(shadowLin);
     uniforms.uPool.value.set(pal.ink);
-    uniforms.uPoolAmt.value = dark ? 0.012 : 0.0;
-    uniforms.uTightAmt.value = dark ? 0.9 : 0.55;
-    uniforms.uWideAmt.value = dark ? 0.8 : 0.4;
+    uniforms.uPoolAmt.value = dark ? 0.008 : 0.0;
+    uniforms.uTightAmt.value = dark ? 1.0 : 0.9;
+    uniforms.uWideAmt.value = dark ? 1.4 : 1.5;
     uniforms.uFade.value = fade ? fade() : 1;
     // render the occlusion for the first frames (materials settle) and whenever the pose changes
     const need = frames.current < 3 || (dirty ? dirty() : false);
@@ -300,11 +316,12 @@ export function Floor({ theme, quality, dirty, fade }: { theme: Theme; quality: 
     scene.overrideMaterial = prevOverride;
     scene.background = prevBg;
     // tight contact, then a wide soft shadow blurred from the tight one
-    blur(rig.raw, rig.tight, rig.a, 1.2);
-    blur(rig.tight, rig.b, rig.a, 2.5);
+    blur(rig.raw, rig.tight, rig.a, 1.5);
+    blur(rig.tight, rig.b, rig.a, 2.0);
     blur(rig.b, rig.tight, rig.a, 1.0);
     blur(rig.tight, rig.wide, rig.wide2, 3.0);
-    blur(rig.wide, rig.wide, rig.wide2, 4.5);
+    blur(rig.wide, rig.wide, rig.wide2, 5.0);
+    blur(rig.wide, rig.wide, rig.wide2, 7.0);
     gl.setRenderTarget(prevTarget);
     gl.setClearColor(prevClear, prevAlpha);
   });
@@ -315,7 +332,8 @@ export function Floor({ theme, quality, dirty, fade }: { theme: Theme; quality: 
       <mesh rotation={[-Math.PI / 2, 0, 0]} raycast={() => null} renderOrder={-1}>
         <planeGeometry args={[60, 60]} />
         <shaderMaterial
-          uniforms={uniforms}
+          ref={floorMat}
+          uniforms={uniformsInit}
           depthWrite={false}
           vertexShader={`varying vec2 vUv; varying vec2 vP; uniform float uSize;
             void main(){ vec4 wp = modelMatrix * vec4(position, 1.0); vP = wp.xz; vUv = vec2(wp.x / ${SIZE.toFixed(2)} + 0.5, 0.5 + wp.z / ${SIZE.toFixed(2)}); gl_Position = projectionMatrix * viewMatrix * wp; }`}
@@ -339,8 +357,9 @@ export function BackLight({ theme, target }: { theme: Theme; target: THREE.Vecto
   const camera = useThree((s) => s.camera);
   const ref = useRef<THREE.Mesh>(null!);
   const pal = PALETTE[theme];
-  const uniforms = useMemo(
-    () => ({ uInk: { value: new THREE.Color(pal.ink) }, uAlpha: { value: 0.055 }, uCenter: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 } }),
+  const mat = useRef<THREE.ShaderMaterial>(null!);
+  const uniformsInit = useMemo(
+    () => ({ uInk: { value: new THREE.Color(pal.ink) }, uAlpha: { value: 0 }, uCenter: { value: new THREE.Vector2(0.5, 0.5) }, uAspect: { value: 1 } }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
@@ -355,17 +374,19 @@ export function BackLight({ theme, target }: { theme: Theme; target: THREE.Vecto
     const h = 2 * Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * 40;
     m.scale.set(h * cam.aspect * 1.6, h * 1.6, 1);
     v.copy(target).project(camera);
+    const uniforms = mat.current.uniforms as typeof uniformsInit;
     uniforms.uCenter.value.set(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5);
     uniforms.uAspect.value = size.width / size.height;
     uniforms.uInk.value.set(pal.ink);
-    uniforms.uAlpha.value = theme === "dark" ? 0.009 : 0.0;
+    uniforms.uAlpha.value = theme === "dark" ? 0.0095 : 0.0;
   });
   return (
     <mesh ref={ref} renderOrder={-2} raycast={() => null} frustumCulled={false}>
       {/* depth tested at 40 units: it sits behind the laptop instead of washing over it */}
       <planeGeometry args={[1, 1]} />
       <shaderMaterial
-        uniforms={uniforms}
+        ref={mat}
+        uniforms={uniformsInit}
         transparent
         depthWrite={false}
         blending={THREE.AdditiveBlending}
@@ -379,8 +400,9 @@ export function BackLight({ theme, target }: { theme: Theme; target: THREE.Vecto
             vec2 uv = (vUv - 0.5) * 1.6 + 0.5;
             vec2 d = (uv - uCenter) * vec2(uAspect, 1.0);
             float fall = exp(-dot(d, d) * 2.2);
-            float n = (h(gl_FragCoord.xy) - 0.5) * 0.03;
-            gl_FragColor = vec4(uInk, max(0.0, fall * uAlpha + n * fall));
+            // tiny dither only (film grain in post does the rest); must stay far below uAlpha or it adds light
+            float n = (h(gl_FragCoord.xy) - 0.5) * uAlpha * 0.25;
+            gl_FragColor = vec4(uInk, max(0.0, fall * (uAlpha + n)));
           }`}
       />
     </mesh>

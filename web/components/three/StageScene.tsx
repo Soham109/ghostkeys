@@ -22,6 +22,7 @@ import { WaterSim } from "./water";
 import { ScreenPainter, loadLiveTexture, type ScreenMode } from "./screen";
 import { sceneBg } from "./tone";
 import { buildFilm, makeChannels } from "./director";
+import { AirGestureScene, SoundScene } from "./air";
 
 type Gesture = "tap" | "double" | "triple" | "rhythm";
 
@@ -61,13 +62,18 @@ function zonePoint(z: Zone, jitter = 0.25) {
   return { x: (u - 0.5) * W, z: (v - 0.5) * D, u, v };
 }
 
-/** Legacy fallback when the site only writes bus.pos (old single-section story). */
-function legacyG(pos: number) {
-  if (pos <= 0.6) return pos / 0.6;
-  if (pos <= 5.3) return 1 + (pos - 0.6) / 4.7;
-  if (pos <= 7.0) return 2;
-  if (pos <= 8.75) return 3 + (pos - 7.0) / 1.75;
-  return 4;
+/**
+ * Page scroll in viewport heights: the film's time axis. The site may publish it as `bus.scroll`; otherwise it is read
+ * from the window (a plain property read, no layout). Pages without scroll (tests) fall back to chapter progress.
+ */
+function makeScrollPos(film: ReturnType<typeof buildFilm>) {
+  return () => {
+    const pub = (bus as unknown as { scroll?: number }).scroll;
+    if (typeof pub === "number") return pub;
+    const vh = window.innerHeight || 1;
+    if (document.documentElement.scrollHeight > vh * 1.5) return window.scrollY / vh;
+    return film.position(bus.chapters);
+  };
 }
 
 export function StageScene({ theme, quality, particleSize, reduced }: { theme: Theme; quality: "high" | "low"; particleSize: number; reduced: boolean }) {
@@ -80,6 +86,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
   const bg = useMemo(() => sceneBg(pal.bg), [pal.bg]);
 
   const film = useMemo(() => buildFilm(), []);
+  const scrollPos = useMemo(() => makeScrollPos(film), [film]);
   const ch = useMemo(() => makeChannels(), []);
   const taps = useMemo(() => new TapField(), []);
   const screen = useMemo(() => new ScreenPainter(), []);
@@ -158,7 +165,26 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
         m.depthWrite = d;
         m.needsUpdate = true;
       }
-      if (alive) load.current.compiled = true;
+      if (!alive) return;
+      // one warm render with everything forced visible (fragments discarded by the reveal dither), so geometry
+      // buffers and textures are uploaded now, behind the dark, not on the frame the laptop appears
+      const saved: [THREE.Object3D, boolean, boolean][] = [];
+      parts.root.traverse((o) => {
+        saved.push([o, o.visible, o.frustumCulled]);
+        o.visible = true;
+        o.frustumCulled = false;
+      });
+      const rt = new THREE.WebGLRenderTarget(16, 16, { type: THREE.HalfFloatType });
+      const prev = gl.getRenderTarget();
+      gl.setRenderTarget(rt);
+      gl.render(scene, camera);
+      gl.setRenderTarget(prev);
+      rt.dispose();
+      for (const [o, v, f] of saved) {
+        o.visible = v;
+        o.frustumCulled = f;
+      }
+      load.current.compiled = true;
     })();
     return () => {
       alive = false;
@@ -177,7 +203,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     if (!parts) return;
     state.reveal = 0;
     bus.introDone = false;
-    const tl = gsap.timeline({ delay: 0.15 });
+    const tl = gsap.timeline({ paused: true });
     tl.to(control, { opacity: 1, duration: 1.2, ease: "power2.out" }, 0)
       .to(control, { k: 0.085, duration: 2.4, ease: "expo.out" }, 0.5)
       .to(control, { noise: 0.02, duration: 2.4, ease: "power3.out" }, 0.5)
@@ -213,13 +239,22 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
         intro.open = 1;
         bus.introDone = true;
       }, "hold+=3.9");
+    // the dust appears only once everything is ready (or after 2.5 s at worst), so nothing hitches on screen
+    const born = performance.now();
+    const gate = window.setInterval(() => {
+      const q = load.current;
+      if ((q.env && q.live && q.compiled) || performance.now() - born > 2500) {
+        window.clearInterval(gate);
+        tl.play();
+      }
+    }, 40);
     // scrolling early speeds the film up instead of cutting it
     const id = window.setInterval(() => {
-      const g = film.position(bus.chapters);
-      if ((g > 0.35 || bus.pos > 0.25) && tl.progress() < 1) tl.timeScale(3.5);
+      if (scrollPos() > 0.2 && tl.progress() < 1) tl.timeScale(3.5);
     }, 150);
     return () => {
       window.clearInterval(id);
+      window.clearInterval(gate);
       tl.kill();
     };
   }, [parts, control, state, intro, film]);
@@ -240,14 +275,14 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
   const sph = useMemo(() => new THREE.Spherical(), []);
   const shift = useRef({ x: 0.16, y: 0.1, fov: 30, init: false });
   const pointerSm = useRef({ x: 0, y: 0 });
-  const sched = useRef({ next: 0, i: 0, zoneStep: -1, layerKey: "", finaleTap: false, g: 0 });
+  const sched = useRef({ next: 0, i: 0, zoneStep: -1, layerKey: "", finaleTap: false, g: 0, loc: { id: "intro", local: 0 } });
   const air = useRef({ id: "pinch", progress: 0, weight: 0 });
   const sound = useRef({ id: "knuckle", progress: 0, weight: 0 });
   const tryState = useRef<{ zone: string; name: string; count: number; timer: number }>({ zone: "", name: "", count: 0, timer: 0 });
   const lastPose = useRef({ lid: -1, tilt: -1 });
   const SENSOR = useMemo(() => new THREE.Vector3(0.42, -0.02, -0.42), []);
 
-  const fireGesture = (zone: string, gesture: Gesture, action: string) => {
+  const fireGesture = (zone: string, gesture: Gesture, action: string, pill = true) => {
     const z = zoneById(zone);
     const label = { zone: ZONE_SHORT[zone] ?? z.name, action };
     const hit = (s: number, withLabel: boolean) => {
@@ -264,7 +299,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
       }
       bus.cue("tap");
     };
-    hit(1, true);
+    hit(1, pill);
     screen.showHud(`${label.zone} · ${action}`, taps.time);
     const times = gesture === "double" ? [0.17] : gesture === "triple" ? [0.16, 0.32] : gesture === "rhythm" ? [0.62, 0.79] : [];
     times.forEach((dt) => window.setTimeout(() => hit(0.85, false), dt * 1000));
@@ -278,14 +313,13 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     const r = load.current;
     bus.loaded = Math.max(bus.loaded, (r.env ? 0.45 : 0) + (r.live ? 0.2 : 0) + (r.compiled ? 0.35 : 0));
 
-    const hasChapters = Object.keys(bus.chapters).length > 0;
-    const g = hasChapters ? film.position(bus.chapters) : legacyG(bus.pos);
+    const g = scrollPos();
     film.sample(g, ch);
+    const loc = film.locate(g);
+    sched.current.loc = loc;
     const cp = (id: string) => bus.chapters[id as keyof typeof bus.chapters] ?? 0;
-    const inChapter = (id: string) => {
-      const k = film.index.get(id);
-      return k !== undefined && g >= k && g < k + 1;
-    };
+    // a chapter "owns" the frame from the moment its section starts scrolling in
+    const inChapter = (id: string) => loc.id === id;
 
     // ---------- camera: sampled film, damped follow, orbit parallax to the cursor, a breath of hand-held drift
     const narrow = size.width < 768;
@@ -379,7 +413,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     const split = AIR_SOUND_SPLIT;
     const a = air.current;
     const so = sound.current;
-    if (airOn || (g > (film.index.get("air") ?? 99) - 0.15 && g < (film.index.get("air") ?? -99) + 1.15)) {
+    if (airOn) {
       const pAir = Math.min(0.9999, pa / split);
       const na = AIR_STEPS.length;
       const ia = stepAt(pAir, na);
@@ -390,8 +424,8 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
       const is = stepAt(ps, ns);
       so.id = SOUND_STEPS[is].id;
       so.progress = ps * ns - is;
-      // fade in as the chapter arrives, cross-fade at the split, fade out as layers begins
-      const inW = smooth(0.0, 0.07, pa) * (1 - smooth(0.97, 1.0, pa));
+      // fade in while the chapter scrolls in, cross-fade at the split, fade out as layers begins
+      const inW = smooth(-0.35, -0.05, loc.local) * (1 - smooth(0.97, 1.0, pa));
       a.weight = inW * (1 - smooth(split - 0.035, split + 0.005, pa));
       so.weight = inW * smooth(split - 0.005, split + 0.035, pa);
     } else {
@@ -418,12 +452,12 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
       if (key !== sc.layerKey) {
         sc.layerKey = key;
         const first = Object.keys(labels)[0];
-        if (first) fireGesture(first, "tap", labels[first]);
+        if (first) fireGesture(first, "tap", labels[first], false);
         sc.next = t + 1.3;
       } else if (t > sc.next) {
         const ids = Object.keys(labels);
         const id = ids[sc.i++ % ids.length];
-        fireGesture(id, "tap", labels[id]);
+        fireGesture(id, "tap", labels[id], false);
         sc.next = t + 1.6;
       }
     } else sc.layerKey = "";
@@ -436,12 +470,12 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
 
     // ---------- finale: one last ripple as the lid comes down
     if (inChapter("finale")) {
-      const p = cp("finale");
-      if (p > 0.42 && !sc.finaleTap) {
+      const p = loc.local;
+      if (p > -0.45 && !sc.finaleTap) {
         sc.finaleTap = true;
         taps.tap(0.95, 0.62, 1.1);
         bus.cue("tap");
-      } else if (p < 0.3) sc.finaleTap = false;
+      } else if (p < -0.6) sc.finaleTap = false;
     }
 
     water?.step(quality === "high" ? 2 : 1);
@@ -457,10 +491,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     for (let i = customZones.length - 1; i >= 0; i--) if (hit(customZones[i])) return customZones[i];
     return ZONES.find(hit) ?? null;
   };
-  const inTry = () => {
-    const k = film.index.get("try");
-    return k !== undefined && sched.current.g >= k - 0.05 && sched.current.g < k + 1;
-  };
+  const inTry = () => sched.current.loc.id === "try" && sched.current.loc.local > -0.35;
   const resolveTry = (zoneId: string, name: string) => {
     const ts = tryState.current;
     if (ts.zone === zoneId) ts.count++;
@@ -523,6 +554,8 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     return d;
   };
 
+  const airSource = useMemo(() => () => air.current, []);
+  const soundSource = useMemo(() => () => sound.current, []);
   const allZones = useMemo(() => [...ZONES, ...customZones], [customZones]);
 
   return (
@@ -554,7 +587,12 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
         lidChildren={<ZoneLayer zones={ZONES} surface="lid" rt={zrt} taps={taps} ink={pal.ink} signal={pal.signal} dark={dark} />}
       >
         <ZoneLayer zones={ZONES} surface="edges" rt={zrt} taps={taps} ink={pal.ink} signal={pal.signal} dark={dark} />
-        {/* AIR_MOUNT */}
+        {!reduced && (
+          <>
+            <AirGestureScene source={airSource} screen={screen} taps={taps} ink={pal.ink} signal={pal.signal} dark={dark} />
+            <SoundScene source={soundSource} screen={screen} taps={taps} ink={pal.ink} signal={pal.signal} dark={dark} />
+          </>
+        )}
       </Laptop>
       {!control.done && (
         <Particles size={particleSize} parts={parts} control={control} logoCenter={logo.center} logoQuat={logo.quat} ink={pal.ink} signal={pal.signal} dark={dark} />

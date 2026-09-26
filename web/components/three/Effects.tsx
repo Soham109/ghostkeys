@@ -77,6 +77,10 @@ export function Effects({ theme, quality, fx }: { theme: Theme; quality: "high" 
       // range scales with distance so a macro shot is shallow and a wide shot stays crisp
       d.cocMaterial.focusRange = THREE.MathUtils.lerp(dist * 0.9, dist * 0.22, b);
       d.bokehScale = THREE.MathUtils.lerp(d.bokehScale, 1.2 + b * 2.4, k);
+      // additive light (particles, rings, the hand) writes no depth, so the lens would treat it as far background and
+      // smear it; the lens is only engaged in shots where the subject fills the frame
+      const op = d.blendMode.opacity;
+      op.value = THREE.MathUtils.lerp(op.value, b > 0.05 ? 1 : 0, k);
     }
   });
   if (quality === "low") {

@@ -3,7 +3,7 @@
 import * as THREE from "three";
 import { useEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { GRILLE, KB } from "@/lib/dims";
+import { GRILLE, KB, W } from "@/lib/dims";
 import { bus } from "@/lib/stage";
 import { GhostHandMesh } from "./GhostHand";
 import { J, JOINTS, POSES, copyPose, makePose, mixPose, placeHand, ramp, type Anchor, type HandPose } from "./handPose";
@@ -36,8 +36,8 @@ const HOT_NONE: number[] = [];
 
 const SHELLS = 12;
 const COMB = 15;
-const FIELD_LINES = 12;
-const FIELD_PTS = 120;
+const FIELD_LINES = 28;
+const FIELD_PTS = 140;
 
 type Frame = { pose: HandPose; rot: { pitch: number; yaw: number; roll: number }; anchor: Anchor; at: THREE.Vector3; env: number };
 const makeFrame = (): Frame => ({ pose: makePose(), rot: { pitch: 0, yaw: 0, roll: 0 }, anchor: "lowest", at: new THREE.Vector3(), env: 1 });
@@ -75,7 +75,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
   const overlay = useMemo(() => soundOverlay(ui), [ui]);
   const group = useRef<THREE.Group>(null!);
   const labelAnchor = useRef<THREE.Group>(null!);
-  const labelEl = useRef<HTMLDivElement>(null);
+  const label = useMemo(() => new MonoLabel("Sound mode · on-device", "rgba(237,237,239,0.6)"), []);
 
   const S = useMemo(
     () => ({
@@ -151,6 +151,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
 
   useEffect(() => {
     hand.setLook(ink, signal, dark);
+    label.draw(dark ? "rgba(237,237,239,0.6)" : "rgba(11,11,12,0.6)");
     for (const s of shells.list) {
       (s.m.uniforms.uColor.value as THREE.Color).set(ink);
       setBlend(s.m, dark);
@@ -164,6 +165,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
   useEffect(
     () => () => {
       if (screen.overlay === overlay) screen.setOverlay(null);
+      label.dispose();
       hand.dispose();
       shells.geo.dispose();
       shells.list.forEach((s) => s.m.dispose());
@@ -178,7 +180,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
   const hover = (f: Frame) => {
     copyPose(POSES.relaxed, f.pose);
     f.rot.pitch = -0.25;
-    f.rot.yaw = 0.2;
+    f.rot.yaw = 0.95;
     f.rot.roll = -0.2;
     f.anchor = "lowest";
     f.at.set(PALM.x, 0.36, PALM.z);
@@ -209,7 +211,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
       }
       drv.sleep();
       S.prevP = -1;
-      if (labelEl.current) labelEl.current.style.opacity = "0";
+      label.opacity = 0;
       return;
     }
     // claim the screen when it is free; during a cross-fade the scene that was there first keeps it until it fades out
@@ -228,8 +230,8 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
     if (id === "knuckle") {
       const b = ramp(p, 0.42, 0.52);
       mixPose(POSES.knuckle, POSES.fingertip, b, f.pose);
-      f.rot.pitch = THREE.MathUtils.lerp(-0.1, -0.8, b);
-      f.rot.yaw = 0.3;
+      f.rot.pitch = THREE.MathUtils.lerp(-0.1, -0.42, b);
+      f.rot.yaw = 0.95;
       f.rot.roll = THREE.MathUtils.lerp(-0.3, -0.25, b);
       let dip = 0;
       for (const tc of CONTACTS) {
@@ -244,7 +246,8 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
           if (S.prevP < tc && p >= tc) {
             const kind = tc < 0.5 ? "knuckle" : "fingertip";
             const x = PALM.x + (tc === KNUCKLE_AT[1] || tc === TIP_AT[1] ? 0.06 : -0.03);
-            taps.tap(x, PALM.z, kind === "knuckle" ? 1 : 0.55, { zone: "Right palm", action: kind === "knuckle" ? "Knuckle" : "Fingertip" });
+            const first = tc === KNUCKLE_AT[0] || tc === TIP_AT[0];
+            taps.tap(x, PALM.z, kind === "knuckle" ? 1 : 0.55, first ? { zone: "Right palm", action: kind === "knuckle" ? "Knuckle" : "Fingertip" } : undefined);
             spawn(kind, x, PALM.z, t);
             S.hitT = t;
             S.hitKind = kind;
@@ -255,12 +258,12 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
       hotJoints = S.hitKind === "knuckle" ? HOT_KNUCKLE : HOT_TIP;
     } else if (id === "rub") {
       copyPose(POSES.fingertip, f.pose);
-      f.rot.pitch = -0.72;
-      f.rot.yaw = 0.35;
-      f.rot.roll = -0.2;
+      f.rot.pitch = -0.68;
+      f.rot.yaw = 0.15;
+      f.rot.roll = 0.9;
       const env = ramp(p, 0.04, 0.18) * (1 - ramp(p, 0.84, 0.96));
       const ph = Math.PI * 2 * (2.2 * p) + t * 4.4;
-      const z = GRILLE_Z + Math.sin(ph) * 0.32 * env;
+      const z = GRILLE_Z - 0.18 + Math.sin(ph) * 0.28 * env;
       f.at.set(GRILLE_X, 0.012 + 0.26 * (1 - env), z);
       f.env = ramp(p, 0, 0.1) * (1 - ramp(p, 0.9, 1));
       const v = Math.abs(z - S.prevZ) / Math.max(dt, 1e-3);
@@ -333,9 +336,9 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
     const E = S.energy;
     for (let i = 0; i < COMB; i++) {
       const z = GRILLE.z0 + ((i + 0.5) / COMB) * (GRILLE.z1 - GRILLE.z0);
-      const hgt = (E * 0.46) / (1 + i * 0.17) * (0.86 + 0.14 * Math.sin(t * 27 + i * 1.9)) + 0.004;
-      cput(GRILLE_X, 0.006, z, 0.55 * rubAmt);
-      cput(GRILLE_X, 0.006 + hgt, z, 0.12 * rubAmt);
+      const hgt = (E * 0.75) / (1 + i * 0.14) * (0.86 + 0.14 * Math.sin(t * 27 + i * 1.9)) + 0.004;
+      cput(GRILLE_X, 0.006, z, 0.9 * rubAmt);
+      cput(GRILLE_X, 0.006 + hgt, z, 0.25 * rubAmt);
     }
     cput(GRILLE_X, 0.006, GRILLE.z0, 0.3 * rubAmt);
     cput(GRILLE_X, 0.006, GRILLE.z1, 0.3 * rubAmt);
@@ -357,8 +360,8 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
         const z = KB.z0 + (l / (FIELD_LINES - 1)) * (KB.z1 - KB.z0);
         for (let i = 0; i < FIELD_PTS; i++) {
           const x = x0 + (i / (FIELD_PTS - 1)) * (x1 - x0);
-          const d = ((x - hx) * (x - hx)) / 0.2 + ((z - hz) * (z - hz)) / 0.5;
-          ys[l * FIELD_PTS + i] = 0.12 + 0.2 * Math.exp(-d) * near + 0.0035 * Math.sin(x * 90 - t * 38 + l * 1.7);
+          const d = ((x - hx) * (x - hx)) / 0.32 + ((z - hz) * (z - hz)) / 0.6;
+          ys[l * FIELD_PTS + i] = 0.12 + 0.2 * Math.exp(-d) * near + 0.0012 * Math.sin(x * 110 - t * 38 + l * 1.7);
         }
         for (let i = 0; i < FIELD_PTS - 1; i++) {
           const k = (l * (FIELD_PTS - 1) + i) * 2;
@@ -373,8 +376,8 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
           const ea = Math.sin((i / (FIELD_PTS - 1)) * Math.PI);
           const eb = Math.sin(((i + 1) / (FIELD_PTS - 1)) * Math.PI);
           const lift = Math.min(1, (ys[l * FIELD_PTS + i] - 0.12) * 8);
-          fa[k] = (0.16 + 0.3 * lift) * ea * waveAmt;
-          fa[k + 1] = (0.16 + 0.3 * lift) * eb * waveAmt;
+          fa[k] = (0.07 + 0.2 * lift) * ea * waveAmt;
+          fa[k + 1] = (0.07 + 0.2 * lift) * eb * waveAmt;
         }
       }
       field.g.attributes.position.needsUpdate = true;
@@ -391,8 +394,10 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
     ui.vel = S.vel;
 
     const jj = hand.joints;
-    labelAnchor.current.position.set(jj[0] + 0.25, jj[1] + 0.3, jj[2]);
-    if (labelEl.current) labelEl.current.style.opacity = String(Math.min(1, w * 1.2));
+    // in the air just above the keys, to the left of the hand: over dark keys, never over the screen
+    labelAnchor.current.position.set(THREE.MathUtils.clamp(jj[J.I_TIP * 3] - 1.0, -1.25, 0.2), 0.14, 0.12);
+    label.opacity = Math.min(1, w * 1.2);
+    label.fit(S.viewH.y, THREE.MathUtils.degToRad((state.camera as THREE.PerspectiveCamera).fov ?? 30), state.viewport.dpr);
   });
 
   return (
@@ -404,7 +409,7 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
       <primitive object={comb.obj} />
       <primitive object={field.obj} />
       <group ref={labelAnchor}>
-        <MonoLabel ref={labelEl} text="Sound mode · on-device" />
+        <primitive object={label} />
       </group>
     </group>
   );

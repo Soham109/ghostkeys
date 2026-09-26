@@ -65,7 +65,7 @@ export const POSES = {
   ready: pose([0.2, 0.24, 0.3, 0.36], 0.9, [-0.5, -0.22, -0.84]),
   point: pose([0.02, 0.95, 0.98, 1.0], 0.7, [-0.16, -0.24, -0.66]),
   knuckle: pose([1.0, 1.0, 1.0, 1.0], 0.35, [-0.1, -0.3, -0.62]),
-  fingertip: pose([0.14, 0.72, 0.8, 0.86], 0.8, [-0.3, -0.22, -0.62]),
+  fingertip: pose([0.34, 0.8, 0.86, 0.9], 0.8, [-0.28, -0.26, -0.6]),
 } as const;
 export type PoseName = keyof typeof POSES;
 

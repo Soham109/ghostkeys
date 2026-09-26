@@ -10,6 +10,7 @@ import { airOverlay, makeAirUI } from "./airScreen";
 import type { ScreenPainter } from "../screen";
 import type { TapField } from "../taps";
 import { now } from "../taps";
+import { W } from "@/lib/dims";
 
 export type SceneSource = () => { id: string; progress: number; weight: number };
 
@@ -48,7 +49,7 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
   const overlay = useMemo(() => airOverlay(ui), [ui]);
   const group = useRef<THREE.Group>(null!);
   const labelAnchor = useRef<THREE.Group>(null!);
-  const labelEl = useRef<HTMLDivElement>(null);
+  const label = useMemo(() => new MonoLabel("M4 and M5 · camera add-on", "rgba(237,237,239,0.6)"), []);
   const ring = useRef<THREE.Mesh>(null!);
 
   // scratch, allocated once
@@ -128,6 +129,7 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
 
   useEffect(() => {
     right.setLook(ink, signal, dark);
+    label.draw(dark ? "rgba(237,237,239,0.6)" : "rgba(11,11,12,0.6)");
     left.setLook(ink, signal, dark);
     (rings.m.uniforms.uColor.value as THREE.Color).set(ink);
     (frustum.m.uniforms.uColor.value as THREE.Color).set(ink);
@@ -140,6 +142,7 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
   useEffect(
     () => () => {
       if (screen.overlay === overlay) screen.setOverlay(null);
+      label.dispose();
       right.dispose();
       left.dispose();
       rings.g.dispose();
@@ -175,7 +178,7 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
       dR.sleep();
       dL.sleep();
       S.leftOn = 0;
-      if (labelEl.current) labelEl.current.style.opacity = "0";
+      label.opacity = 0;
       return;
     }
     // claim the screen when it is free; during a cross-fade the scene that was there first keeps it until it fades out
@@ -223,12 +226,12 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
       const sR = ramp(p, 0.56, 0.86, expoInOut);
       copyPose(POSES.open, f.pose);
       const face = 0.95 - 1.9 * ramp(p, 0.44, 0.54);
-      f.rot.pitch = 1.1;
+      f.rot.pitch = 0.55;
       f.rot.yaw = face;
       f.rot.roll = 0.05;
       f.anchor = "palm";
       const x = 0.75 - 1.5 * sL + 1.5 * sR;
-      f.at.set(x, 0.62 + 0.06 * Math.sin(Math.PI * (sL + sR)), 0.05);
+      f.at.set(x, 0.78 + 0.05 * Math.sin(Math.PI * (sL + sR)), 0.1);
       f.env = ramp(p, 0, 0.12) * (1 - ramp(p, 0.88, 1));
       ui.swipe = sL - sR;
       ui.dir = p < 0.5 ? "LEFT" : "RIGHT";
@@ -243,20 +246,20 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
     } else if (id === "zoom") {
       twoHands = true;
       pinch = track([[0, 0], [0.08, 0], [0.2, 1], [0.84, 1], [0.94, 0]], p);
-      const sep = track([[0, 0.52], [0.22, 0.52], [0.5, 0.98], [0.62, 0.98], [0.84, 0.58]], p);
+      const sep = track([[0, 0.42], [0.22, 0.42], [0.5, 0.78], [0.62, 0.78], [0.84, 0.46]], p);
       mixPose(POSES.ready, POSES.pinch, pinch, f.pose);
       f.rot.yaw = 0.3;
       f.at.set(sep, A0.y, A0.z);
-      ui.zoom = 1 + ((sep - 0.52) / 0.46) * 1.1;
+      ui.zoom = 1 + ((sep - 0.42) / 0.36) * 1.1;
     } else if (id === "circle") {
       const turns = 1.25 * ramp(p, 0.14, 0.86);
       const th = Math.PI / 2 - turns * Math.PI * 2;
       copyPose(POSES.point, f.pose);
-      f.rot.pitch = 0.12;
-      f.rot.yaw = 0.1;
-      f.rot.roll = -0.35;
+      f.rot.pitch = -0.05;
+      f.rot.yaw = 0.25;
+      f.rot.roll = -0.6;
       f.anchor = "index";
-      const C = S.ringPt.set(0.2, 0.72, -0.25);
+      const C = S.ringPt.set(0.2, 0.9, -0.3);
       f.at.set(C.x + Math.cos(th) * 0.2, C.y + Math.sin(th) * 0.2, C.z);
       f.env = ramp(p, 0, 0.14) * (1 - ramp(p, 0.88, 1));
       ui.turns = turns;
@@ -267,10 +270,11 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
       const ox = Math.sin(k * Math.PI * 2) * 0.42;
       const oy = Math.sin(k * Math.PI * 4) * 0.14;
       copyPose(POSES.point, f.pose);
-      f.rot.pitch = 0.1;
-      f.rot.roll = -0.3;
+      f.rot.pitch = -0.05;
+      f.rot.yaw = 0.25;
+      f.rot.roll = -0.6;
       f.anchor = "index";
-      f.at.set(0.15 + ox, 0.7 + oy, -0.25);
+      f.at.set(0.15 + ox, 0.88 + oy, -0.3);
       f.env = ramp(p, 0, 0.12) * (1 - ramp(p, 0.88, 1));
       ui.px = 0.5 + ox / 0.9;
       ui.py = 0.5 - oy / 0.3;
@@ -350,7 +354,7 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
     let v = 0;
     const amt = Math.max(showDial, showKnob);
     const c = showKnob > 0 ? S.ringPt : A0;
-    const R = showKnob > 0 ? 0.28 : 0.3;
+    const R = showKnob > 0 ? 0.26 : 0.19;
     const put = (x: number, y: number, z: number, a: number) => {
       rp[v * 3] = x;
       rp[v * 3 + 1] = y;
@@ -384,8 +388,10 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
     frustum.m.uniforms.uOpacity.value = w;
 
     // label rides beside the hand
-    labelAnchor.current.position.set(jj[0] + 0.28, jj[1] + 0.26, jj[2]);
-    if (labelEl.current) labelEl.current.style.opacity = String(Math.min(1, w * 1.2));
+    // in the air just above the keys, to the left of the hand: over dark keys, never over the screen
+    labelAnchor.current.position.set(THREE.MathUtils.clamp(jj[J.I_TIP * 3] - 1.0, -1.25, 0.2), 0.14, 0.12);
+    label.opacity = Math.min(1, w * 1.2);
+    label.fit(S.viewH.y, THREE.MathUtils.degToRad((state.camera as THREE.PerspectiveCamera).fov ?? 30), state.viewport.dpr);
   });
 
   return (
@@ -393,12 +399,11 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
       <primitive object={right} />
       <primitive object={left} />
       <primitive object={rings.obj} />
-      <primitive object={frustum.obj} />
       <mesh ref={ring} material={ringMat} renderOrder={15} visible={false} raycast={() => null}>
         <planeGeometry args={[0.5, 0.5]} />
       </mesh>
       <group ref={labelAnchor}>
-        <MonoLabel ref={labelEl} text="M4 and M5 · camera add-on" />
+        <primitive object={label} />
       </group>
     </group>
   );
