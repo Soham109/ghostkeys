@@ -21,6 +21,11 @@ let package = Package(
         .testTarget(name: "GhostkeysVisionTests", dependencies: ["GhostkeysVision"],
                     swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],
                     linkerSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks", "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])]),
+        // App integrations: context-aware commands for Excel, browsers, music, Finder, etc. via Apple Events.
+        .target(name: "GhostkeysIntegrations"),
+        .testTarget(name: "GhostkeysIntegrationsTests", dependencies: ["GhostkeysIntegrations"],
+                    swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],
+                    linkerSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks", "-Xlinker", "-rpath", "-Xlinker", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])]),
         .testTarget(name: "GhostkeysDetectionTests", dependencies: ["GhostkeysDetection"],
                     // Command Line Tools only (no Xcode): point at the bundled swift-testing framework.
                     swiftSettings: [.unsafeFlags(["-F", "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"])],

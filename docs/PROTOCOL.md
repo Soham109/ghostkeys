@@ -123,6 +123,7 @@ Action kinds:
 | `clipboard` | `text` | puts text on the pasteboard |
 | `window` | `op`: `left`, `right`, `top`, `bottom`, `maximize`, `center`, `next-display`, `minimize`, `fullscreen` | moves or resizes the frontmost window via the Accessibility API |
 | `app` | `op`: `hide`, `quit`, `switch-next`, `switch-previous` | acts on the frontmost app (quit is destructive: the UI must confirm when binding it) |
+| `integration` | `app` (e.g. `excel`, `chrome`, `safari`, `arc`, `music`, `spotify`, `finder`, `powerpoint`, `keynote`, `zoom`), `command`, `args` | context-aware command implemented by the GhostkeysIntegrations module (e.g. excel `wrap-iferror`, `toggle-absolute`, `cycle-number-format`, `insert-xlookup`); needs Automation permission for that app |
 | `system` | `op`: `lock`, `sleep-display`, `screenshot`, `screenshot-area`, `dnd-toggle`, `mission-control`, `launchpad`, `show-desktop` | built-in macOS commands, never anything that needs admin rights |
 
 Samples and models live in `~/Library/Application Support/Ghostkeys/model/`.
