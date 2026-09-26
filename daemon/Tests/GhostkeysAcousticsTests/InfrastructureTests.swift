@@ -58,7 +58,7 @@ import Testing
     }
 
     @Test func gestureNamesMatchTheProtocol() {
-        #expect(AcousticGestureKind.allCases.map(\.rawValue) == ["knock_knuckle", "rub", "rub_left", "rub_right", "wave_toward", "wave_away", "wave_sweep"])
+        #expect(AcousticGestureKind.allCases.map(\.rawValue) == ["knock_knuckle", "rub", "rub_left", "rub_right", "wave_toward", "wave_away", "wave_sweep", "push", "pull", "sweep_left", "sweep_right", "finger_slide_left", "finger_slide_right", "finger_slide_up", "finger_slide_down"])
     }
 }
 
@@ -90,5 +90,36 @@ import Testing
         let kinds = events.compactMap { e -> AcousticGestureKind? in if case .gesture(let g) = e { return g.kind }; return nil }
         #expect(kinds.filter { $0 == .rub }.count >= 10, "\(kinds)")
         #expect(kinds.filter { $0 == .waveToward }.count >= 7, "\(kinds)")
+    }
+
+    /// Same budget with SonarField on: stereo pilots, a hover, a push and a sweep every 6 s, plus rubs and typing.
+    @Test func sonarFieldSixtySecondsUnderHalfASecond() {
+        var rng = SeededRNG(43)
+        let seconds = 60.0
+        func hand(_ t: Double) -> SIMD3<Double> {
+            let k = Int(t / 6), u = t - Double(k) * 6
+            switch k % 3 {
+            case 0: return Synth.lerp(SIMD3(-0.145, 0.08, 0.10), SIMD3(-0.145, 0.08, 0.22), Synth.ease(u, 1, 2))
+            case 1: return Synth.lerp(SIMD3(0.145, 0.08, 0.25), SIMD3(0.145, 0.08, 0.12), Synth.ease(u, 1, 1.3))
+            default: return Synth.lerp(SIMD3(-0.3, 0.08, 0.12), SIMD3(0.3, 0.08, 0.12), Synth.ease(u, 1, 1.5))
+            }
+        }
+        var x = Synth.field(duration: seconds, hand: hand, &rng)
+        var r = 4.5
+        while r < seconds - 1 { Synth.add(&x, Synth.rub(duration: 0.5, &rng), at: Int(r * 48_000)); r += 12 }
+        Synth.add(&x, Synth.typing(duration: 3, &rng), at: 40 * 48_000)
+        var options = SoundModeProcessor.Options()
+        options.sonarField = true
+        let processor = SoundModeProcessor(options: options)
+        var events: [AcousticEvent] = []
+        let elapsed = ContinuousClock().measure {
+            events = Synth.stream(x, chunk: 256) { processor.process($0, time: $1) }
+        }
+        let secondsTaken = Double(elapsed.components.seconds) + Double(elapsed.components.attoseconds) / 1e18
+        print("GhostkeysAcoustics perf (SonarField): 60 s of audio processed in \(secondsTaken) s")
+        #expect(secondsTaken < 0.5, "took \(secondsTaken) s")
+        let kinds = events.compactMap { e -> AcousticGestureKind? in if case .gesture(let g) = e { return g.kind }; return nil }
+        #expect(kinds.contains(.push) && kinds.contains(.sweepRight), "\(kinds)")
+        #expect(events.contains { if case .air(let a) = $0 { return a.kind == .hoverLevel }; return false })
     }
 }

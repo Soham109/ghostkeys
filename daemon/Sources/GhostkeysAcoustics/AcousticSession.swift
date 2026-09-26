@@ -39,7 +39,7 @@ public final class AcousticSession: @unchecked Sendable {
     private var engine: AVAudioEngine?
     private var converter: AVAudioConverter?
     private var pilotNode: AVAudioSourceNode?
-    private var pilot: PilotToneGenerator?
+    private var stopPilot: ((Bool) -> Void)?
     private var configObserver: NSObjectProtocol?
     private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: AcousticSession.sampleRate,
                                              channels: 1, interleaved: false)!
@@ -101,33 +101,58 @@ public final class AcousticSession: @unchecked Sendable {
     /// Plays the generator's output on the default output device. The generator enforces its own safety limits
     /// (level cap, built-in speaker only, 60 s sessions, cooldown); this throws whatever `generator.start()` throws.
     public func startPilotTone(_ generator: PilotToneGenerator) throws {
-        guard let engine else { return }
+        guard engine != nil else { return }
         try generator.start()
-        if pilotNode == nil {
-            let format = AVAudioFormat(standardFormatWithSampleRate: generator.sampleRate, channels: 1)!
-            let node = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList -> OSStatus in
-                let buffers = UnsafeMutableAudioBufferListPointer(audioBufferList)
-                for buffer in buffers {
-                    guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
-                    generator.render(into: data, count: Int(frameCount))
-                }
-                return noErr
+        try attachSource(channels: 1, sampleRate: generator.sampleRate) { buffers, frames in
+            for buffer in buffers {
+                guard let data = buffer.mData?.assumingMemoryBound(to: Float.self) else { continue }
+                generator.render(into: data, count: frames)
             }
-            engine.attach(node)
-            engine.connect(node, to: engine.mainMixerNode, format: format)
-            if !engine.isRunning { try engine.start() }
-            pilotNode = node
         }
-        pilot = generator
+        stopPilot = { immediately in immediately ? generator.stopImmediately() : generator.stop() }
         isPilotPlaying = true
     }
 
+    /// Plays the SonarField pilots: the left tone on the left speaker channel, the right tone on the right.
+    /// Same safety limits (enforced by the generator for the pair as one session).
+    public func startStereoPilots(_ generator: StereoPilotGenerator) throws {
+        guard engine != nil else { return }
+        try generator.start()
+        try attachSource(channels: 2, sampleRate: generator.sampleRate) { buffers, frames in
+            guard buffers.count >= 2,
+                  let l = buffers[0].mData?.assumingMemoryBound(to: Float.self),
+                  let r = buffers[1].mData?.assumingMemoryBound(to: Float.self) else {
+                for b in buffers { if let d = b.mData { memset(d, 0, Int(b.mDataByteSize)) } }
+                return
+            }
+            generator.render(left: l, right: r, count: frames)
+        }
+        stopPilot = { immediately in immediately ? generator.stopImmediately() : generator.stop() }
+        isPilotPlaying = true
+    }
+
+    private func attachSource(channels: AVAudioChannelCount, sampleRate: Double,
+                              render: @escaping (UnsafeMutableAudioBufferListPointer, Int) -> Void) throws {
+        guard let engine else { return }
+        if let old = pilotNode { engine.disconnectNodeOutput(old); engine.detach(old); pilotNode = nil }
+        let format = AVAudioFormat(standardFormatWithSampleRate: sampleRate, channels: channels)!
+        let node = AVAudioSourceNode(format: format) { _, _, frameCount, audioBufferList -> OSStatus in
+            render(UnsafeMutableAudioBufferListPointer(audioBufferList), Int(frameCount))
+            return noErr
+        }
+        engine.attach(node)
+        engine.connect(node, to: engine.mainMixerNode, format: format)
+        if !engine.isRunning { try engine.start() }
+        pilotNode = node
+    }
+
     public func stopPilotTone(immediately: Bool = false) {
-        if let pilot { immediately ? pilot.stopImmediately() : pilot.stop() }
+        stopPilot?(immediately)
         if immediately, let node = pilotNode, let engine {
             engine.disconnectNodeOutput(node)
             engine.detach(node)
             pilotNode = nil
+            stopPilot = nil
         }
         isPilotPlaying = false
     }

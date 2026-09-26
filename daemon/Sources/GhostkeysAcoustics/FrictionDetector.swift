@@ -124,7 +124,7 @@ public final class FrictionDetector {
     private let window: [Float]
     private let windowAutocorr: [Float]
     private let freqs: [Float]
-    private let kLo: Int, kHi: Int, k100: Int, k150: Int, k20k: Int
+    private let kLo: Int, kHi: Int, k100: Int, k150: Int, k20k: Int, kPitchTop: Int
     private let minLag: Int, maxLag: Int
     private var power: [Float]
     private var scratch: [Float]
@@ -176,6 +176,7 @@ public final class FrictionDetector {
         func bin(_ hz: Double) -> Int { min(lastBin, max(1, Int((hz / binHz).rounded()))) }
         kLo = bin(config.bandLowHz); kHi = bin(config.bandHighHz)
         k100 = bin(100); k150 = bin(150); k20k = bin(min(18_000, sampleRate / 2)) // stop below the sonar pilot
+        kPitchTop = bin(min(16_000, sampleRate / 2))
         minLag = Int(sampleRate / 500)
         maxLag = min(frameSize / 2, Int(sampleRate / 90))
         freqs = (0..<fft.bins).map { Float(Double($0) * binHz) }
@@ -198,8 +199,11 @@ public final class FrictionDetector {
 
         envBlock = max(1, Int(sampleRate / 4_000))
         envelopeRate = sampleRate / Double(envBlock)
-        highpass = BiquadFilter(coefficients: BiquadFilter.highpass(cutoff: 1_500, sampleRate: sampleRate)
-                                + BiquadFilter.highpass(cutoff: 1_500, sampleRate: sampleRate))
+        // 1.5 to 12 kHz: keeps the friction band, drops ultrasonic sonar pilots (whose 750 Hz beat would otherwise
+        // look like a comb tone).
+        let hp = BiquadFilter.highpass(cutoff: 1_500, sampleRate: sampleRate)
+        let lp = BiquadFilter.lowpass(cutoff: min(12_000, sampleRate / 2 * 0.9), sampleRate: sampleRate)
+        highpass = BiquadFilter(coefficients: hp + hp + lp + lp + lp + lp)
         envOnes = [Float](repeating: 1 / Float(envBlock), count: envBlock)
     }
 
@@ -329,8 +333,14 @@ public final class FrictionDetector {
             }
             if Double(info.tonalFraction) > config.maxTonalFraction { info.rejectReason = "tonal"; return }
 
-            // Harmonicity: normalized autocorrelation peak over 90 to 500 Hz pitch lags, window-corrected.
-            acf.withUnsafeMutableBufferPointer { a in fft.inverseEvenSpectrum(p, into: a.baseAddress!, count: maxLag + 1) }
+            // Harmonicity: normalized autocorrelation peak over 90 to 500 Hz pitch lags, window-corrected. Only content
+            // below 16 kHz counts: SonarField's pilots share a 750 Hz grid and would otherwise look perfectly periodic.
+            scratch.withUnsafeMutableBufferPointer { s in
+                let sp = s.baseAddress!
+                sp.update(from: p, count: kPitchTop)
+                (sp + kPitchTop).update(repeating: 0, count: fft.bins - kPitchTop)
+                acf.withUnsafeMutableBufferPointer { a in fft.inverseEvenSpectrum(sp, into: a.baseAddress!, count: maxLag + 1) }
+            }
             let r0 = acf[0]
             var best: Float = 0
             if r0 > 0 {

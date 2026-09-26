@@ -7,6 +7,10 @@ public final class SoundModeProcessor {
     public struct Options: Sendable {
         public var rubs = true
         public var sonar = true
+        /// Stereo-pilot SonarField mode (hover_level, push/pull, sweeps, finger slides). Replaces `sonar` when on:
+        /// play `StereoPilotGenerator`, not `PilotToneGenerator`.
+        public var sonarField = false
+        public var fieldConfig = SonarFieldConfig()
         /// Classify taps when the daemon calls `noteTapOnset` (needs `tapClassifier`).
         public var tapTypes = true
         public var friction = FrictionDetectorConfig()
@@ -25,6 +29,7 @@ public final class SoundModeProcessor {
     public let ringBuffer: AudioRingBuffer
     public let friction: FrictionDetector
     public let sonar: SonarWaveDetector
+    public let field: SonarField
     private let extractor: TapFeatureExtractor
     private var pendingOnsets: [Double] = []
 
@@ -38,6 +43,9 @@ public final class SoundModeProcessor {
         var sonarConfig = options.sonarConfig
         sonarConfig.sampleRate = sampleRate
         sonar = SonarWaveDetector(config: sonarConfig)
+        var fieldConfig = options.fieldConfig
+        fieldConfig.sampleRate = sampleRate
+        field = SonarField(config: fieldConfig)
         extractor = TapFeatureExtractor(sampleRate: sampleRate)
     }
 
@@ -46,6 +54,7 @@ public final class SoundModeProcessor {
         ringBuffer.clear()
         friction.reset()
         sonar.reset()
+        field.reset()
         pendingOnsets.removeAll()
     }
 
@@ -60,22 +69,41 @@ public final class SoundModeProcessor {
         samples.withUnsafeBufferPointer { process($0, time: time) }
     }
 
+    /// Suppress SonarField gestures until `time` (typing gate, IMU motion or bump). Call on every keystroke.
+    public func suppressSonar(until time: Double) { field.suppress(until: time) }
+
     /// Feeds mono samples (first sample at `time`, seconds). Returns events in time order within each detector.
     public func process(_ samples: UnsafeBufferPointer<Float>, time: Double) -> [AcousticEvent] {
         var out: [AcousticEvent] = []
         ringBuffer.write(samples, time: time)
-        if options.rubs {
-            for e in friction.process(samples, time: time) {
+        let useField = options.sonarField
+        func forward(_ events: [SonarFieldEvent]) {
+            for e in events {
                 switch e {
-                case .started(let t): out.append(.rubStarted(time: t))
-                case .cancelled(let t, let reason): out.append(.rubCancelled(time: t, reason: reason))
-                case .ended(let s):
-                    out.append(.rubEnded(s))
-                    out.append(.gesture(Self.gesture(for: s, config: friction.config)))
+                case .air(let a): out.append(.air(a))
+                case .gesture(let g): out.append(.gesture(g))
+                case .doppler: break
                 }
             }
         }
-        if options.sonar {
+        if useField { forward(field.process(samples, time: time)) }
+        if options.rubs {
+            for e in friction.process(samples, time: time) {
+                switch e {
+                case .started(let t):
+                    out.append(.rubStarted(time: t))
+                    if useField { forward(field.noteContactBegan(at: t)) }
+                case .cancelled(let t, let reason):
+                    out.append(.rubCancelled(time: t, reason: reason))
+                    if useField { forward(field.noteContactCancelled(at: t)) }
+                case .ended(let s):
+                    out.append(.rubEnded(s))
+                    out.append(.gesture(Self.gesture(for: s, config: friction.config)))
+                    if useField { forward(field.noteContactEnded(start: s.startTime, end: s.endTime)) }
+                }
+            }
+        }
+        if options.sonar && !useField {
             for w in sonar.process(samples, time: time) {
                 out.append(.wave(w))
                 out.append(.gesture(AcousticGesture(kind: w.kind.gesture, time: w.time, confidence: w.confidence,

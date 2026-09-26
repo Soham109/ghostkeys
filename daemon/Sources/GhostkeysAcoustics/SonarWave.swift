@@ -87,20 +87,17 @@ public struct SonarFrameInfo: Equatable, Sendable {
     public var rightShift: Double
 }
 
-/// Streaming Doppler detector. Feed microphone audio (mono, 48 kHz); not thread safe.
-public final class SonarWaveDetector {
-    public let config: SonarConfig
-    public private(set) var lastFrame: SonarFrameInfo?
-    private let fft: RealFFT
-    private let framer: SlidingFramer
-    private let window: [Float]
-    private var power: [Float]
+
+/// Doppler band analysis of one pilot tone, given a power spectrum. Shared by `SonarWaveDetector` (one pilot) and
+/// `SonarField` (one tracker per speaker).
+final class DopplerBandTracker {
+    let config: SonarConfig
+    private(set) var lastFrame: SonarFrameInfo?
     private let expectedBin: Int
     private var baseLeft: Double?
     private var baseRight: Double?
     private var episode: Episode?
     private var refractoryUntil = -Double.infinity
-    private var expectedNextTime: Double?
 
     private struct Episode {
         var start: Double
@@ -111,72 +108,57 @@ public final class SonarWaveDetector {
         var quietFrames = 0
     }
 
-    public init(config: SonarConfig = .init()) {
-        precondition(config.fftSize & (config.fftSize - 1) == 0)
+    init(config: SonarConfig) {
         self.config = config
-        fft = RealFFT(size: config.fftSize)
-        framer = SlidingFramer(frameSize: config.fftSize, hop: config.hopSize)
-        window = DSPMath.periodicHann(config.fftSize)
-        power = [Float](repeating: 0, count: fft.bins)
         expectedBin = Int((config.pilotHz / config.binHz).rounded())
-        precondition(expectedBin + config.noiseReferenceBins.upperBound < fft.bins, "pilot too close to Nyquist for the noise reference")
+        precondition(expectedBin + config.noiseReferenceBins.upperBound < config.fftSize / 2,
+                     "pilot too close to Nyquist for the noise reference")
     }
 
-    public func reset() {
-        framer.reset()
+    func reset() {
         baseLeft = nil; baseRight = nil
         episode = nil
         refractoryUntil = -.infinity
-        expectedNextTime = nil
         lastFrame = nil
     }
 
-    public func process(_ samples: [Float], time: Double) -> [SonarWaveEvent] {
-        samples.withUnsafeBufferPointer { process($0, time: time) }
-    }
-
-    public func process(_ samples: UnsafeBufferPointer<Float>, time: Double) -> [SonarWaveEvent] {
-        guard !samples.isEmpty else { return [] }
-        if let expected = expectedNextTime, abs(expected - time) > 0.01 { reset() }
-        expectedNextTime = time + Double(samples.count) / config.sampleRate
-        var events: [SonarWaveEvent] = []
-        let half = Double(config.fftSize) / 2 / config.sampleRate
-        framer.push(samples, time: time, sampleRate: config.sampleRate) { frame, end in
-            analyze(frame, center: end - half, events: &events)
-        }
-        return events
-    }
-
-    private func analyze(_ frame: UnsafePointer<Float>, center t: Double, events: inout [SonarWaveEvent]) {
-        window.withUnsafeBufferPointer { w in
-            power.withUnsafeMutableBufferPointer { p in fft.powerSpectrum(frame, count: config.fftSize, window: w.baseAddress!, into: p.baseAddress!) }
-        }
-        let p = power
+    /// `p` holds `fftSize / 2 + 1` power values.
+    func analyze(_ p: UnsafePointer<Float>, time t: Double) -> SonarWaveEvent? {
+        let bins = config.fftSize / 2 + 1
+        let search = config.pilotSearchBins, maxScan = config.maxScanBins, maxGap = config.maxGapBins
+        let ref = config.noiseReferenceBins
         var peakBin = expectedBin
-        for k in (expectedBin - config.pilotSearchBins)...(expectedBin + config.pilotSearchBins) where p[k] > p[peakBin] { peakBin = k }
+        var k0 = expectedBin - search
+        while k0 <= expectedBin + search { if p[k0] > p[peakBin] { peakBin = k0 }; k0 += 1 }
         let peakDb = DSPMath.db(p[peakBin])
+        // Median in the linear domain (monotonic, so the same bin), converted once.
         var noise: [Float] = []
-        for d in config.noiseReferenceBins {
-            noise.append(DSPMath.db(p[peakBin + d]))
-            if peakBin - d >= 1 { noise.append(DSPMath.db(p[peakBin - d])) }
+        noise.reserveCapacity(2 * ref.count)
+        var d0 = ref.lowerBound
+        while d0 <= ref.upperBound {
+            if peakBin + d0 < bins { noise.append(p[peakBin + d0]) }
+            if peakBin - d0 >= 1 { noise.append(p[peakBin - d0]) }
+            d0 += 1
         }
-        let noiseDb = DSPMath.median(noise)
+        let noiseDb = DSPMath.db(DSPMath.median(noise))
         let present = Double(peakDb - noiseDb) >= config.minPilotSnrDb
         var info = SonarFrameInfo(time: t, pilotPresent: present, pilotDb: peakDb, noiseDb: noiseDb,
                                   leftBins: 0, rightBins: 0, leftShift: 0, rightShift: 0)
         guard present else {
             lastFrame = info
             episode = nil // no pilot, no evidence either way
-            return
+            return nil
         }
         let thresholdDb = max(Double(peakDb) - config.thresholdBelowPeakDb, Double(noiseDb) + config.noiseMarginDb)
         let threshold = Float(pow(10, thresholdDb / 10))
         func scan(_ direction: Int) -> Int {
             var last = 0, gap = 0
-            for d in 1...config.maxScanBins {
+            var d = 1
+            while d <= maxScan {
                 let k = peakBin + direction * d
-                guard k >= 1 && k < fft.bins else { break }
-                if p[k] > threshold { last = d; gap = 0 } else { gap += 1; if gap > config.maxGapBins { break } }
+                guard k >= 1 && k < bins else { break }
+                if p[k] > threshold { last = d; gap = 0 } else { gap += 1; if gap > maxGap { break } }
+                d += 1
             }
             return last
         }
@@ -194,7 +176,7 @@ public final class SonarWaveDetector {
             baseRight = baseRight.map { 0.95 * $0 + 0.05 * Double(right) } ?? Double(right)
         }
         if episode == nil {
-            guard active, t >= refractoryUntil else { return }
+            guard active, t >= refractoryUntil else { return nil }
             episode = Episode(start: t, lastActive: t)
         }
         if activeL { episode!.framesLeft += 1; episode!.sumLeft += shiftL }
@@ -206,13 +188,16 @@ public final class SonarWaveDetector {
         } else {
             episode!.quietFrames += 1
         }
+        var result: SonarWaveEvent?
         if t - episode!.start > config.maxEpisodeDuration {
             episode = nil
             refractoryUntil = t + config.refractory
         } else if episode!.quietFrames >= config.releaseFrames {
-            if let e = classify(episode!) { events.append(e); refractoryUntil = t + config.refractory }
+            result = classify(episode!)
+            if result != nil { refractoryUntil = t + config.refractory }
             episode = nil
         }
+        return result
     }
 
     private func classify(_ e: Episode) -> SonarWaveEvent? {
@@ -235,193 +220,51 @@ public final class SonarWaveDetector {
     }
 }
 
-// MARK: - Pilot tone and speaker safety
+/// Streaming single-pilot Doppler detector. Feed microphone audio (mono, 48 kHz); not thread safe.
+public final class SonarWaveDetector {
+    public let config: SonarConfig
+    public var lastFrame: SonarFrameInfo? { tracker.lastFrame }
+    private let fft: RealFFT
+    private let framer: SlidingFramer
+    private let window: [Float]
+    private var power: [Float]
+    private let tracker: DopplerBandTracker
+    private var expectedNextTime: Double?
 
-/// Where the system's default audio output currently goes.
-public enum OutputRoute: Equatable, Sendable {
-    /// The laptop's own speakers: the only route the pilot tone may play on.
-    case builtInSpeaker
-    /// Wired headphones (built-in jack). Never play: 20 kHz at the ear is the thing to avoid.
-    case headphones
-    /// Bluetooth, USB, HDMI, AirPlay, aggregate devices... The transport is a CoreAudio four-char code.
-    case external(transport: String)
-    /// Could not be determined. Treated like headphones.
-    case unknown
-
-    public var allowsPilotTone: Bool { self == .builtInSpeaker }
-
-    /// Reads the default output device's transport type and data source from CoreAudio.
-    /// Built-in speakers report transport `bltn` and data source `ispk`; the headphone jack reports `hdpn`.
-    /// Reading these properties plays nothing and needs no permission.
-    public static func current() -> OutputRoute {
-        var device = AudioObjectID(0)
-        var size = UInt32(MemoryLayout<AudioObjectID>.size)
-        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDefaultOutputDevice,
-                                                 mScope: kAudioObjectPropertyScopeGlobal,
-                                                 mElement: kAudioObjectPropertyElementMain)
-        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &device) == noErr,
-              device != 0 else { return .unknown }
-        var transport: UInt32 = 0
-        size = 4
-        address.mSelector = kAudioDevicePropertyTransportType
-        guard AudioObjectGetPropertyData(device, &address, 0, nil, &size, &transport) == noErr else { return .unknown }
-        guard transport == kAudioDeviceTransportTypeBuiltIn else { return .external(transport: fourCC(transport)) }
-        var source: UInt32 = 0
-        size = 4
-        address.mSelector = kAudioDevicePropertyDataSource
-        address.mScope = kAudioDevicePropertyScopeOutput
-        guard AudioObjectHasProperty(device, &address),
-              AudioObjectGetPropertyData(device, &address, 0, nil, &size, &source) == noErr else { return .unknown }
-        switch fourCC(source) {
-        case "ispk": return .builtInSpeaker
-        case "hdpn": return .headphones
-        default: return .unknown
-        }
+    public init(config: SonarConfig = .init()) {
+        precondition(config.fftSize & (config.fftSize - 1) == 0)
+        self.config = config
+        fft = RealFFT(size: config.fftSize)
+        framer = SlidingFramer(frameSize: config.fftSize, hop: config.hopSize)
+        window = DSPMath.periodicHann(config.fftSize)
+        power = [Float](repeating: 0, count: fft.bins)
+        tracker = DopplerBandTracker(config: config)
     }
 
-    static func fourCC(_ v: UInt32) -> String {
-        let bytes = [UInt8(v >> 24 & 0xFF), UInt8(v >> 16 & 0xFF), UInt8(v >> 8 & 0xFF), UInt8(v & 0xFF)]
-        return String(bytes: bytes, encoding: .ascii) ?? String(v)
-    }
-}
-
-public enum PilotToneError: Error, Equatable {
-    /// Output is not the built-in speaker (headphones, Bluetooth, unknown...).
-    case routeNotAllowed(OutputRoute)
-    /// A new session was requested before the cooldown ended.
-    case coolingDown(secondsLeft: Double)
-}
-
-/// Generates the continuous ~20 kHz pilot tone for `SonarWaveDetector`. It only renders samples; whoever owns the
-/// audio engine decides when to play them (see `AcousticSession.startPilotTone`).
-///
-/// Hard safety limits, not overridable:
-/// - amplitude never above -30 dBFS (`maxAmplitude`), whatever is requested;
-/// - 20 ms fade in and out, so starting and stopping never clicks;
-/// - a session stops by itself after 60 s of rendered audio unless `renew()` is called;
-/// - a new session cannot start until 10 s after the previous one stopped;
-/// - `start()` refuses unless the default output is the built-in speaker (headphones or unknown: refused).
-///
-/// `render` is safe to call from the real-time audio thread (no locks, no allocation). Control calls come from another
-/// thread; the shared state is single machine words, and the worst race is one render quantum of lag.
-public final class PilotToneGenerator: @unchecked Sendable {
-    /// -30 dBFS.
-    public static let maxAmplitude: Float = 0.031_622_777
-    public static let fadeDuration: Double = 0.020
-    public static let maxSessionDuration: Double = 60
-    public static let cooldown: Double = 10
-
-    public enum State: Equatable, Sendable { case idle, playing, fadingOut }
-
-    public let frequency: Double
-    public let sampleRate: Double
-    /// Effective amplitude after the cap.
-    public let amplitude: Float
-    public private(set) var state: State = .idle
-    /// Why the last session ended on its own (nil if stopped by the caller).
-    public private(set) var autoStopped = false
-
-    private let routeCheck: () -> OutputRoute
-    private let clock: () -> Double
-    private var phase: Double = 0
-    private var gain: Float = 0
-    private var targetGain: Float = 0
-    private let gainStep: Float
-    private var sessionSamples = 0
-    private var renewedAtSample = 0
-    private let sessionLimitSamples: Int
-    private var stoppedAt: Double?
-
-    /// - Parameters:
-    ///   - amplitude: requested linear amplitude; silently capped at `maxAmplitude`.
-    ///   - routeCheck: injectable for tests; defaults to reading CoreAudio.
-    ///   - clock: seconds, monotonic; injectable for tests.
-    public init(frequency: Double = SonarConfig.defaultPilotHz, sampleRate: Double = GhostkeysAcousticsInfo.sampleRate,
-                amplitude: Float = PilotToneGenerator.maxAmplitude,
-                routeCheck: @escaping () -> OutputRoute = OutputRoute.current,
-                clock: @escaping () -> Double = { ProcessInfo.processInfo.systemUptime }) {
-        self.frequency = frequency
-        self.sampleRate = sampleRate
-        self.amplitude = min(max(0, amplitude.isFinite ? amplitude : 0), Self.maxAmplitude)
-        self.routeCheck = routeCheck
-        self.clock = clock
-        gainStep = 1 / Float(max(1, Self.fadeDuration * sampleRate))
-        sessionLimitSamples = Int(Self.maxSessionDuration * sampleRate)
+    public func reset() {
+        framer.reset()
+        tracker.reset()
+        expectedNextTime = nil
     }
 
-    /// Seconds until a new session may start (0 when allowed).
-    public var cooldownRemaining: Double {
-        guard let stoppedAt else { return 0 }
-        return max(0, stoppedAt + Self.fadeDuration + Self.cooldown - clock())
+    public func process(_ samples: [Float], time: Double) -> [SonarWaveEvent] {
+        samples.withUnsafeBufferPointer { process($0, time: time) }
     }
 
-    /// Starts a session (fades in). Throws if the output route is not the built-in speaker or during cooldown.
-    /// Calling it while already playing just renews the session.
-    public func start() throws {
-        let route = routeCheck()
-        guard route.allowsPilotTone else { throw PilotToneError.routeNotAllowed(route) }
-        if state == .playing { renew(); return }
-        let left = cooldownRemaining
-        guard left <= 0 else { throw PilotToneError.coolingDown(secondsLeft: left) }
-        sessionSamples = 0
-        renewedAtSample = 0
-        autoStopped = false
-        targetGain = 1
-        state = .playing
-    }
-
-    /// Extends the running session by another 60 s from now. Re-checks the route; stops if it is no longer allowed.
-    @discardableResult
-    public func renew() -> Bool {
-        guard state == .playing else { return false }
-        guard routeCheck().allowsPilotTone else { stop(); return false }
-        renewedAtSample = sessionSamples
-        return true
-    }
-
-    /// Fades out (20 ms) and starts the cooldown.
-    public func stop() {
-        guard state == .playing else { return }
-        targetGain = 0
-        state = .fadingOut
-        stoppedAt = clock()
-    }
-
-    /// Stops immediately without a fade (use only when the device is going away, for example a route change).
-    public func stopImmediately() {
-        if state == .playing { stoppedAt = clock() }
-        targetGain = 0
-        gain = 0
-        state = .idle
-    }
-
-    public func render(count: Int) -> [Float] {
-        var out = [Float](repeating: 0, count: count)
-        out.withUnsafeMutableBufferPointer { render(into: $0.baseAddress!, count: count) }
-        return out
-    }
-
-    /// Writes `count` samples. Silence when idle.
-    public func render(into out: UnsafeMutablePointer<Float>, count: Int) {
-        if state == .idle { out.update(repeating: 0, count: count); return }
-        let increment = 2 * Double.pi * frequency / sampleRate
-        for i in 0..<count {
-            if state == .playing && sessionSamples - renewedAtSample >= sessionLimitSamples {
-                autoStopped = true
-                targetGain = 0
-                state = .fadingOut
-                stoppedAt = clock()
-            }
-            if gain < targetGain { gain = min(targetGain, gain + gainStep) } else if gain > targetGain { gain = max(targetGain, gain - gainStep) }
-            out[i] = amplitude * gain * Float(sin(phase))
-            phase += increment
-            if phase > 2 * Double.pi { phase -= 2 * Double.pi }
-            sessionSamples += 1
-            if state == .fadingOut && gain == 0 {
-                state = .idle
-                if i + 1 < count { (out + i + 1).update(repeating: 0, count: count - i - 1) }
-                return
+    public func process(_ samples: UnsafeBufferPointer<Float>, time: Double) -> [SonarWaveEvent] {
+        guard !samples.isEmpty else { return [] }
+        if let expected = expectedNextTime, abs(expected - time) > 0.01 { reset() }
+        expectedNextTime = time + Double(samples.count) / config.sampleRate
+        var events: [SonarWaveEvent] = []
+        let half = Double(config.fftSize) / 2 / config.sampleRate
+        framer.push(samples, time: time, sampleRate: config.sampleRate) { frame, end in
+            window.withUnsafeBufferPointer { w in
+                power.withUnsafeMutableBufferPointer { p in
+                    fft.powerSpectrum(frame, count: config.fftSize, window: w.baseAddress!, into: p.baseAddress!)
+                    if let e = tracker.analyze(p.baseAddress!, time: end - half) { events.append(e) }
+                }
             }
         }
+        return events
     }
 }

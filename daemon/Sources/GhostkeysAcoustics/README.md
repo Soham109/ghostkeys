@@ -1,101 +1,147 @@
 # GhostkeysAcoustics (sound mode)
 
-Optional, off by default. Uses the built-in microphone to add three things the motion sensor cannot tell apart:
+Optional, off by default. Uses the built-in microphone (and, for sonar, the speakers) to add what the motion sensor cannot tell apart:
 
 1. **Tap type.** When the IMU (motion sensor) detects a tap, the sound around it says whether it was a fingertip, a knuckle or a nail. Knuckle taps become `knock_knuckle`.
-2. **Rubs and swipes.** Dragging a finger over the palm rest or the speaker grille makes a steady hiss (friction noise). That becomes `rub`, or `rub_left` / `rub_right` when the direction is clear.
-3. **Hand waves.** The speaker plays an inaudible ~20 kHz tone. A moving hand reflects it slightly higher or lower in pitch (the Doppler effect). That becomes `wave_toward`, `wave_away` or `wave_sweep`. Method from SoundWave (Gupta et al., CHI 2012).
+2. **Rubs and swipes.** Dragging a finger over the palm rest or a speaker grille makes a steady hiss (friction noise). That becomes `rub`, or `rub_left` / `rub_right` when the direction is clear.
+3. **Hand waves (single pilot).** The speakers play one inaudible ~20 kHz tone. A moving hand reflects it slightly higher or lower in pitch (the Doppler effect): `wave_toward`, `wave_away`, `wave_sweep`. Method from SoundWave (Gupta et al., CHI 2012).
+4. **SonarField (stereo pilots, no camera).** Two inaudible tones, one per speaker group, give in-air gestures above the speakers and finger slides: a continuous `hover_level` slider (raise or lower a hand above a speaker, for volume), `push` / `pull`, `sweep_left` / `sweep_right`, and `finger_slide_left/right/up/down` (sliding while touching, confirmed by friction sound).
 
-Everything except `AcousticSession` is pure computation and is tested with synthetic audio only.
+Everything except `AcousticSession` and `SonarBench` is pure computation, tested with synthetic audio only.
 
 ## Gesture names (wire format)
+
+Discrete gestures, sent as `{"type":"gesture","gesture":...}`:
 
 | gesture | source | meaning |
 | --- | --- | --- |
 | `knock_knuckle` | IMU tap + sound | a tap the IMU saw, classified as a knuckle |
 | `rub` | sound | friction noise lasting 150 ms to 2 s, direction unsure |
 | `rub_left` / `rub_right` | sound | same, with direction confidence at least 0.7 |
-| `wave_toward` | sonar | hand moved toward the laptop |
-| `wave_away` | sonar | hand moved away |
-| `wave_sweep` | sonar | hand passed over: toward then away in one motion |
+| `wave_toward` / `wave_away` / `wave_sweep` | single-pilot sonar | hand moved toward / away / passed over |
+| `push` / `pull` | SonarField | quick hand motion (under 0.45 s) down toward / up away from a speaker; `side` says which |
+| `sweep_left` / `sweep_right` | SonarField | hand passed across above the keyboard, right to left / left to right |
+| `finger_slide_left` / `_right` / `_up` / `_down` | SonarField + friction | finger slid while touching; up = toward the hinge |
 
-These are not yet in `docs/PROTOCOL.md`. Suggested additions: the six rows above in the gesture table, `"sound": true` under `hello.sensors`, and an optional `"tapType": "fingertip" | "knuckle" | "nail"` on `tap` messages.
+Continuous values, sent like the camera's `air` messages: `{"type":"air","gesture":"hover_level","phase":"began|changed|ended","side":"left","value":0.3,"displacementMm":45}`:
+
+| gesture | fields |
+| --- | --- |
+| `hover_level` | `side`; `value` = displacement / 150 mm, clamped -1...1, positive = hand raised; `displacementMm` since `began` |
+| `finger_slide` | `dxMm` (positive right), `dyMm` (positive toward the hinge), `value` = dyMm / 40 mm clamped -1...1 |
+
+`ended` carries `cancelled: true` when the gesture was abandoned (typing, interference, contact began). SonarField gestures also carry `side` and `distanceMm` where meaningful.
+
+`docs/PROTOCOL.md` lists the first three groups. Still to add there: the SonarField rows above, the two `air` kinds, and a `"sonarField": true` flag on the sound `session` message.
 
 ## Public API
 
 ```swift
 // One object does all the work. Feed it audio and IMU tap onsets; it returns events.
-let processor = SoundModeProcessor(options: .init(), tapClassifier: model)   // model may be nil
+var options = SoundModeProcessor.Options()
+options.sonarField = true                             // stereo mode (replaces single-pilot `sonar`)
+let processor = SoundModeProcessor(options: options, tapClassifier: model)   // model may be nil
 let events: [AcousticEvent] = processor.process(samples, time: chunkHostTimeSeconds)
-processor.noteTapOnset(imuTime: tapHostTimeSeconds)   // result arrives from a later process() call
+processor.noteTapOnset(imuTime: tapHostTimeSeconds)   // tap type arrives from a later process() call
+processor.suppressSonar(until: now + 0.45)            // on every keystroke and on IMU motion or bumps
 processor.reset()                                     // when the mic session restarts
 
 enum AcousticEvent {
-  case gesture(AcousticGesture)                        // the only case that should trigger actions
+  case gesture(AcousticGesture)                        // the only case that should trigger discrete actions
+  case air(AcousticAirEvent)                           // continuous SonarField values (hover_level, finger_slide)
   case tapClassified(onset: Double, TapClassification) // every IMU tap, including rejected ones
   case rubStarted(time: Double)                        // live feedback
   case rubCancelled(time: Double, reason: RubCancelReason)
   case rubEnded(RubSummary)                            // duration, speed, direction, comb tone
   case wave(SonarWaveEvent)
 }
-
-struct AcousticGesture: Codable { kind: AcousticGestureKind; time; confidence; duration?; speedProxy?;
-                                  speedMetersPerSecond?; direction?; directionConfidence?; var name: String }
 ```
 
 Building blocks, usable on their own:
 
-- `TapFeatureExtractor`: 40 ms window to `TapFeatures` (40 log-mel bands, spectral centroid, rolloff, flux, zero-crossing rate, decay time, high/low energy ratio, level).
-- `TapTypeClassifier`: k-nearest-neighbour (k-NN) vote over z-scored features (each feature rescaled to mean 0, spread 1) with a reject option. `train([LabeledTap])`, `classify(TapFeatures)`, `leaveOneOutAccuracy()`. `Codable`: save it as JSON in `~/Library/Application Support/Ghostkeys/model/`. Rejects with `.unfamiliar` (nothing in training looks like this) or `.ambiguous` (neighbours disagree).
-- `TapWindowAligner`: finds the sound onset within +-15 ms of the IMU onset so every window starts 2 ms before the transient.
-- `FrictionDetector`: streaming rub detector. `FrictionDetectorConfig` holds every threshold. `lastFrame` exposes per-frame diagnostics, including why a frame was not friction (`quiet`, `below_floor`, `not_band`, `impulsive`, `tonal`, `harmonic`).
-- `SonarWaveDetector`: streaming Doppler detector, 4096-point Hann FFT every 1024 samples. `SonarConfig` holds thresholds and debounce. `lastFrame` shows pilot level and left/right widening for a visualizer.
-- `PilotToneGenerator`: renders the pilot tone with hard safety limits (below).
-- `AcousticSession`: the only hardware code. Opens the mic (mono, 48 kHz, 256-frame buffers requested; macOS may deliver larger ones), keeps a 200 ms `AudioRingBuffer`, and can play the pilot tone. Apple voice processing is deliberately left off: it removes non-speech sound, which is exactly what we need.
-- `AudioRingBuffer`: last 200 ms of audio, readable by time.
+- `TapFeatureExtractor`, `TapTypeClassifier`, `TapWindowAligner`: tap type (40 log-mel bands plus spectral centroid, rolloff, flux, zero-crossing rate, decay, high/low ratio; k-nearest-neighbour vote with reject; `Codable`).
+- `FrictionDetector`: streaming rub detector; `lastFrame` says why a frame was not friction.
+- `SonarWaveDetector`: single-pilot Doppler detector.
+- `SonarField`: stereo-pilot tracker. `process`, `noteContactBegan/Ended/Cancelled` (the processor wires these to the friction detector), `suppress(until:)`, and `status` (per-side pilot level, noise, accumulated path in mm, moving-part level, Doppler widening; `interference`, `suppressed`, `ready`) for a live visualizer.
+- `PilotToneGenerator` (one tone) and `StereoPilotGenerator` (left and right tones): render samples; all speaker-safety limits live in them (below).
+- `AcousticSession`: the only hardware code. Opens the mic (mono, 48 kHz, 256-frame buffers requested; macOS may deliver larger ones) with a 200 ms `AudioRingBuffer`, and plays `startPilotTone` / `startStereoPilots`. Apple voice processing is deliberately left off: it removes non-speech sound.
+- `SonarBench`: consent-gated real-hardware check for the lab tool (below).
 
-All times are seconds on the caller's clock. `AcousticSession` uses host time (the `mach_absolute_time` clock), the same clock the IMU path uses, so tap onsets line up. The daemon converts to its "ms since start" `t` when sending.
+All times are seconds on the caller's clock. `AcousticSession` uses host time (the `mach_absolute_time` clock), the same clock the IMU path uses.
 
 ## How the detectors decide
 
-**Rub.** Every 20 ms, a 43 ms frame is a friction frame when all hold: loud enough (-65 dBFS), 10 dB above the learned background, at least half its energy in 2 to 12 kHz, not impulsive (1 ms block peak under 6x the mean, which rejects typing), not tonal (under 30% of energy in narrow peaks, which rejects music), and not voiced (autocorrelation pitch strength under 0.5, which rejects speech). A rub is friction frames sustained 150 ms to 2 s with gaps under 60 ms. Longer than 2 s is cancelled as `too_long`.
-- Speed: `speedProxy` is 0 to 1 from the spectral centroid (brighter means faster; uncalibrated). On the speaker grille the holes chop the hiss at `speed / hole pitch`; the detector finds that rate by autocorrelating the loudness envelope and reports `combHz` and `speedMetersPerSecond` (set `grilleHolePitchMeters` per model).
-- Direction: a straight-line fit of loudness over the rub. Rising means moving toward the mics. Confidence is the fit quality times how big the change is (6 dB counts as full). `micSide` (default `.left`) maps toward/away to left/right. Verify mic placement per model.
+**Rub.** Every 20 ms, a 43 ms frame is friction when: loud enough (-65 dBFS), 10 dB above the learned background, at least half its energy in 2 to 12 kHz, not impulsive (rejects typing), not tonal (rejects music), and not voiced (pitch strength under 0.5, measured below 16 kHz so sonar pilots don't count; rejects speech). A rub is friction sustained 150 ms to 2 s. Speed: `speedProxy` from brightness, plus `combHz` / `speedMetersPerSecond` when grille holes chop the hiss periodically (the envelope is band-limited to 1.5 to 12 kHz so sonar pilots cannot fake a comb tone). Direction from the loudness trend (rising means toward the mics; `micSide` defaults to left).
 
-**Wave.** The pilot's peak in the spectrum is normally +-1 bin wide. Each frame scans outward on both sides for bins within 35 dB of the pilot (and 8 dB above noise), tolerating 2-bin gaps. Widening of 3 or more bins (35 Hz, about 0.3 m/s of hand speed) beyond the resting width counts as motion on that side. A motion episode ends after 5 quiet frames. Right-side widening wins: `wave_toward`. Left: `wave_away`. Both with balance of at least 0.35: `wave_sweep`. Episodes over 1.5 s are ignored as ambient movement, and a 0.4 s dead time follows each wave. With no pilot detected, sonar reports nothing.
+**Single-pilot wave.** The pilot's spectral peak normally spans +-1 bin. Widening of 3 or more bins beyond rest on the right is `wave_toward`, on the left `wave_away`, both `wave_sweep`, with a 0.4 s dead time after each.
 
-## Speaker safety (hard limits in `PilotToneGenerator`)
+**SonarField.**
+- Pilots: 19,500 Hz on the left channel, 20,250 Hz on the right. Both are multiples of 750 Hz (48 kHz / 64) and land exactly on 4096-point FFT bins.
+- Separation: the mic delivers one beamformed mono channel carrying both pilots. Each pilot is I/Q demodulated (multiplied by its own cosine and sine) through a low-pass made of three cascaded 64-sample averages. That puts deep nulls on every multiple of 750 Hz, so the other pilot, and its Doppler-shifted echoes next to that null, drop out. (A single average was not enough: the other pilot's echoes aliased onto the same offset as a real echo.) Output rate 1500 Hz.
+- Per side, two signals:
+  - (a) Doppler widening of that pilot's peak (as above, also reported per side);
+  - (b) phase tracking after LLAP (Wang et al., MobiCom 2016). A slow tracker (0.3 s) removes the static part (direct path, still objects). The phase change of what is left is integrated into relative path-length change: `path change = -dphi * lambda / (2 pi)`, lambda = 343 m/s / f (about 17.6 mm). A hand moving straight up above a speaker near the mics changes the path by about twice its own movement; `displacementMm` reports half the path change.
+- Common and differential motion: `common = (left + right) / 2` is dominated by the shared microphone term (distance to the mics near the hinge); `differential = left - right` cancels the microphone term and tracks lateral movement.
+  - `hover_level`: an episode still moving after 0.5 s whose common change is at least 1.7x the differential. Continuous until 0.6 s of stillness.
+  - `push` / `pull`: common-dominant, monotonic, at least 30 mm of path, over in 0.45 s or less. Confidence rises if that side's Doppler agrees.
+  - `sweep_left` / `sweep_right`: differential of at least 60 mm and 1.5x the common, sign gives the direction.
+  - `finger_slide_*`: only between a friction rub's start and end (contact confirmation, so hovering hands never count). Lateral if |dx| > |dy|, else up/down. Motion episodes overlapping contact never produce hover/push/sweep.
+- Robustness:
+  - Drift: a speaker/mic clock mismatch rotates everything; the rotation is estimated while nothing moves and undone. (Learning it during motion was tried and fails: the static part is about 25 dB above an echo, so a small bias leaks more than the echo carries.)
+  - Noise gate: the baseband noise estimate only rises when the moving part looks like noise, so fast motion cannot close the gate.
+  - Impulses (key clicks, knocks): energy in a band below the pilots (about 17.5 kHz) jumping 12 dB marks up to 8 ms of phase samples as void. A 20 ms processing delay lets the few samples before the click be voided too.
+  - Interference: narrow peaks near the pilots (music, other ultrasonic sources) within 45 dB of the weaker pilot, or broadband noise within 25 dB of it, suppress detection for 0.5 s. `status.interference` shows it.
+  - Typing and vibration: the daemon calls `suppressSonar(until:)` on each keystroke (typing gate) and on IMU motion. Active gestures end as cancelled.
+  - Missing pilot (speaker muted, blocked, wrong route): nothing is detected.
 
-These cannot be configured away:
+## Speaker safety (hard limits in the tone generators)
 
-- **Level cap: -30 dBFS.** Any requested amplitude above 0.0316 is clamped.
+These cannot be configured away, and apply to both `PilotToneGenerator` and `StereoPilotGenerator` (the stereo pair counts as one session):
+
+- **Level cap: -30 dBFS.** Per channel, and for the stereo pair the two amplitudes together (so even a mono downmix stays under -30 dBFS). Default stereo split is -36 dBFS per channel. Requests above the cap are clamped.
 - **20 ms fade in and out**, so starting and stopping never click.
 - **Auto-stop after 60 s** of playback per session unless `renew()` is called. `renew()` re-checks the output route.
 - **10 s cooldown** after a session ends before a new one may start (`start()` throws `.coolingDown`).
-- **Built-in speaker only.** `start()` reads the default output device from CoreAudio and refuses unless the transport is built-in (`bltn`) and the data source is the internal speaker (`ispk`). Headphones (`hdpn`), Bluetooth, USB, HDMI, AirPlay, and anything unknown are refused. `AcousticSession` also cuts the tone immediately on any audio configuration change (for example headphones plugged in).
+- **Built-in speaker only.** `start()` reads the default output device from CoreAudio and refuses unless the transport is built-in (`bltn`) and the data source is the internal speaker (`ispk`). Headphones (`hdpn`), Bluetooth, USB, HDMI, AirPlay and anything unknown are refused. `AcousticSession` also cuts the tones immediately on any audio configuration change (for example headphones plugged in).
 
-**Pets and some people can hear 20 kHz.** Dogs and cats hear well above 20 kHz, and some children and young adults can hear it too. Keep sonar sessions short, never run the tone in the background, and say so in the UI where sonar is enabled.
+**Pets and some people can hear 19 to 20 kHz.** Dogs and cats hear well above 20 kHz, and some children and young adults hear 19.5 kHz. Keep sonar sessions short, never run the tones in the background, and say so in the UI wherever sonar is enabled.
+
+## SonarBench (lab tool only, explicit consent)
+
+A one-time real test for the user's own Mac. The lab tool must:
+
+1. Print `SonarBench.disclosure`. It explains the mic and the orange dot, the two tones at -30 dBFS combined on built-in speakers only, up to 20 s, the pets note, and what to do with your hand.
+2. Read what the user types and pass it to `SonarBench.Consent(typed:)`. Only the exact phrase `PLAY INAUDIBLE TONES` grants consent.
+3. Call `try SonarBench.run(consent:seconds:printLine:)`. It is blocking, capped at 20 s, prints a reading every 250 ms (per-side pilot SNR, path in mm, moving-part level, state), and prints each gesture and `air` begin/end as it happens. Then it stops the tones (with fade) and closes the mic, also on error.
+
+It returns a `Report`: median pilot SNR per side (SonarField needs at least 25 dB), interference share, largest path swing per side, and the gestures seen. It throws `.consentMissing`, `.routeNotAllowed(route)` or `.microphoneDenied` before touching any hardware. Nothing in the tests or the daemon calls it.
 
 ## How the daemon should integrate
 
 1. **Off by default.** Only a user setting turns sound mode on. With it off, never construct `AcousticSession`.
-2. **Open the mic only in short sessions.** Start a session after a wake gesture (for example a triple tap, detected by the IMU) or while the frontmost app is one the user pinned sound gestures to. Close it automatically after N seconds without a sound gesture (suggest 8 s after a wake gesture) or when the pinned app loses focus.
-3. **The orange dot.** While `AcousticSession` runs, macOS shows the orange microphone indicator in the menu bar and lists Ghostkeys (or the Electron app that spawned the daemon) in Control Center. That is correct and expected; do not try to hide it. Show a matching "listening" state in the HUD so the dot is never a surprise. Closing the session removes the dot.
-4. **Permission.** Check `AcousticSession.microphoneAuthorization` first. If it is `.notDetermined`, starting will make macOS prompt, so only start from a user action in the UI. Denied: report `{"type":"error"}` and keep sound mode off. Because the daemon is a command-line child of the app, macOS attributes the permission to the responsible app (the Electron app, or Terminal in dev).
-5. **Threading.** `AcousticSession` calls back on an AVFoundation thread. Hop each `Chunk` onto the daemon's detection queue and call `processor.process(chunk.samples, time: chunk.time)` there. Call `noteTapOnset` from the same queue whenever the IMU accepts a tap while a session is open.
-6. **Sonar.** Only when the user enabled wave gestures, only inside an open mic session, and stop the tone when the session closes. Create a `PilotToneGenerator`, call `session.startPilotTone(generator)`, and handle its errors (route refused, cooling down) by simply running without waves. Call `generator.renew()` about every 30 s if the session is still wanted.
-7. **Gating.** Respect `paused`. Suppress sound gestures while the typing gate is active (typing and hands near the keyboard can produce Doppler and friction noise). Map `.gesture` events to `{"type":"gesture", "gesture": g.name, ...}` and run bindings exactly as for IMU gestures.
-8. **Calibration.** Tap types: during calibration, ask for about 20 taps of each type on one zone, collect `LabeledTap(features:label:)` from `TapFeatureExtractor` on `TapWindowAligner` windows, train, and report `leaveOneOutAccuracy()`. Save the labeled taps too, so the model can be retrained later.
+2. **Short mic sessions only.** Start after a wake gesture (for example an IMU triple tap) or while a pinned app is frontmost. Close automatically after N seconds without a sound gesture (suggest 8 s) or when the pinned app loses focus.
+3. **The orange dot.** While `AcousticSession` runs, macOS shows the orange microphone indicator and lists the app in Control Center. That is expected; never try to hide it. Show a matching "listening" state in the HUD. Closing the session removes it.
+4. **Permission.** Check `AcousticSession.microphoneAuthorization` first. If `.notDetermined`, only start from a user action in the UI (macOS will prompt). The permission is attributed to the responsible app (the Electron app, or Terminal in dev).
+5. **Threading.** `AcousticSession` calls back on an AVFoundation thread. Hop each `Chunk` onto the daemon's detection queue and call `processor.process(chunk.samples, time: chunk.time)` there. Call `noteTapOnset` and `suppressSonar` from the same queue.
+6. **Sonar.** Only when the user enabled it, only inside an open mic session. Single pilot: `session.startPilotTone(PilotToneGenerator())` with `options.sonar`. SonarField: `session.startStereoPilots(StereoPilotGenerator())` with `options.sonarField = true`. Handle the errors (route refused, cooling down) by running without sonar. Call `renew()` about every 30 s while still wanted, and stop the tones when the session closes.
+7. **Gating.** Respect `paused`. Call `suppressSonar(until: t + 0.45)` on every keystroke and on IMU motion or bumps. Map `.gesture` to `{"type":"gesture",...}` and `.air` to `{"type":"air",...}`. A finger slide also produces a `rub` gesture; bind one or the other.
+8. **Calibration.** Tap types: about 20 taps per type, `LabeledTap(features:label:)` from `TapFeatureExtractor` on `TapWindowAligner` windows, train, report `leaveOneOutAccuracy()`, save the labeled taps too.
 
 ## Tests
 
-`daemon/Tests/GhostkeysAcousticsTests`, swift-testing, synthetic signals only (no mic, no speaker):
+`daemon/Tests/GhostkeysAcousticsTests`, swift-testing, synthetic signals only (no mic, no speaker). SonarField scenes use real geometry: two speakers, a mic near the hinge, and a hand whose speaker -> hand -> mic path sets each echo's phase and Doppler sample by sample.
 
-- Tap type: noise bursts with fingertip, knuckle and nail spectra and decays; held-out accuracy must exceed 90% (measured 100% on 300 synthetic taps); silence and a pure tone are rejected; JSON round trip; IMU-offset alignment; end-to-end `knock_knuckle` through the processor.
-- Rub: steady rub detected with the right duration; rising and falling loudness give `rub_left` / `rub_right`; too short and too long rejected; typing at 6, 9 and 14 keys per second rejected; voice-like harmonic signals rejected (the bright variant specifically by the pitch test); music-like chords rejected; comb-tone speed within 15% at 80, 180, 350 and 600 Hz.
-- Sonar: toward, away, sweep, two separate waves, pilot alone, no pilot, reflections too weak.
-- Pilot tone: -30 dBFS cap, 20 ms fades, 60 s auto-stop, renew, cooldown, route refusal, frequency and phase continuity.
-- Performance: 60 s of 48 kHz audio through the whole processor in 256-sample chunks under 0.5 s (measured 0.23 to 0.26 s in a debug build).
+- Tap type: held-out accuracy above 90% (measured 100% on 300 synthetic taps), rejection, JSON round trip, IMU alignment, `knock_knuckle` end to end.
+- Rub: detection, direction, duration limits, typing, voice-like and music-like rejection, comb speed within 15%.
+- Single-pilot sonar: toward, away, sweep, debounce, no pilot, weak echoes.
+- SonarField:
+  - hover slider path within 20% for 5 to 20 cm moves above either speaker, up and down, and hand displacement within 20% above the left speaker. A 12-case randomized check during development stayed within 9%.
+  - `push`, `pull` with the right side; `sweep_left`, `sweep_right`.
+  - Pilot separation (one side's echo leaves the other side under 5%); clock drift (0.4 Hz) corrected.
+  - Rejections: music tones near the pilots, typing, external suppression, missing pilots, still hand.
+  - Finger slides in four directions with friction; none when hovering without contact or when rubbing without moving.
+- Tone generators: -30 dBFS cap (per channel and combined), fades, 60 s auto-stop, renew, cooldown, route refusal, correct frequency per channel.
+- Performance: 60 s of 48 kHz audio through the full processor in 256-sample chunks under 0.5 s, in a debug build: 0.23 s with single-pilot sonar, 0.42 to 0.44 s with SonarField and rubs.
 
 ```sh
 cd daemon && swift test --scratch-path .build-acoustics --filter GhostkeysAcousticsTests
@@ -103,4 +149,10 @@ cd daemon && swift test --scratch-path .build-acoustics --filter GhostkeysAcoust
 
 ## Not yet validated on hardware
 
-All thresholds come from physics and synthetic tests. Before shipping, check on real MacBooks: tap-type accuracy with real calibration data; rub false positives from clothing and palm rest contact; mic position for `micSide`; grille hole pitch; whether the speaker and mic pass 20 kHz cleanly enough (look at `SonarWaveDetector.lastFrame.pilotDb` against `noiseDb`); and hand-reflection levels at typical distances.
+All thresholds come from physics and synthetic scenes. On real MacBooks, check (`SonarBench` is built for this):
+
+- whether the speakers and mic pass 19.5 to 20.25 kHz with at least 25 dB SNR;
+- real hand echo levels (synthetic uses -25 dB relative to the direct path; fingers -28 dB);
+- the actual mic position (it shapes common vs differential motion and the up/down sign of slides);
+- how much ultrasonic energy real fingertip friction has (heavy friction noise near the pilots degrades slide tracking);
+- tap-type accuracy with real calibration data, rub false positives, `micSide`, and grille hole pitch.

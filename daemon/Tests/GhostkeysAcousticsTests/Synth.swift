@@ -210,3 +210,58 @@ enum Synth {
 func jsonRoundTrip<T: Codable>(_ value: T) throws -> T {
     try JSONDecoder().decode(T.self, from: JSONEncoder().encode(value))
 }
+
+// MARK: SonarField scenes
+
+/// Laptop geometry for synthetic SonarField scenes, meters. x: left to right, y: hinge (0) toward the front lip,
+/// z: up from the deck. Speakers under the side grilles; the microphone array near the hinge on the left.
+enum FieldGeometry {
+    static let leftSpeaker = SIMD3<Double>(-0.145, 0.08, 0)
+    static let rightSpeaker = SIMD3<Double>(0.145, 0.08, 0)
+    static let mic = SIMD3<Double>(-0.12, 0.01, 0)
+
+    static func dist(_ a: SIMD3<Double>, _ b: SIMD3<Double>) -> Double { ((a - b) * (a - b)).sum().squareRoot() }
+    /// Speaker -> hand -> mic path length for each side.
+    static func paths(_ p: SIMD3<Double>) -> (left: Double, right: Double) {
+        (dist(p, leftSpeaker) + dist(p, mic), dist(p, rightSpeaker) + dist(p, mic))
+    }
+}
+
+extension Synth {
+    /// Smooth 0 -> 1 between t0 and t1 (half-cosine).
+    static func ease(_ t: Double, _ t0: Double, _ t1: Double) -> Double {
+        if t <= t0 { return 0 }
+        if t >= t1 { return 1 }
+        return 0.5 - 0.5 * cos(Double.pi * (t - t0) / (t1 - t0))
+    }
+
+    static func lerp(_ a: SIMD3<Double>, _ b: SIMD3<Double>, _ u: Double) -> SIMD3<Double> { a + (b - a) * u }
+
+    /// Mono microphone signal with both SonarField pilots (direct path) plus one reflector following `hand(t)`.
+    /// The echo of each pilot travels speaker -> hand -> mic, so its phase and Doppler follow the true path length.
+    /// `driftHz` shifts both received pilots (a speaker/mic clock mismatch). `reflect` limits which pilots echo.
+    static func field(duration: Double, hand: (Double) -> SIMD3<Double>, reflectionDb: Double = -25,
+                      pilotAmplitude: Double = 0.0158, driftHz: Double = 0, reflect: Set<SpeakerSide> = [.left, .right],
+                      noise: Float = 0.00003, _ rng: inout SeededRNG) -> [Float] {
+        let n = Int(duration * sr)
+        let fL = SonarFieldConfig.defaultLeftPilotHz + driftHz, fR = SonarFieldConfig.defaultRightPilotHz + driftHz
+        let echo = pilotAmplitude * pow(10, reflectionDb / 20)
+        var x = Synth.noise(n, &rng, amplitude: noise)
+        let c = 343.0
+        for i in 0..<n {
+            let t = Double(i) / sr
+            let (pl, pr) = FieldGeometry.paths(hand(t))
+            var v = pilotAmplitude * (cos(2 * .pi * fL * t + 0.3) + cos(2 * .pi * fR * t + 1.1))
+            if reflect.contains(.left) { v += echo * cos(2 * .pi * fL * (t - pl / c) + 0.7) }
+            if reflect.contains(.right) { v += echo * cos(2 * .pi * fR * (t - pr / c) + 2.0) }
+            x[i] += Float(v)
+        }
+        return x
+    }
+
+    /// Friction noise with its ultrasonic tail removed (real fingertip friction carries little energy at 19-21 kHz).
+    static func quietRub(duration: Double, levelDb: Double = -34, _ rng: inout SeededRNG) -> [Float] {
+        let lp = BiquadFilter.lowpass(cutoff: 11_000, sampleRate: sr)
+        return filter(rub(duration: duration, levelDb: levelDb, &rng), lp + lp + lp + lp)
+    }
+}
