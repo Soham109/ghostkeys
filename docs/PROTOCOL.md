@@ -187,8 +187,12 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "calibration", "phase": "capturing", "zone": "left-palm", "count": 7, "target": 20 }
 { "type": "calibration", "phase": "negatives", "secondsLeft": 42 }
 { "type": "calibration", "phase": "done", "accuracy": { "left-palm": 0.97 }, "overall": 0.95, "confusion": [[...]], "labels": ["..."],
+  "peaks": { "left-palm": { "p10": 0.021, "p50": 0.048, "p90": 0.11 } },
   "recommendation": { "keep": ["left-palm"], "drop": { "lid": "recognised 56% of the time (needs 80%)" },
                       "merge": [["left-grille", "left-edge"]], "expectedAccuracy": { "left-palm": 0.97 } } }
+  // peaks (also in "done"): { "left-palm": { "p10": 0.021, "p50": 0.048, "p90": 0.11 } }: per zone, the 10th / 50th /
+  // 90th percentile of the calibration taps' peak acceleration in g (how hard this user taps there; the gentlest
+  // zone's p10 sets the learned onset floor). Empty object for a model trained before this existed.
   // recommendation: zones to keep, zones to disable (with a plain reason), pairs that are mostly confused with each
   // other (bind the same action to both instead of dropping), expected accuracy of the kept zones.
 { "type": "calibration", "phase": "recommendation_applied", "disabled": ["lid"], "keep": ["left-palm"],

@@ -496,7 +496,8 @@ final class Daemon: @unchecked Sendable {
                 self.pendingRecommendation = rec
                 self.server.broadcast(["type": "calibration", "phase": "done", "accuracy": report.accuracy,
                                        "overall": report.overall, "confusion": report.confusion, "labels": report.labels,
-                                       "recommendation": Self.recommendationJSON(rec)])
+                                       "recommendation": Self.recommendationJSON(rec),
+                                       "peaks": Self.peaksJSON(model)])
                 self.server.broadcast(self.status())
                 Log.info("calibration done: overall accuracy \(report.overall), labels \(report.labels)")
             }
@@ -813,6 +814,15 @@ final class Daemon: @unchecked Sendable {
     }
 
     private var disabledZones: Set<String> { Set(config.zones.filter { !$0.enabled }.map(\.id)) }
+
+    /// Per zone p10 / p50 / p90 of the calibration taps' peak acceleration, in g (empty for older models).
+    static func peaksJSON(_ model: ZoneModel) -> [String: Any] {
+        (model.peakQuantiles ?? [:]).reduce(into: [String: Any]()) { out, kv in
+            guard kv.value.count >= 3 else { return }
+            let r = { (v: Double) in (v * 10000).rounded() / 10000 }
+            out[kv.key] = ["p10": r(kv.value[0]), "p50": r(kv.value[1]), "p90": r(kv.value[2])]
+        }
+    }
 
     static func recommendationJSON(_ r: ZoneRecommendation) -> [String: Any] {
         ["keep": r.keep, "drop": r.drop, "merge": r.merge,
