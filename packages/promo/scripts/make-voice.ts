@@ -1,8 +1,7 @@
 // Voiceover: ElevenLabs when a key is available (ELEVENLABS_API_KEY or .env), cached by input hash;
 // otherwise the best local macOS voice (Premium/Enhanced English if installed, else Samantha).
 // Each line is processed (high-pass, gentle compression, subtle room), placed on the beat grid,
-// and a ducked mix (sound design side-chained under the voice) is written for the VO cut.
-// Outputs: public/vo-film.wav, public/mix-film-vo.wav, public/vo-lines.json. Run after make-audio.ts.
+// Outputs: public/vo-film.wav (the placed voice stem) and public/vo-lines.json. scripts/mix.ts does the mix.
 import fs from "node:fs";
 import path from "node:path";
 import { execFileSync } from "node:child_process";
@@ -72,15 +71,6 @@ const inputs = placed.flatMap((p) => ["-i", p.file]);
 const delays = placed.map((p, i) => `[${i}:a]adelay=${Math.round((p.f / FPS) * 1000)}:all=1[v${i}]`).join(";");
 const mixIn = placed.map((_, i) => `[v${i}]`).join("");
 ff(...inputs, "-filter_complex", `${delays};${mixIn}amix=inputs=${placed.length}:normalize=0,apad,atrim=0:${total},pan=stereo|c0=c0|c1=c0[out]`, "-map", "[out]", "-ar", "44100", vo);
-
-// duck the sound design under the voice (side-chain), then sum
-const sfx = path.join(root, "public/sfx-film.wav");
-const mix = path.join(root, "public/mix-film-vo.wav");
-ff(
-  "-i", sfx, "-i", vo, "-filter_complex",
-  "[1:a]asplit=2[sc][v];[0:a]volume=0.8[bed];[bed][sc]sidechaincompress=threshold=0.02:ratio=5:attack=25:release=420:makeup=1[duck];[duck][v]amix=inputs=2:normalize=0:weights=1 1,alimiter=limit=0.9[out]",
-  "-map", "[out]", "-ar", "44100", mix
-);
 
 fs.writeFileSync(
   path.join(root, "public/vo-lines.json"),

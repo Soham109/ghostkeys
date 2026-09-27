@@ -72,22 +72,22 @@ const slide = (f0: number, n: number): Tap[] =>
   Array.from({ length: n }, (_, i) => ({ f: f0 + i * 5, zone: "grilleR" as ZoneId, action: "Brightness", gesture: "Slide", quiet: i > 0, x: 13.75, z: -8.2 + (i / (n - 1)) * 7.4, s: 0.35 }));
 
 export const FILM_TAPS: Tap[] = [
-  { f: 315, zone: "palmL", action: "Volume +6", gesture: "Tap" },
+  { f: 312, zone: "palmL", action: "Volume +6", gesture: "Tap" },
   { f: 419, zone: "grilleR", action: "Mute", gesture: "Knuckle" },
   { f: 463, zone: "grilleR", action: "Mute", gesture: "Knuckle", quiet: true },
-  { f: 528, zone: "grilleR", action: "Next track", gesture: "Double tap" },
-  { f: 536, zone: "grilleR", action: "Next track", gesture: "Double tap", quiet: true },
-  ...slide(577, 8),
+  { f: 527, zone: "grilleR", action: "Next track", gesture: "Double tap" },
+  { f: 535, zone: "grilleR", action: "Next track", gesture: "Double tap", quiet: true },
+  ...slide(572, 8),
   // seen from inside
-  { f: 680, zone: "palmL", action: "Volume +6" },
-  { f: 720, zone: "grilleR", action: "Next track" },
-  { f: 750, zone: "top", action: "Paste values" },
-  { f: 896, zone: "sensor", action: "Do not disturb", gesture: "Cover" },
-  { f: 955, zone: "lid", action: "Show desktop", gesture: "Nudge" },
+  { f: 742, zone: "palmL", action: "Volume +6" },
+  { f: 757, zone: "grilleR", action: "Next track" },
+  { f: 771, zone: "top", action: "Paste values" },
+  { f: 884, zone: "sensor", action: "Do not disturb", gesture: "Cover" },
+  { f: 948, zone: "lid", action: "Show desktop", gesture: "Nudge" },
   { f: 1032, zone: "air", action: "Volume", gesture: "Pinch and dial" },
-  { f: 1098, zone: "air", action: "Next desktop", gesture: "Swipe" },
-  { f: 1170, zone: "sonar", action: "Volume", gesture: "Hover" },
-  { f: 1695, zone: "palmR", action: "Ready", gesture: "Tap" },
+  { f: 1092, zone: "air", action: "Next desktop", gesture: "Swipe" },
+  { f: 1184, zone: "sonar", action: "Volume", gesture: "Hover" },
+  { f: 1692, zone: "palmR", action: "Ready", gesture: "Tap" },
 ];
 
 export const CALIB_START = 790;
