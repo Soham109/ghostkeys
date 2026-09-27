@@ -124,7 +124,7 @@ export function AirGestureScene({ source, screen, ink, signal, dark }: Props) {
         vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }`,
         fragmentShader: `uniform vec3 uColor; uniform float uK; uniform float uA; varying vec2 vUv;
           void main(){ float d = length(vUv - 0.5) * 2.0; float r = 0.18 + uK * 0.8;
-            float a = exp(-pow((d - r) / 0.022, 2.0)) + exp(-d * d * 60.0) * (1.0 - uK) * 0.6;
+            float a = exp(-((d - r) / 0.022) * ((d - r) / 0.022)) + exp(-d * d * 60.0) * (1.0 - uK) * 0.6;
             gl_FragColor = vec4(uColor * 1.6, a * uA); }`,
         transparent: true,
         depthWrite: false,

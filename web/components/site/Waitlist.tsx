@@ -57,7 +57,7 @@ export function Waitlist({ compact = false }: { compact?: boolean }) {
         </button>
       </div>
       <p id={`${id}-msg`} role="status" className="min-h-[20px] text-[13px] font-light" style={{ color: status === "invalid" ? "var(--signal)" : "var(--ink-3)" }}>
-        {status === "saved" && "You're on the list in this browser. Nothing was sent anywhere yet."}
+        {status === "saved" && "Saved in this browser only. Nothing was sent."}
         {status === "invalid" && "Enter a full email address, like you@example.com."}
         {status === "idle" && (compact ? "" : "Stored only in this browser until signups open.")}
       </p>

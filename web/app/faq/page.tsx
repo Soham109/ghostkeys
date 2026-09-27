@@ -6,6 +6,7 @@ import { faqItems } from "@/lib/guide";
 export const metadata: Metadata = {
   title: "FAQ | Ghostkeys",
   description: "Typing, the internet, battery, calls, sleep, permissions and more.",
+  alternates: { canonical: "/faq/" },
 };
 
 export default function FaqPage() {

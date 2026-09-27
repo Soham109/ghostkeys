@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import gsap from "gsap";
 import { SplitText } from "gsap/SplitText";
+import { ScrollTrigger } from "gsap/ScrollTrigger";
 import { useTier } from "@/lib/device";
 import { bus } from "@/lib/stage";
 import { scroller } from "@/lib/scroll";
@@ -203,7 +204,7 @@ export function Experience() {
         {stills && <StillStage />}
       </div>
       <FadingToggles />
-      <main className="relative z-10">
+      <main id="main" tabIndex={-1} className="relative z-10 outline-none">
         <Intro />
         {CHAPTERS.map((c, i) => (
           <Chapter key={c.id} def={c} index={i + 2} />
@@ -231,25 +232,28 @@ function FadingToggles() {
   );
 }
 
-function useSplitLines(el: HTMLElement | null, cb: (lines: HTMLElement[], line: HTMLElement) => void, deps: unknown[] = []) {
+function useSplitLines(el: HTMLElement | null, cb: (lines: HTMLElement[], line: HTMLElement) => void | (() => void), deps: unknown[] = []) {
   useEffect(() => {
     if (!el) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches || new URLSearchParams(location.search).has("reduced");
     let alive = true;
     let ctx: gsap.Context | null = null;
     const splits: SplitText[] = [];
+    const cleanups: (() => void)[] = [];
     document.fonts.ready.then(() => {
       if (!alive || reduced) return;
       ctx = gsap.context(() => {
         el.querySelectorAll<HTMLElement>("[data-line]").forEach((line) => {
           const s = SplitText.create(line, { type: "lines", mask: "lines", linesClass: "split-line" });
           splits.push(s);
-          cb(s.lines as HTMLElement[], line);
+          const done = cb(s.lines as HTMLElement[], line);
+          if (done) cleanups.push(done);
         });
       }, el);
     });
     return () => {
       alive = false;
+      cleanups.forEach((f) => f());
       ctx?.revert();
       splits.forEach((s) => s.revert());
     };
@@ -270,7 +274,20 @@ function Intro() {
       gsap.fromTo(
         block.current,
         { autoAlpha: 1, y: 0 },
-        { autoAlpha: 0, y: -48, ease: "power1.in", immediateRender: false, scrollTrigger: { trigger: el, start: "top+=18% top", end: "top+=62% top", scrub: 0.6 } },
+        {
+          autoAlpha: 0,
+          y: -48,
+          ease: "power1.in",
+          immediateRender: false,
+          // phones: the laptop rises under the block sooner, so it is gone before the button can sit on the display
+          scrollTrigger: {
+            trigger: el,
+            start: () => (window.innerWidth < 768 ? "top top" : "top+=18% top"),
+            end: () => (window.innerWidth < 768 ? "top+=17% top" : "top+=62% top"),
+            scrub: 0.6,
+            invalidateOnRefresh: true,
+          },
+        },
       );
     }, el);
     // reduced motion (no split, no entrance): show the headline as soon as fonts settle
@@ -320,20 +337,36 @@ function Chapter({ def, index }: { def: ChapterDef; index: number }) {
     reducedRef.current = window.matchMedia("(prefers-reduced-motion: reduce)").matches || new URLSearchParams(location.search).has("reduced");
   }, []);
 
-  // each beat's lines rise out of their masks inside the chapter's scrubbed range, then rise away
+  // Each beat's lines rise out of their masks when the chapter's progress enters the beat, then rise away when it
+  // leaves. Triggered, not scrubbed: wherever the scroll comes to rest, a headline is fully in or fully out, never
+  // caught half-revealed.
   useSplitLines(el, (lines, line) => {
     const b = def.beats[Number(line.dataset.beat)];
-    // fully in before the first beat's rest point, fully out only after the last one: text never sits half-revealed where the scroll snaps
-    const enter = b.from === 0 ? 0 : b.from + 0.005;
-    const inDur = 0.055;
-    const exit = b.to === 1 ? 0.955 : b.to - 0.05;
-    const outDur = 0.04;
-    const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: { trigger: el, start: "top top", end: "bottom bottom", scrub: 1 } });
-    tl.fromTo(lines, { yPercent: 118 }, { yPercent: 0, stagger: 0.01, duration: inDur, ease: "power3.out" }, enter)
-      .to(lines, { yPercent: -118, stagger: 0.008, duration: outDur, ease: "power2.in" }, exit)
-      .set({}, {}, 1);
+    const enter = b.from === 0 ? 0.004 : b.from + 0.02;
+    const exit = b.to === 1 ? 0.975 : b.to - 0.03;
     const em = line.querySelectorAll("em");
-    if (em.length) tl.fromTo(em, { filter: "blur(8px)" }, { filter: "blur(0px)", duration: inDur }, enter + 0.01);
+    gsap.set(lines, { yPercent: 118 });
+    if (em.length) gsap.set(em, { filter: "blur(8px)" });
+    let state = -1; // -1 below the beat, 0 showing, 1 past it
+    const tick = () => {
+      const p = bus.chapters[def.id] ?? 0;
+      const next = p < enter ? -1 : p > exit ? 1 : 0;
+      if (next === state) return;
+      const from = state;
+      state = next;
+      gsap.killTweensOf(lines);
+      if (next === 0) {
+        gsap.fromTo(lines, { yPercent: from === 1 ? -118 : 118 }, { yPercent: 0, duration: 1.0, stagger: 0.07, ease: "expo.out" });
+        if (em.length) gsap.fromTo(em, { filter: "blur(8px)" }, { filter: "blur(0px)", duration: 0.9, delay: 0.1, ease: "expo.out", overwrite: true });
+      } else if (from === 0) {
+        gsap.to(lines, { yPercent: next === 1 ? -118 : 118, duration: 0.45, stagger: 0.04, ease: "power2.in" });
+      } else {
+        // jumped straight across the beat: stay hidden instead of sweeping through
+        gsap.set(lines, { yPercent: next === 1 ? -118 : 118 });
+      }
+    };
+    gsap.ticker.add(tick);
+    return () => gsap.ticker.remove(tick);
   });
 
   // captions and tags follow progress, written straight to the DOM (no React state while scrolling)
@@ -351,9 +384,11 @@ function Chapter({ def, index }: { def: ChapterDef; index: number }) {
         if (capRef.current) capRef.current.textContent = steps.length ? `${String(i + 1).padStart(2, "0")} / ${String(steps.length).padStart(2, "0")}   ${steps[i]}` : "";
         if (tagRef.current) tagRef.current.textContent = beat.tag ?? "";
       }
-      if (reducedRef.current)
-        el?.querySelectorAll<HTMLElement>("[data-beat]").forEach((h) => (h.style.opacity = Number(h.dataset.beat) === def.beats.indexOf(beat) ? "1" : "0"));
       const o = String(Math.max(0, Math.min(1, Math.min(p * 20, (1 - p) * 20))));
+      // reduced motion: the headline shows only while the chapter is pinned, together with its scrim, so it never
+      // slides in over the previous chapter's bright still
+      if (reducedRef.current)
+        el?.querySelectorAll<HTMLElement>("[data-beat]").forEach((h) => (h.style.opacity = Number(h.dataset.beat) === def.beats.indexOf(beat) ? o : "0"));
       el?.querySelectorAll<HTMLElement>("[data-chrome]").forEach((c) => (c.style.opacity = o));
     };
     gsap.ticker.add(tick);
@@ -389,13 +424,15 @@ function Finale() {
   const [el, setEl] = useState<HTMLElement | null>(null);
   useEffect(() => setEl(ref.current), []);
   useSplitLines(el, (lines) => {
-    const tl = gsap.timeline({ scrollTrigger: { trigger: el, start: "top 75%", end: "top top", scrub: 1 } });
-    tl.fromTo(lines, { yPercent: 118 }, { yPercent: 0, stagger: 0.08, ease: "power3.out" }).fromTo(
+    // triggered, not scrubbed, so the closing line is never left half-revealed; it plays back out on the way up
+    const tl = gsap.timeline({ paused: true });
+    tl.fromTo(lines, { yPercent: 118 }, { yPercent: 0, duration: 1.0, stagger: 0.07, ease: "expo.out" }).fromTo(
       el!.querySelectorAll("[data-fade]"),
       { autoAlpha: 0, y: 12 },
-      { autoAlpha: 1, y: 0, stagger: 0.05 },
-      0.35,
+      { autoAlpha: 1, y: 0, duration: 0.7, stagger: 0.05, ease: "expo.out" },
+      0.25,
     );
+    ScrollTrigger.create({ trigger: el, start: "top 40%", onEnter: () => tl.timeScale(1).play(), onLeaveBack: () => tl.timeScale(1.6).reverse() });
   });
   const pro = PRICING.tiers.find((t) => t.id === "pro");
   return (

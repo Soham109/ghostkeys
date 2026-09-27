@@ -100,7 +100,8 @@ varying float vHot;
 void main() {
   vec3 n = normalize(vN);
   vec3 v = normalize(vV);
-  float ndv = abs(dot(n, v));
+  // clamped: pow() of a negative base is NaN on Metal, and bloom spreads one NaN pixel over the whole frame
+  float ndv = clamp(abs(dot(n, v)), 0.0, 1.0);
   // crisp rim at the silhouette, nearly clear where the surface faces the camera
   float rim = pow(1.0 - ndv, 3.0);
   // a soft key from above left gives the volume its form, like light caught in glass

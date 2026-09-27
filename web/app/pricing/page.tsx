@@ -7,6 +7,7 @@ import { SubFooter } from "@/components/site/SubFooter";
 export const metadata: Metadata = {
   title: "Pricing | Ghostkeys",
   description: "Free forever for the basics. Pro is a one-time purchase. Teams is per seat, per year.",
+  alternates: { canonical: "/pricing/" },
 };
 
 export default function PricingPage() {

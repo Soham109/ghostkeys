@@ -109,6 +109,12 @@ html.lenis body {
   border-radius: 2px;
 }
 
+/* the headline scrims reach past the viewport edge on phones; clip them so the page never scrolls sideways
+   (clip, not hidden: it makes no scroll container, so the sticky chapters keep working) */
+main {
+  overflow-x: clip;
+}
+
 .page-x {
   padding-inline: var(--page-x);
 }
@@ -264,6 +270,20 @@ html.lenis body {
 .input-line:focus {
   border-color: var(--ink-3);
   outline: none;
+}
+.input-line:focus-visible {
+  outline: 1px solid var(--ink);
+  outline-offset: 3px;
+}
+/* 16px on phones: anything smaller makes iOS Safari zoom the page when the field is focused */
+@media (max-width: 767px) {
+  .input-line {
+    font-size: 16px;
+  }
+}
+/* the page must not scroll behind an open sheet (Lenis is stopped too, see GetSheet) */
+html:has(dialog[open]) {
+  overflow: hidden;
 }
 
 @keyframes acc-down {
@@ -437,7 +457,18 @@ html.lenis body {
 /* light theme: a bright scrim over the dark display reads as fog, so keep it faint and tight */
 [data-theme="light"] .scrim {
   width: min(62vw, 900px);
-  background: radial-gradient(closest-side, color-mix(in oklab, var(--bg) 55%, transparent) 0%, color-mix(in oklab, var(--bg) 25%, transparent) 60%, transparent 100%);
+  background: radial-gradient(closest-side, color-mix(in oklab, var(--bg) 74%, transparent) 0%, color-mix(in oklab, var(--bg) 48%, transparent) 55%, color-mix(in oklab, var(--bg) 14%, transparent) 82%, transparent 100%);
+}
+/* phones, light theme: the headline spans most of the width and lands on the black display, so the light-well has
+   to cover the whole line and be firm enough to read dark ink through */
+@media (max-width: 767px) {
+  [data-theme="light"] .scrim {
+    left: -14vw;
+    width: 128vw;
+    top: -5svh;
+    height: calc(100% + 10svh);
+    background: radial-gradient(closest-side, color-mix(in oklab, var(--bg) 88%, transparent) 0%, color-mix(in oklab, var(--bg) 78%, transparent) 55%, color-mix(in oklab, var(--bg) 30%, transparent) 82%, transparent 100%);
+  }
 }
 
 /* Hero entrance guard: hidden only while JS is running and about to reveal it; a timed failsafe shows it regardless. */

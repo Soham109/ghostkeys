@@ -7,6 +7,8 @@ export const MAX_RIPPLES = 8;
  * rippleBand returns the ring intensity at p; rippleFlash the bright core at impact.
  */
 export const RIPPLE_GLSL = /* glsl */ `
+// x * x, never pow(x, 2.0): pow of a negative base is undefined (NaN on Metal)
+float gkSq(float x) { return x * x; }
 uniform vec4 uRip[${MAX_RIPPLES}];
 uniform float uTime;
 
@@ -20,7 +22,7 @@ float rippleBand(vec2 p, float width, float speed) {
     float d = distance(p, r.xy);
     float fade = 1.0 - age / 2.4;
     fade *= fade;
-    acc += exp(-pow((d - rad) / width, 2.0)) * fade * r.w;
+    acc += exp(-gkSq((d - rad) / width)) * fade * r.w;
   }
   return acc;
 }
@@ -37,7 +39,7 @@ float touchRing(vec2 p, float width) {
     float rad = 0.03 + (1.0 - pow(1.0 - k, 3.0)) * 0.3 * (0.7 + 0.3 * r.w);
     float d = distance(p, r.xy);
     float fade = (1.0 - k) * (1.0 - k);
-    acc += exp(-pow((d - rad) / width, 2.0)) * fade * min(r.w, 1.2);
+    acc += exp(-gkSq((d - rad) / width)) * fade * min(r.w, 1.2);
   }
   return acc;
 }

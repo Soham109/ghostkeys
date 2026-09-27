@@ -13,7 +13,7 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: { params: Promise<{ slug: string }> }): Promise<Metadata> {
   const { slug } = await params;
   const d = guideDocs().find((x) => x.slug === slug);
-  return d ? { title: `${d.title} | Ghostkeys guide`, description: d.description } : {};
+  return d ? { title: `${d.title} | Ghostkeys guide`, description: d.description, alternates: { canonical: `/guide/${d.slug}/` } } : {};
 }
 
 export default async function GuidePage({ params }: { params: Promise<{ slug: string }> }) {

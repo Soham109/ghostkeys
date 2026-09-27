@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 import { GetSheet } from "@/components/site/GetSheet";
+import { SITE_ORIGIN } from "@/lib/site";
 
 /** Switzer (Fontshare, ITF Free Font License): 200 for display, 300 italic for the one accent word, 300 to 500 for text. */
 const text = localFont({
@@ -26,6 +27,7 @@ const mono = localFont({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(SITE_ORIGIN),
   title: "Ghostkeys: your MacBook has more buttons",
   description:
     "Ghostkeys turns the palm rests, speaker grilles, edges and lid of your MacBook into buttons you program, using the motion sensor already inside. On-device, no extra hardware.",
@@ -34,7 +36,9 @@ export const metadata: Metadata = {
     title: "Ghostkeys",
     description: "The blank space is the interface. Tap your MacBook's palm rests, grilles, edges and lid to run anything.",
     type: "website",
+    images: [{ url: "/og.jpg", width: 1200, height: 630, alt: "Ghostkeys: a MacBook whose palm rests, grilles, edges and lid are buttons." }],
   },
+  twitter: { card: "summary_large_image", images: ["/og.jpg"] },
 };
 
 export const viewport: Viewport = {

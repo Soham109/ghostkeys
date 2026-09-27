@@ -10,6 +10,66 @@ Newest round first.
 
 ---
 
+## Round 5 fixes: 2026-09-27 01:50 local (builder pass on `web/`)
+
+What changed, in the order of the Round 5 list. `pnpm build` passes, `tsc --noEmit` is clean, 0 console errors at 1440 and 390 in both themes with the new security headers applied.
+
+### 1. Knock-beat strobe: fixed at the cause
+- **Cause:** the sound-wave shells in `components/three/air/SoundScene.tsx` computed `pow(vRim, uK)`, where `vRim = 1 - abs(dot(n, v))`. Rounding pushes `abs(dot)` a hair past 1, so `vRim` goes slightly negative, and `pow` of a negative number is NaN on Metal. One NaN pixel in the HDR buffer spreads through the bloom blur chain and the tone mapper turns the whole frame black. The shells only exist for about a second after each knock, which is why it strobed on the beat and while parked (the parked knock repeats every 2.6 s).
+- **Proof:** patching only that one expression in the built bundle removed every black frame before any other change.
+- **Fix:** clamp `vRim` to 0..1 and guard the `pow`. Same guard added to the ghost hand rim (`GhostHand.tsx`, `ndv` clamped). Every `pow(x, 2.0)` on a value that can be negative (tap ripples in `glsl.ts`, `Internals.tsx`, `AirGestureScene.tsx`) is now `x * x`.
+- The knock itself is unchanged: soft rim-lit rings on the palm rest, attack 70 ms, alpha at most 0.32, no full-screen change.
+
+Mean frame brightness (0 to 255), CDP screencast of every compositor frame, headless Chromium on Metal, 1440x900:
+
+| run | before | after |
+|---|---|---|
+| light, parked y 4,550, 2 s | 16.2 to 155.3, 7 jumps over 40 levels, largest step 139 | 152.8 to 153.3, 0 jumps, largest step 0.1 |
+| light, parked y 4,650, 2 s | 15.5 to 154.5, 7 jumps, step 139 | 152.6, 0 jumps, step 0 |
+| light, scroll y 4,400 to 5,000 (4,300 to 5,100 after) | 16.7 to 156.9, 44 jumps, step 139.5 | 140.0 to 154.3, 0 jumps, step 2.0 |
+| dark, parked y 4,550, 2 s | 4.6 to 31.2 (black frames), step 26.5 | 32.7 to 33.0, step 0.1 |
+| dark, scroll through the beat | 5.1 to 35.4, step 28.6 | 33.0 to 39.9, step 1.1 |
+| 1920x1080 light, parked 5,500 / scroll 5,300 to 6,000 | (Round 5: 161 to 12, 8 times) | 151.4 to 151.7 / 150 to 153.2, step 2.1 |
+| whole page 0 to 13,000, both themes | | 0 one-frame spikes; largest step 27 (light) and 29 (dark), the planned chapter cuts |
+
+Scripts: `scratchpad/r5fix/strobe.mjs`, `strobe-full.mjs`.
+
+### 2. Duplicate files: quarantined, not deleted
+- The 13 `content/guide/* 3.md`, 17 `screenshots/* 2.png`, 2 `screenshots/3d/* 2.png` and 23 `out/* 2` copies moved to `scratchpad/quarantine/web-guide-dupes/`. `web/.next` untouched.
+- `07-sound-mode 3.md` and `13-developers 3.md` are the **older** text (identical to `docs/guide/`). The `web/content` originals are newer: they describe sonar as an always-on switch with no time limit (tones renewed every second, the Headphones / sleep / pause / quit list, orange dot stays on while sonar is on), and in the developer page sonar is a setting (`settings.sonar.enabled`, `sonar_session_stop` turns it off) instead of a session with `sonar_session_start`.
+- **Trap found:** the `prebuild` step (`scripts/sync-content.mjs`) wiped `content/guide` and recopied `docs/guide`, so any build would have replaced the newer sonar text with the older one. It now never deletes, never overwrites a web copy newer than the docs copy, and skips conflict copies. `lib/guide.ts` only accepts `NN-slug.md` names. `docs/guide/07` and `13` still hold the old text and need updating by whoever owns docs.
+
+### 3. Sideways overflow on phones
+- `main { overflow-x: clip }` (clip, not hidden, so sticky chapters still work). `scrollWidth` is 390 at every checked scroll position and on all subpages, both themes.
+
+### 4. Waitlist sheet
+- Copy: "The Mac download is not out yet." (Pro adds: "Pro opens with it, at $19 for the first 14 days.") Button "Save". Idle: "Kept in this browser only. Nothing is sent." Saved: "Saved in this browser only. Nothing was sent." Same saved line in the Windows waitlist.
+- Lenis stops while the sheet is open and restarts on close, and `html:has(dialog[open])` hides overflow: a 600px wheel over the open sheet now moves the page 0px (was 415).
+- Email field: 1px ink outline on `:focus-visible`, 16px text under 768px.
+
+### 5. Mobile light theme
+- Headlines over the black display: the light scrim on phones now covers the full headline width and is firmer (88% at the centre), with a shorter vertical reach so it hugs the text. Desktop light scrim raised from 55% to 74% at the centre, because "Every blank surface is a key." over the keyboard close-up at 1440 had the same problem.
+- Hero: on phones the headline block fades out over the first 17% of the intro (was 18% to 62%), so it is gone before the laptop rises under the Download button.
+
+### 6. Minor
+- Chapter, Try and finale headlines are now **triggered, not scrubbed**: when progress enters a beat the lines play in (1 s), when it leaves they play out. A sweep of 61 even positions at 1440 found 0 half-revealed lines. (With only the chapters changed, it still found 3 near the end of the page, in the Try and finale headlines, which were also scrubbed; both are triggered now.)
+- Reduced motion: a chapter headline only shows while its chapter is pinned, together with its scrim (opacity 0 at 600, 300 and 100px before the layers chapter, 0.92 just after).
+- Skip link: "Skip to content", goes to `#main`; focus lands on main and the next Tab is the hero Download.
+- Footer links `/compatibility/`.
+- Mobile theme switch already existed (the "AUTO" word in the pill cycles Auto, Light, Dark); it now has a small half-filled disc so it reads as a control. There is no separate mobile menu.
+
+### 7. Deploy hygiene
+- `web/vercel.json`: `/_next/static/*` public, 1 year, immutable (fonts are here too); `/hdr`, `/stills`, `/video`, `/textures`, `/audio`, `/gpu-benchmarks`, `og.jpg`, `noise.png` and the icons 1 day plus stale-while-revalidate; `nosniff`, `strict-origin-when-cross-origin`, `DENY`, and a CSP: `default-src 'self'`, scripts and styles `'self' 'unsafe-inline'` (the static export's inline scripts cannot carry nonces), `data:` and `blob:` for images, media, fetch and workers, `object-src 'none'`, `frame-ancestors 'none'`. Tested by serving `out/` with these exact headers: 3D, HDR lighting, fonts and GSAP all work and there are 0 console errors (no CSP violations). The home page has no video element, so video was not exercised beyond `media-src 'self'`.
+- `app/robots.ts`, `app/sitemap.ts` (19 URLs), `og:image` (`public/og.jpg`, 1200x630, the dark hero) plus Twitter card, `metadataBase`, and a canonical per page (home is `https://ghostkeys-nine.vercel.app/`).
+- **Where vercel.json must live:** the live site is deployed by running the Vercel CLI on a copy of `out/`, and the CLI only reads a `vercel.json` in the folder it deploys. A `postbuild` step now copies `web/vercel.json` into `out/`. Checked with a local `vercel build` (no deploy) on a copy of `out/`: all four header rules appear in `.vercel/output/config.json`, and `vercel.json` is not published as a file.
+
+### Not done / for the owner
+- `docs/guide/07-sound-mode.md` and `13-developers.md` are behind `web/content` (see 2).
+- The Windows waitlist button still says "Join the waitlist"; its note says the address stays in the browser.
+- In light theme the ghost hand is dark ink over the dark display and is hard to see on phones; unchanged.
+
+---
+
 ## Round 5: 2026-09-27 00:51 local (build of `web/` as of 00:51), plus the live deploy
 
 Same method, run at `nice -n 10`, checking the thermal log and load before every heavy step (load stayed between 3.4 and 7.8; there were no thermal warnings). New this round: snap regression with real mouse-wheel input both directions (`scratchpad/snap5.mjs`), a whole-page flicker scan that records every compositor frame through CDP screencast and scores one-frame flashes (`flicker.mjs`, `flicker.py`), a waitlist sheet test (`sheet.mjs`), a light-theme sweep at all 5 viewports, and a local vs live comparison against https://ghostkeys-nine.vercel.app (`live.mjs` plus `curl -I`). Shots: `scratchpad/rounds/r5/` (dark) and `rounds/r5light/` (light).

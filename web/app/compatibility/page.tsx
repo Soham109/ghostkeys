@@ -5,6 +5,7 @@ import { CompatTable, Head, WindowsWaitlist } from "@/components/site/Info";
 export const metadata: Metadata = {
   title: "Compatibility | Ghostkeys",
   description: "Which MacBooks Ghostkeys supports, what works on each, and the Windows waitlist.",
+  alternates: { canonical: "/compatibility/" },
 };
 
 export default function CompatibilityPage() {

@@ -47,9 +47,10 @@ function parse(file: string): GuideDoc {
   return { slug: slugOf(file), file, order: Number(meta.order ?? 99), title: meta.title ?? slugOf(file), description: meta.description ?? "", html, toc };
 }
 
+// only "NN-slug.md": conflict copies such as "05-actions 3.md" would otherwise become pages with a space in the URL
 let cache: GuideDoc[] | null = null;
 export function guideDocs(): GuideDoc[] {
-  if (!cache) cache = readdirSync(DIR).filter((f) => f.endsWith(".md")).map(parse).sort((a, b) => a.order - b.order);
+  if (!cache) cache = readdirSync(DIR).filter((f) => /^\d+-[\w-]+\.md$/.test(f)).map(parse).sort((a, b) => a.order - b.order);
   return cache;
 }
 

@@ -40,22 +40,43 @@ export function TryPanel() {
     let split: SplitText | null = null;
     let ctx: gsap.Context | null = null;
     let alive = true;
+    let stopTick: (() => void) | null = null;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     document.fonts.ready.then(() => {
       if (!alive || reduced) return;
       ctx = gsap.context(() => {
         const line = el.querySelector("[data-line]") as HTMLElement;
         split = SplitText.create(line, { type: "lines", mask: "lines", linesClass: "split-line" });
-        const tl = gsap.timeline({ defaults: { ease: "none" }, scrollTrigger: { trigger: el, start: "top top", end: "bottom bottom", scrub: 1 } });
-        tl.fromTo(split.lines, { yPercent: 115 }, { yPercent: 0, stagger: 0.05, duration: 0.15, ease: "power3.out" }, 0.02)
-          .fromTo(el.querySelectorAll("[data-fade]"), { autoAlpha: 0 }, { autoAlpha: 1, duration: 0.1 }, 0.1)
-          .to(split.lines, { yPercent: -115, duration: 0.12, ease: "power2.in" }, 0.88)
-          .to(el.querySelectorAll("[data-fade]"), { autoAlpha: 0, duration: 0.08 }, 0.88)
-          .set({}, {}, 1);
+        // triggered, not scrubbed: wherever the scroll rests, the headline is fully in or fully out
+        const lines = split.lines;
+        const fades = el.querySelectorAll("[data-fade]");
+        gsap.set(lines, { yPercent: 115 });
+        gsap.set(fades, { autoAlpha: 0 });
+        let state = -1;
+        const tick = () => {
+          const p = bus.chapters.try ?? 0;
+          const next = p < 0.02 ? -1 : p > 0.9 ? 1 : 0;
+          if (next === state) return;
+          const from = state;
+          state = next;
+          gsap.killTweensOf([lines, fades]);
+          if (next === 0) {
+            gsap.fromTo(lines, { yPercent: from === 1 ? -115 : 115 }, { yPercent: 0, duration: 1.0, stagger: 0.07, ease: "expo.out" });
+            gsap.to(fades, { autoAlpha: 1, duration: 0.6, delay: 0.2 });
+          } else {
+            const y = next === 1 ? -115 : 115;
+            if (from === 0) gsap.to(lines, { yPercent: y, duration: 0.45, stagger: 0.04, ease: "power2.in" });
+            else gsap.set(lines, { yPercent: y });
+            gsap.to(fades, { autoAlpha: 0, duration: 0.3 });
+          }
+        };
+        gsap.ticker.add(tick);
+        stopTick = () => gsap.ticker.remove(tick);
       }, el);
     });
     return () => {
       alive = false;
+      stopTick?.();
       ctx?.revert();
       split?.revert();
     };

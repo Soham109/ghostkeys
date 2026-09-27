@@ -4,6 +4,7 @@ import { SubPage } from "@/components/site/SubPage";
 export const metadata: Metadata = {
   title: "Privacy | Ghostkeys",
   description: "What Ghostkeys reads, what it never stores, and what it never does. Everything stays on your Mac.",
+  alternates: { canonical: "/privacy/" },
 };
 
 const COLS: { h: string; lines: string[]; detail: string }[] = [

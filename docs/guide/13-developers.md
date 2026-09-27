@@ -31,7 +31,7 @@ And you can send it things like:
 - `config_get` / `config_set`.
 - `test_action`: run an action immediately, without a bound gesture, useful for testing a binding you're building.
 - `request_permission`: ask the daemon to trigger the Accessibility prompt.
-- `sound_session_start` / `sound_session_stop`, `sonar_session_start` / `sonar_session_stop`, `air_session_start` / `air_session_stop`: open or close a microphone or camera session.
+- `sound_session_start` / `sound_session_stop`, `air_session_start` / `air_session_stop`: open or close a microphone or camera session. Sonar is a setting, not a session: it runs while `settings.sonar.enabled` is true; `sonar_session_stop` turns that setting off.
 - `feedback_missed` / `feedback_false`, `diagnostics_export`: the feedback loop described in `docs/PROTOCOL.md`.
 
 Config itself (zones, bindings, settings, including `settings.sound`, `settings.camera`, and `settings.sonar`) is also just JSON, saved at `~/Library/Application Support/Ghostkeys/daemon/config.json`; `docs/PROTOCOL.md` documents its exact shape, and the full table of action kinds and their fields.
