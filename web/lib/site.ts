@@ -1,9 +1,12 @@
 /**
- * Outbound links. Placeholders until the lead wires real ones:
- * Until they exist, DOWNLOAD_URL and BUY_URL open the waitlist sheet (components/site/GetSheet.tsx).
- * DOWNLOAD_URL -> the notarized .dmg, BUY_URL -> Lemon Squeezy checkout, SALES_URL -> a sales contact, SOURCE_URL -> the open-source detection core repo.
+ * Outbound links.
+ * DOWNLOAD_URL -> the GitHub release (real, opens in a new tab). Everything is free during the beta, so it is
+ * the actual download, not a placeholder.
+ * BUY_URL -> still opens the sheet (components/site/GetSheet.tsx), which now explains it is free during the
+ * beta and offers the same real download, since checkout does not exist yet.
+ * SALES_URL -> a sales contact, SOURCE_URL -> the open-source detection core repo.
  */
-export const DOWNLOAD_URL = "#get-mac";
+export const DOWNLOAD_URL = "https://github.com/Soham109/ghostkeys/releases/latest";
 export const BUY_URL = "#get-pro";
 export const SALES_URL = "/faq/";
 export const SOURCE_URL = "/privacy/";

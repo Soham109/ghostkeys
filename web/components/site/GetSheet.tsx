@@ -2,29 +2,18 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import { scroller } from "@/lib/scroll";
-
-const KEY = "gk-mac-waitlist";
+import { DOWNLOAD_URL } from "@/lib/site";
 
 /**
- * Until the notarized .dmg and checkout exist, "Download for Mac" and "Buy Pro" (links to #get-mac / #get-pro)
- * open this sheet instead of looping to /pricing/. There is no backend: the address stays in this browser only,
- * so the copy promises nothing (no "we'll email you", no "you're on the list").
+ * "Buy Pro" (links to #get-pro) opens this sheet instead of a checkout that does not exist yet.
+ * Everything is free during the beta, so the sheet says that plainly and hands over the real download.
  */
 export function GetSheet() {
   const dialog = useRef<HTMLDialogElement>(null!);
   const id = useId();
   const [kind, setKind] = useState<"mac" | "pro">("mac");
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "saved" | "invalid">("idle");
 
   useEffect(() => {
-    try {
-      const v = localStorage.getItem(KEY);
-      if (v) {
-        setEmail(JSON.parse(v).email ?? "");
-        setStatus("saved");
-      }
-    } catch {}
     const onClick = (e: MouseEvent) => {
       const a = (e.target as HTMLElement).closest('a[href^="#get-"]') as HTMLAnchorElement | null;
       if (!a) return;
@@ -45,15 +34,6 @@ export function GetSheet() {
     };
   }, []);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) return setStatus("invalid");
-    try {
-      localStorage.setItem(KEY, JSON.stringify({ email: email.trim(), want: kind, at: new Date().toISOString() }));
-    } catch {}
-    setStatus("saved");
-  };
-
   return (
     <dialog
       ref={dialog}
@@ -69,38 +49,13 @@ export function GetSheet() {
           </button>
         </div>
         <h2 id={`${id}-t`} className="display mt-8 text-[44px] leading-[1.02] text-ink">
-          Almost <em>ready.</em>
+          Free during <em>the beta.</em>
         </h2>
-        <p className="lede mt-5 max-w-[40ch] !text-[16px]">
-          The Mac download is not out yet.{kind === "pro" ? " Pro opens with it, at $19 for the first 14 days." : ""}
-        </p>
-        <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-3 sm:flex-row">
-          <label htmlFor={`${id}-e`} className="sr-only">
-            Email
-          </label>
-          <input
-            id={`${id}-e`}
-            type="email"
-            inputMode="email"
-            autoComplete="email"
-            placeholder="you@example.com"
-            value={email}
-            onChange={(e) => {
-              setEmail(e.target.value);
-              if (status !== "idle") setStatus("idle");
-            }}
-            aria-invalid={status === "invalid"}
-            className="input-line flex-1"
-          />
-          <button type="submit" className="btn-ink h-10 px-5 text-[14px]">
-            Save
-          </button>
-        </form>
-        <p role="status" className="mt-4 min-h-[20px] text-[13px] font-light" style={{ color: status === "invalid" ? "var(--signal)" : "var(--ink-3)" }}>
-          {status === "saved" && "Saved in this browser only. Nothing was sent."}
-          {status === "invalid" && "Enter a full email address, like you@example.com."}
-          {status === "idle" && "Kept in this browser only. Nothing is sent."}
-        </p>
+        <p className="lede mt-5 max-w-[40ch] !text-[16px]">Everything, Pro included. Prices apply at launch.</p>
+        <a href={DOWNLOAD_URL} target="_blank" rel="noopener" className="btn-ink mt-8 inline-flex h-10 px-5 text-[14px]">
+          Download
+        </a>
+        <p className="mt-4 text-[13px] font-light text-ink-3">macOS 14 or later, Apple silicon.</p>
       </div>
     </dialog>
   );

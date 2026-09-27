@@ -31,6 +31,7 @@ export function Pricing() {
         <br />
         Keep it.
       </h1>
+      <p className="label mt-8 !text-ink">Everything is free during the beta. Prices apply at launch.</p>
       {pro.launchPrice && (
         <p className="lede mt-10 max-w-[56ch]">
           <span className="label mr-3 !text-ink">Launch</span>
@@ -65,7 +66,7 @@ export function Pricing() {
               </ul>
               <div className="mt-10">
                 {t.id === "free" && (
-                  <a href={DOWNLOAD_URL} className="quiet-link text-[15px]">
+                  <a href={DOWNLOAD_URL} target="_blank" rel="noopener" className="quiet-link text-[15px]">
                     Download free
                   </a>
                 )}
