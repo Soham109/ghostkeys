@@ -42,13 +42,14 @@ export type Channels = {
 
 type Key = [ChapterId | string, number, Partial<Channels>];
 
-const HERO = { px: 4.4, py: 3.05, pz: 7.7, tx: -0.1, ty: 0.5, tz: -0.35, fov: 30, sx: 0.2, sy: 0.1 };
+/** The promo film's hero: 3/4 view, 32 degrees round, 22 degrees up, about 6 units out, sitting low and right of the copy. */
+const HERO = { px: 4.67, py: 3.96, pz: 7.17, tx: 0.0, ty: 0.3, tz: -0.3, fov: 30, sx: 0.17, sy: -0.07 };
 
 /** The whole landing. Local progress runs 0..1 inside each chapter. */
 const KEYS: Key[] = [
   // intro: hero three-quarter, text bottom left so the laptop sits upper right; a slow push as the hook scrolls away
   ["intro", 0, { ...HERO, bokeh: 0, xray: 0, lid: 108, tilt: 0, hush: 0, screen: 1, backlight: 0.9, zonesAll: 0, dolly: 1 }],
-  ["intro", 1, { px: 3.4, py: 2.9, pz: 6.0, tx: 0.0, ty: 0.35, tz: -0.25, fov: 30, sx: 0.12, sy: 0.0 }],
+  ["intro", 1, { px: 4.1, py: 3.6, pz: 6.4, tx: 0.0, ty: 0.3, tz: -0.25, fov: 30, sx: 0.15, sy: -0.05 }],
 
   // zones, step 1 (palm rests): steep three-quarter over the deck, the shell turns to glass so the tap can be seen
   // travelling to the motion sensor under the keyboard

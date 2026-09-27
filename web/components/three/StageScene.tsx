@@ -299,7 +299,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     let fovGoal = ch.fov + (narrow ? 6 : 0);
     let sxGoal = narrow ? 0 : ch.sx;
     const copyTop = loc.id === "zones" || loc.id === "air" || loc.id === "try";
-    let syGoal = narrow ? (copyTop ? -0.17 : 0.15) : ch.sy;
+    let syGoal = narrow ? (copyTop ? -0.17 : 0.11) : ch.sy;
 
     // ---------- cold open: macro glide over the left palm rest, first tap, whip back to the hero
     let lightUp = 1;

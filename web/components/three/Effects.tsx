@@ -87,7 +87,7 @@ export function Effects({ theme, quality, fx }: { theme: Theme; quality: "high" 
     return (
       // phones and low tiers: real multisampling on the scene buffer, SMAA after tone mapping for what is left
       <EffectComposer multisampling={4} stencilBuffer={false}>
-        <Bloom mipmapBlur intensity={dark ? 0.9 : 0.4} luminanceThreshold={dark ? 1.0 : 6} luminanceSmoothing={0.08} radius={0.62} />
+        <Bloom mipmapBlur intensity={dark ? 0.9 : 0.4} luminanceThreshold={dark ? 1.0 : 6} luminanceSmoothing={0.25} radius={0.62} />
         <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
         <primitive object={dissolve} />
         <SMAA />
@@ -98,7 +98,7 @@ export function Effects({ theme, quality, fx }: { theme: Theme; quality: "high" 
   return (
     <EffectComposer multisampling={0} stencilBuffer={false}>
       <DepthOfField ref={dof} focusDistance={6} focusRange={4} bokehScale={1.2} resolutionScale={0.5} />
-      <Bloom mipmapBlur intensity={dark ? 1.0 : 0.45} luminanceThreshold={dark ? 1.0 : 6} luminanceSmoothing={0.08} radius={0.66} levels={7} />
+      <Bloom mipmapBlur intensity={dark ? 1.0 : 0.45} luminanceThreshold={dark ? 1.0 : 6} luminanceSmoothing={0.25} radius={0.66} levels={7} />
       <ChromaticAberration offset={offset} radialModulation modulationOffset={0.4} />
       <ToneMapping mode={ToneMappingMode.ACES_FILMIC} />
       <primitive object={dissolve} />

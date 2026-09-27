@@ -57,11 +57,14 @@ export default function StageCanvas({ tier, active, onCreated }: { tier: Tier; a
       aria-hidden
     >
       <TickerLoop active={active} />
+      {/* Resolution only ever steps down, at most twice, after sustained slowness: every change resizes the canvas,
+          and a resize bouncing up and down mid-scroll reads as flicker. */}
       <PerformanceMonitor
-        bounds={() => [50, 58]}
-        onDecline={() => setDpr((d) => Math.max(high ? 1 : 1.25, +(d - 0.25).toFixed(2)))}
-        onIncline={() => setDpr((d) => Math.min(cap, +(d + 0.25).toFixed(2)))}
-        flipflops={4}
+        bounds={() => [44, 200]}
+        ms={400}
+        iterations={6}
+        onDecline={() => setDpr((d) => Math.max(high ? 1.25 : 1.25, +(d - 0.25).toFixed(2)))}
+        flipflops={2}
       >
         <StageScene theme={theme} quality={high ? "high" : "low"} particleSize={particleSize} reduced={tier.reducedMotion} />
       </PerformanceMonitor>

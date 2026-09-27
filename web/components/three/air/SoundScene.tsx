@@ -31,7 +31,7 @@ const KNUCKLE_AT = [0.18, 0.27];
 const TIP_AT = [0.74, 0.82];
 /** knuckle height over the palm rest through the step: two knocks, a long rest in contact (the beat centre), two fingertip taps */
 const KNOCK_H: [number, number][] = [[0, 0.3], [0.12, 0.3], [0.16, 0.11], [0.18, 0], [0.215, 0.1], [0.245, 0.1], [0.27, 0], [0.58, 0], [0.64, 0.24], [0.7, 0.2], [0.74, 0], [0.775, 0.11], [0.8, 0.11], [0.82, 0], [0.88, 0.24], [1, 0.3]];
-const REST0 = 0.31, REST1 = 0.56, AUTO = 1.9, AUTO_HIT = 0.34;
+const REST0 = 0.31, REST1 = 0.56, AUTO = 2.6, AUTO_HIT = 0.34;
 const CONTACTS = [...KNUCKLE_AT, ...TIP_AT];
 const HOT_KNUCKLE = [J.I_PIP, J.M_PIP, J.R_PIP];
 const HOT_TIP = [J.I_TIP];
@@ -62,7 +62,8 @@ uniform float uK;
 varying float vRim;
 varying float vH;
 void main() {
-  float a = pow(vRim, uK) * uA * smoothstep(0.0, 0.12, vH);
+  // fade the foot of the shell: where it meets the keycaps, the intersection line shimmers as it grows
+  float a = pow(vRim, uK) * uA * smoothstep(0.08, 0.35, vH);
   gl_FragColor = vec4(uColor, a);
 }`;
 
@@ -192,7 +193,8 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
   };
 
   const spawn = (kind: "knuckle" | "fingertip", x: number, z: number, t: number) => {
-    const delays = kind === "knuckle" ? [0, 0.045, 0.09, 0.135] : [0, 0.16];
+    // fewer, more widely spaced shells: tight thin shells racing outward strobe on screen
+    const delays = kind === "knuckle" ? [0, 0.12] : [0];
     for (const d of delays) {
       const s = shells.list[S.shell++ % SHELLS];
       s.born = t + d;
@@ -326,16 +328,20 @@ export function SoundScene({ source, screen, taps, ink, signal, dark }: Props) {
     // shells
     for (const s of shells.list) {
       const age = t - s.born;
-      const life = s.kind === 0 ? 0.6 : 1.3;
+      const life = s.kind === 0 ? 0.95 : 1.5;
       const live = age >= 0 && age < life;
       s.mesh.visible = live;
       if (!live) continue;
       const k = age / life;
-      const r = s.kind === 0 ? 0.04 + age * 2.2 : 0.06 + age * 0.95;
-      s.mesh.position.set(s.x, 0.002, s.z);
+      // eased growth, capped radius: fast at the knock, slowing as it fades (no racing lines, never over the copy)
+      const grow = 1 - Math.pow(1 - k, 2.2);
+      const r = s.kind === 0 ? 0.05 + grow * 0.62 : 0.07 + grow * 0.6;
+      s.mesh.position.set(s.x, 0.014, s.z);
       s.mesh.scale.set(r, r * (s.kind === 0 ? 0.85 : 0.7), r);
-      s.m.uniforms.uK.value = s.kind === 0 ? 9 : 2.4;
-      s.m.uniforms.uA.value = (1 - k) * (1 - k) * (s.kind === 0 ? 0.9 : 0.42) * w;
+      s.m.uniforms.uK.value = s.kind === 0 ? 5 : 2.4;
+      // short attack instead of appearing at full strength on the knock frame
+      const attack = THREE.MathUtils.smoothstep(age, 0, 0.07);
+      s.m.uniforms.uA.value = attack * (1 - k) * (1 - k) * (s.kind === 0 ? 0.32 : 0.22) * w;
     }
 
     // comb of harmonics rising from the grille

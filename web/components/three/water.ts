@@ -21,7 +21,10 @@ void main() {
   vec4 s = texture2D(heightmap, uv - vec2(0.0, cell.y));
   vec4 e = texture2D(heightmap, uv + vec2(cell.x, 0.0));
   vec4 w = texture2D(heightmap, uv - vec2(cell.x, 0.0));
+  float avg = (n.x + s.x + e.x + w.x) * 0.25;
   float next = ((n.x + s.x + e.x + w.x) * 0.5 - h.y) * uDamping;
+  // a little viscosity: the finest (one-cell) waves flip sign every step and read as flicker on the metal and keys
+  next = mix(next, avg, 0.18);
   for (int i = 0; i < ${MAX_IMPULSES}; i++) {
     vec4 imp = uImp[i];
     if (imp.w == 0.0) continue;

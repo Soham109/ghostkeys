@@ -24,7 +24,8 @@ function clampPosition(el: THREE.Object3D, camera: THREE.Camera, size: { width: 
   const x = Math.min(Math.max(p[0], s.x0), s.x1 - PILL_W);
   const y = Math.min(Math.max(p[1], s.y0 + PILL_H), s.y1);
   // never on a headline: park it out of view instead (it is short-lived; the screen HUD repeats it)
-  const hidden = !project(el, camera, size.width, size.height) || hitsCopy(x, y - PILL_H, x + PILL_W, y);
+  // sticky: once a pill would touch copy it stays hidden for its short life, so it never blinks at an edge
+  const hidden = parked.get(el.uuid) === true || !project(el, camera, size.width, size.height) || hitsCopy(x, y - PILL_H, x + PILL_W, y);
   parked.set(el.uuid, hidden);
   return [x, y];
 }

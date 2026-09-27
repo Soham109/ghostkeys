@@ -141,7 +141,8 @@ void main() {
   vec2 duv = vec2((c.x + uHalf.x) / (2.0 * uHalf.x), (c.z + uHalf.y) / (2.0 * uHalf.y));
   float h = texture2D(uHeight, duv).x;
   float ring = touchRing(c.xz, 0.05);
-  float lift = clamp(h * 0.05, -0.004, 0.01) + ring * 0.011 - vHi * 0.005;
+  // keys rise only with the smooth touch ring, not with the raw height field (whose small waves make keys shimmer)
+  float lift = ring * 0.008 - vHi * 0.005;
   csm_Position = position + vec3(0.0, lift, 0.0);
   vec4 lp = instanceMatrix * vec4(position, 1.0);
   vLegendUv = vec2((lp.x - uKb.x) / uKb.z, 1.0 - (lp.z - uKb.y) / uKb.w);
@@ -183,6 +184,10 @@ varying vec2 vP;
 float sdRoundRect(vec2 p, vec2 b, float r) { vec2 q = abs(p) - b + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 void main() {
   float mask = 1.0 - smoothstep(-0.02, 0.0, sdRoundRect(vP, uHalf, 0.12));
+  // the ring lives on the metal only: seen between keycaps it shimmers as the camera moves
+  vec2 kbC = vec2(${((KB.x0 + KB.x1) / 2).toFixed(4)}, ${((KB.z0 + KB.z1) / 2).toFixed(4)});
+  vec2 kbH = vec2(${((KB.x1 - KB.x0) / 2 + 0.02).toFixed(4)}, ${((KB.z1 - KB.z0) / 2 + 0.02).toFixed(4)});
+  mask *= smoothstep(-0.005, 0.02, sdRoundRect(vP - kbC, kbH, 0.03));
   float thin = touchRing(vP, 0.006);
   float soft = touchRing(vP, 0.03) * 0.22;
   float flash = rippleFlash(vP);
