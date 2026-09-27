@@ -124,7 +124,7 @@ function ShortcutRow({ title, desc, value, onChange }: { title: string; desc: st
   )
 }
 
-function AutoApps({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }): React.JSX.Element {
+export function AutoApps({ value, onChange }: { value: string[]; onChange: (v: string[]) => void }): React.JSX.Element {
   return (
     <div className="flex max-w-[300px] flex-wrap items-center justify-end gap-x-3 gap-y-1">
       {value.map((id) => (

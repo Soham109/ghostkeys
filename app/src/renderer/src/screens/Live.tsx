@@ -13,6 +13,7 @@ import { ZoneIndex } from '@/components/ui/controls'
 import { LaptopMap } from '@/components/laptop/LaptopMap'
 import { Seismograph } from '@/components/Seismograph'
 import { FeedbackActions } from '@/components/Feedback'
+import { useBlockedBindings } from '@/components/SessionNeed'
 
 export function useNow(ms: number): number {
   const [now, setNow] = React.useState(() => Date.now())
@@ -44,6 +45,7 @@ function statusLine(s: ReturnType<typeof useStore.getState>): string {
 }
 
 function Notices(): React.JSX.Element {
+  const blocked = useBlockedBindings()
   const hello = useStore((s) => s.hello)
   const status = useStore((s) => s.status)
   const navigate = useStore((s) => s.navigate)
@@ -59,6 +61,20 @@ function Notices(): React.JSX.Element {
           }
         >
           Ghostkeys paused itself because actions fired too fast in a row. Check your bindings, then resume.
+        </Notice>
+      )}
+      {blocked.length > 0 && (
+        <Notice
+          action={
+            <Button variant="text" className="text-ink underline decoration-ink-3 underline-offset-2" onClick={() => navigate('bindings')}>
+              Review
+            </Button>
+          }
+        >
+          {(() => {
+            const n = blocked.reduce((a, x) => a + x.bindings.length, 0)
+            return `${n} ${n === 1 ? 'gesture can\u2019t' : 'gestures can\u2019t'} fire right now: ${blocked.map((x) => x.name).join(' and ')} ${blocked.length === 1 ? 'is' : 'are'} off.`
+          })()}
         </Notice>
       )}
       {hello && !hello.permissions.accessibility && (

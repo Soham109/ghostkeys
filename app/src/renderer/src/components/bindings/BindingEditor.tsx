@@ -30,6 +30,7 @@ import { ApprovalNote } from './ApprovalBadge'
 import { findCommand } from './IntegrationFields'
 import { GesturePicker, demoFor } from '../gestures/GesturePicker'
 import { GestureDemo } from '../gestures/GestureDemo'
+import { SessionNote } from '../SessionNeed'
 
 export const PRO_GESTURES: GestureKind[] = ['sequence', 'rhythm', 'lid_nudge', 'cover', 'cover_hold', 'tilt_left', 'tilt_right', ...SOUND_GESTURES, ...SONAR_GESTURES, ...CAMERA_GESTURES]
 
@@ -192,6 +193,9 @@ export function BindingEditor({
               <GesturePicker value={b.gesture} onChange={setGesture} sound={!!sensors?.sound} camera={!!sensors?.camera} pro={PRO_GESTURES} zone={b.zone} />
               <p className="mt-1.5 text-[12px] text-ink-3">{GESTURE_HINT[b.gesture]}</p>
             </Row>
+            <div className="pl-[112px]">
+              <SessionNote gesture={b.gesture} />
+            </div>
             <div className="pl-[112px]">
               <GestureDemo
                 {...demoFor(b)}

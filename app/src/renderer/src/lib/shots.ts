@@ -404,6 +404,30 @@ const SHOTS: Record<string, () => Promise<void>> = {
       slider: { mode: 'relative', stepMm: 15, inverse: { kind: 'volume', step: -6 } }
     })
   },
+  'bindings-needs': async () => {
+    const d = useStore.getState().draft
+    const c = useStore.getState().config
+    const extra = [
+      { id: 'n1', enabled: true, gesture: 'finger_slide_up', zone: 'right-grille', zones: null, modifiers: [], app: '*', label: 'Brightness up', action: { kind: 'brightness', step: 1 } },
+      { id: 'n2', enabled: true, gesture: 'rub_left', zone: null, zones: null, modifiers: [], app: '*', label: 'Previous track', action: { kind: 'media', command: 'previous' } }
+    ] as Binding[]
+    if (d && c && !c.bindings.some((b) => b.id === 'n1')) {
+      const off = { ...c.settings, sonar: { enabled: false, sessionSeconds: 30, autoApps: [] }, sound: { enabled: false, sessionSeconds: 30, autoApps: [] } }
+      useStore.setState({ config: { ...c, settings: off, bindings: [...c.bindings, ...extra] }, draft: { ...d, settings: off, bindings: [...d.bindings, ...extra] } })
+    }
+    useStore.getState().navigate('bindings')
+    await sleep(500)
+  },
+  'binding-needs-editor': async () => {
+    await SHOTS['bindings-needs']!()
+    useStore.setState({ editingBinding: 'n1' })
+    await sleep(700)
+  },
+  'live-needs': async () => {
+    await SHOTS['bindings-needs']!()
+    useStore.getState().navigate('live')
+    await sleep(700)
+  },
   'demo-frames': async () => {
     useStore.setState({ debugFrames: true })
     await sleep(500)

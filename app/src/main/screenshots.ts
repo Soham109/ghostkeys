@@ -52,7 +52,10 @@ export const SHOTS = [
   'sensors-log',
   'settings-sonar',
   'sensors-sonar',
-  'bindings-hover'
+  'bindings-hover',
+  'bindings-needs',
+  'binding-needs-editor',
+  'live-needs'
 ] as const
 
 /** Shots captured mid-animation: grab the frame right away. */

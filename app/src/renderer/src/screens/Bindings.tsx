@@ -19,6 +19,7 @@ import { PresetLibrary } from '@/components/bindings/PresetLibrary'
 import { ApprovalTag } from '@/components/bindings/ApprovalBadge'
 import { PRO_KINDS } from '@/components/bindings/ActionForm'
 import { AppIcon } from '@/components/AppIcon'
+import { needFor } from '@/components/SessionNeed'
 
 function freshBinding(config: Config, seed?: Partial<Binding>, zoneId?: string): Binding {
   const base: Binding = {
@@ -230,6 +231,8 @@ export function BindingsScreen(): React.JSX.Element {
                       const keys = b.action.kind === 'keystroke' ? comboText(b.action.key, b.action.modifiers) : null
                       const mods = sortModifiers(b.modifiers).map((m) => MODIFIER_GLYPH[m]).join('')
                       const pro = PRO_GESTURES.includes(b.gesture) || PRO_KINDS.includes(b.action.kind)
+                      const need = needFor(b.gesture)
+                      const needOff = !!need && !draft.settings[need]?.enabled
                       return (
                         <motion.li
                           key={b.id}
@@ -246,10 +249,11 @@ export function BindingsScreen(): React.JSX.Element {
                           }}
                         >
                           <span className="num text-[11px] tracking-[0.04em] text-ink-3">{indexText(b, draft)}</span>
-                          <div className="min-w-0">
+                          <div className={cn('min-w-0', needOff && 'opacity-60')}>
                             <p className={cn('flex items-center gap-2 truncate text-[13px] leading-[18px]', b.enabled ? 'text-ink' : 'text-ink-2')}>
                               {GESTURE_LABEL[b.gesture]}
                               {pro && <ProTag />}
+                              {needOff && <span className="tag-mono text-ink-3">{need === 'sound' ? 'Sound mode off' : need === 'sonar' ? 'Sonar off' : 'Camera off'}</span>}
                             </p>
                             <p className="truncate text-[12px] leading-4 text-ink-3">
                               {whereText(b, draft.zones)}
