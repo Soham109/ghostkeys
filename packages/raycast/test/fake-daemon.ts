@@ -26,10 +26,14 @@ const DEFAULT_CONFIG: Config = {
     typingGateMs: 450,
     doubleWindowMs: 350,
     minConfidence: 0.8,
+    followUpConfidence: 0.5,
+    lightTouch: false,
+    learnFromUse: true,
     hud: true,
     haptics: false,
     sound: { enabled: false, sessionSeconds: 30, autoApps: [] },
     camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false },
+    sonar: { enabled: false, sessionSeconds: 30, autoApps: [] },
   },
 };
 

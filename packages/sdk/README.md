@@ -84,6 +84,22 @@ await client.setConfig({ ...config, settings: { ...config.settings, sensitivity:
 
 await client.testAction({ kind: 'volume', step: 6 })
 await client.requestAccessibility()
+
+// Gated actions (open/shell/applescript/shortcut, or as a macro step) only run once approved.
+const { hash } = await client.approveAction({ kind: 'shell', command: 'say hi' }) // after the user confirms the exact command
+await client.revokeAction(hash) // or revokeAction(theAction)
+
+await client.getCatalog() // GhostkeysIntegrations apps/commands, for building `integration` actions
+
+// Optional sound/camera/sonar sessions and calibration extras:
+await client.startSoundSession(30) // and stopSoundSession()
+await client.startAirSession(30, 'front') // and stopAirSession()
+await client.startSonarSession() // and stopSonarSession() - a settings.sonar.enabled toggle, not a timed session
+await client.applyCalibrationRecommendation() // disable the last calibration's recommended drops, retrain
+await client.applyCalibrationMerge(['right-grille', 'left-grille'], 'Speaker grilles')
+await client.reportMissedTap('right-palm') // "I just tapped this zone and nothing happened"
+await client.reportFalseTap() // "the last accepted tap was not meant"
+await client.exportDiagnostics() // last 10s to a .gkrec file, for ghostkeys-lab
 ```
 
 ### Calibration

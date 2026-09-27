@@ -47,6 +47,8 @@ export interface Zone {
   surface: Surface
   rect: Rect
   color: string
+  /** Default true. A disabled zone is left out of the zone model and never fires bindings, but keeps its samples. */
+  enabled?: boolean
 }
 
 export type GestureKind =
@@ -79,6 +81,16 @@ export type GestureKind =
   | 'palm_swipe_right'
   | 'circle_cw'
   | 'circle_ccw'
+  // Optional stereo sonar (GhostkeysAcoustics SonarField, while settings.sonar.enabled is on). Carry
+  // `side` and/or `distanceMm` where meaningful, and `source: "sonar"`.
+  | 'push'
+  | 'pull'
+  | 'sweep_left'
+  | 'sweep_right'
+  | 'finger_slide_left'
+  | 'finger_slide_right'
+  | 'finger_slide_up'
+  | 'finger_slide_down'
 
 export const GESTURES: readonly GestureKind[] = [
   'tap',
@@ -107,7 +119,15 @@ export const GESTURES: readonly GestureKind[] = [
   'palm_swipe_left',
   'palm_swipe_right',
   'circle_cw',
-  'circle_ccw'
+  'circle_ccw',
+  'push',
+  'pull',
+  'sweep_left',
+  'sweep_right',
+  'finger_slide_left',
+  'finger_slide_right',
+  'finger_slide_up',
+  'finger_slide_down'
 ]
 
 /** Gestures that never carry a single `zone` (lid/light/motion gestures aren't tied to a tap zone). */
@@ -137,9 +157,30 @@ export const CAMERA_GESTURES: readonly GestureKind[] = [
   'circle_ccw'
 ]
 
-/** Continuous camera gestures: these arrive as `air` messages (phase began/changed/ended), never as `gesture`. */
-export type ContinuousAirGesture = 'pinch_hold' | 'two_hand_zoom' | 'point'
-export const CONTINUOUS_AIR_GESTURES: readonly ContinuousAirGesture[] = ['pinch_hold', 'two_hand_zoom', 'point']
+/** Discrete sonar gestures (settings.sonar.enabled only). Reported as "gesture" messages with zone "air". */
+export const SONAR_GESTURES: readonly GestureKind[] = [
+  'push',
+  'pull',
+  'sweep_left',
+  'sweep_right',
+  'finger_slide_left',
+  'finger_slide_right',
+  'finger_slide_up',
+  'finger_slide_down'
+]
+
+/**
+ * Continuous gestures: these arrive as `air` messages (phase began/changed/ended), never as
+ * `gesture`. `pinch_hold`/`two_hand_zoom`/`point` are camera; `hover_level`/`finger_slide` are sonar.
+ */
+export type ContinuousAirGesture = 'pinch_hold' | 'two_hand_zoom' | 'point' | 'hover_level' | 'finger_slide'
+export const CONTINUOUS_AIR_GESTURES: readonly ContinuousAirGesture[] = [
+  'pinch_hold',
+  'two_hand_zoom',
+  'point',
+  'hover_level',
+  'finger_slide'
+]
 
 export type Modifier = 'shift' | 'control' | 'option' | 'command' | 'fn'
 export const MODIFIERS: readonly Modifier[] = ['control', 'option', 'shift', 'command', 'fn']
@@ -147,16 +188,17 @@ export const MODIFIERS: readonly Modifier[] = ['control', 'option', 'shift', 'co
 export type RejectReason = 'typing' | 'trackpad' | 'motion' | 'low_confidence' | 'burst' | 'paused'
 export const REJECT_REASONS: readonly RejectReason[] = ['typing', 'trackpad', 'motion', 'low_confidence', 'burst', 'paused']
 
-export type Stream = 'imu' | 'lid' | 'light' | 'taps' | 'air'
-export const STREAMS: readonly Stream[] = ['imu', 'lid', 'light', 'taps', 'air']
+/** "debug" streams every tap onset the detector analysed (the `candidate` message), before any gates. */
+export type Stream = 'imu' | 'lid' | 'light' | 'taps' | 'air' | 'debug'
+export const STREAMS: readonly Stream[] = ['imu', 'lid', 'light', 'taps', 'air', 'debug']
 
 /** "authorized" | "denied" | "not_determined": AVFoundation authorization status, stringified. */
 export type PermissionState = 'authorized' | 'denied' | 'not_determined'
 export const PERMISSION_STATES: readonly PermissionState[] = ['authorized', 'denied', 'not_determined']
 
 /** Where a tap or gesture was recognized from. */
-export type InputSource = 'imu' | 'sound' | 'camera'
-export const INPUT_SOURCES: readonly InputSource[] = ['imu', 'sound', 'camera']
+export type InputSource = 'imu' | 'sound' | 'camera' | 'sonar'
+export const INPUT_SOURCES: readonly InputSource[] = ['imu', 'sound', 'camera', 'sonar']
 
 export type TapType = 'fingertip' | 'knuckle' | 'nail'
 export const TAP_TYPES: readonly TapType[] = ['fingertip', 'knuckle', 'nail']
@@ -320,6 +362,18 @@ export interface KnobSpec {
   inverse?: Action | null
 }
 
+/**
+ * `hover_level` / `finger_slide` slider mode, zone "air" for hover. While the gesture lasts, `action`
+ * runs once per `stepMm` of travel up (hover: hand raised; slide: toward the hinge) and `inverse`
+ * once per step down. "relative": every step counts, like a knob. "absolute": the output follows
+ * position since the gesture began (undone if the gesture ends `cancelled`).
+ */
+export interface SliderSpec {
+  mode: 'absolute' | 'relative'
+  stepMm: number
+  inverse?: Action | null
+}
+
 export interface Binding {
   id: string
   enabled: boolean
@@ -333,6 +387,8 @@ export interface Binding {
   label?: string | null
   /** Only meaningful for a `pinch_hold` binding. */
   knob?: KnobSpec | null
+  /** Only meaningful for a `hover_level` or `finger_slide` binding. */
+  slider?: SliderSpec | null
 }
 
 /** Optional sound mode (GhostkeysAcoustics). Off by default; the mic opens only in short sessions. */
@@ -352,23 +408,33 @@ export interface CameraSettings {
   deskMode: boolean
 }
 
+/**
+ * Optional stereo sonar (GhostkeysAcoustics SonarField): an on/off switch. While `enabled`, sonar
+ * runs continuously (mic open) until turned off - there is no time limit, and `sessionSeconds` /
+ * `autoApps` are ignored.
+ */
+export interface SonarSettings {
+  enabled: boolean
+  sessionSeconds: number
+  autoApps: string[]
+}
+
 export interface Settings {
   sensitivity: number
   typingGateMs: number
   doubleWindowMs: number
   minConfidence: number
-  /** A tap at this confidence may complete a double or triple in the same zone. */
-  followUpConfidence?: number
-  lightTouch?: boolean
+  /** 0 to minConfidence. A tap at this confidence may complete a double/triple whose other tap passed minConfidence. */
+  followUpConfidence: number
+  /** Default false. Lets much lighter taps (8 to 40 mg) trigger; turn on only after calibrating with light taps. */
+  lightTouch: boolean
+  /** Default true. Refines the zone model from taps that fired an action and were not undone (see "Feedback loop"). */
+  learnFromUse: boolean
   hud: boolean
   haptics: boolean
   sound: SoundSettings
   camera: CameraSettings
-  /**
-   * Stereo sonar. The tones never play unless enabled; while enabled it runs continuously until turned off
-   * (sessionSeconds and autoApps are ignored).
-   */
-  sonar?: SoundSettings
+  sonar: SonarSettings
 }
 
 export interface Config {
@@ -451,6 +517,11 @@ export interface RejectedMsg {
   type: 'rejected'
   t: number
   reason: RejectReason
+  /** The classifier's best guess for the dropped tap, only when calibrated. A motion rejection has none of these three. */
+  zone?: string | null
+  confidence?: number
+  /** log10 of the peak acceleration in milli-g. */
+  strength?: number
   /** Set for a sound-mode gesture suppressed by the typing gate (e.g. a rub mistaken for typing noise). */
   gesture?: string
 }
@@ -460,7 +531,7 @@ export interface GestureMsg {
   type: 'gesture'
   t: number
   gesture: GestureKind
-  /** "air" for a camera gesture. */
+  /** "air" for a camera or sonar gesture. */
   zone: string | null
   zones: string[] | null
   modifiers: Modifier[]
@@ -470,7 +541,10 @@ export interface GestureMsg {
   hand?: 'left' | 'right'
   x?: number
   y?: number
-  /** "sound" or "camera" when the gesture did not come from the IMU. */
+  /** Sonar discrete gestures only (push/pull/sweep/finger_slide_*). */
+  side?: 'left' | 'right'
+  distanceMm?: number
+  /** "sound" or "sonar" or "camera" when the gesture did not come from the IMU. */
   source?: InputSource
 }
 
@@ -496,6 +570,31 @@ export type CalibrationPhase =
   | 'taptype_training'
   | 'taptype_done'
   | 'taptype_failed'
+  | 'recommendation_applied'
+  | 'merge_applied'
+
+/** Per zone: the 10th/50th/90th percentile of the calibration taps' peak acceleration in g. */
+export interface CalibrationPeaks {
+  p10: number
+  p50: number
+  p90: number
+}
+
+/** Zones to keep, zones to disable (with a plain reason), confused pairs, expected accuracy of the kept zones. */
+export interface CalibrationRecommendation {
+  keep: string[]
+  drop: Record<string, string>
+  merge: [string, string][]
+  expectedAccuracy: Record<string, number>
+}
+
+export interface CalibrationBindingChanged {
+  id: string
+  label: string
+  gesture: string
+  from: string
+  to: string
+}
 
 export type CalibrationMsg =
   | { type: 'calibration'; phase: 'started'; zones: string[]; target: number }
@@ -509,8 +608,39 @@ export type CalibrationMsg =
       overall: number
       confusion: number[][]
       labels: string[]
+      /** Empty object for a model trained before this existed. */
+      peaks: Record<string, CalibrationPeaks>
+      recommendation: CalibrationRecommendation
     }
   | { type: 'calibration'; phase: 'cancelled' }
+  // Reply to calibration_apply_recommendation (a "config" message is sent too). overall/accuracy/labels
+  // are absent when there were no samples to retrain from.
+  | {
+      type: 'calibration'
+      phase: 'recommendation_applied'
+      disabled: string[]
+      keep: string[]
+      mergeSuggested: [string, string][]
+      overall?: number
+      accuracy?: Record<string, number>
+      labels?: string[]
+    }
+  // Reply to calibration_apply_merge. conflicts: enabled bindings that became identical (only the
+  // first fires). note: present only when the two zones were on different surfaces.
+  | {
+      type: 'calibration'
+      phase: 'merge_applied'
+      zone: string
+      name: string
+      merged: [string, string]
+      samples: number
+      bindingsChanged: CalibrationBindingChanged[]
+      conflicts: [string, string][]
+      overall?: number
+      accuracy?: Record<string, number>
+      labels?: string[]
+      note?: string
+    }
   // Tap-type (sound mode) calibration: calibration_taptype_start / calibration_taptype_cancel.
   | { type: 'calibration'; phase: 'taptype_capturing'; tapType: string; count: number; target: number; types: string[]; missed?: boolean }
   | { type: 'calibration'; phase: 'taptype_cancelled'; reason: string }
@@ -583,8 +713,8 @@ export interface SessionMsg {
   sonarField?: boolean
   continuous?: boolean
   enabled?: boolean
-  /** sonar: enabled but held ("paused", "asleep", "display_asleep", "lid_closed"); resumes by itself */
-  waiting?: string
+  /** sonar: enabled but held; resumes by itself */
+  waiting?: 'paused' | 'asleep' | 'display_asleep' | 'lid_closed'
   /** sonar: why the tones are off while the microphone is open */
   tonesOff?: string
   /** sound: not started because sonar is on and covers it */
@@ -599,7 +729,7 @@ export interface AirMsg {
   type: 'air'
   t: number
   /** Camera gestures, or the continuous sonar values hover_level / finger_slide (source "sonar"). */
-  gesture: ContinuousAirGesture | 'hover_level' | 'finger_slide'
+  gesture: ContinuousAirGesture
   phase: 'began' | 'changed' | 'ended'
   hand?: 'left' | 'right'
   x?: number
@@ -615,7 +745,84 @@ export interface AirMsg {
   dxMm?: number
   dyMm?: number
   cancelled?: boolean
-  source?: string
+  source?: InputSource
+}
+
+/** Only sent to clients subscribed to the "debug" stream: every tap onset the detector analysed, before any gates. */
+export interface CandidateMsg {
+  type: 'candidate'
+  t: number
+  /** Null until calibrated. */
+  zone: string | null
+  confidence: number
+  strength: number
+  /** "accepted" | a RejectReason | "pending" (calibrating or paused). */
+  outcome: string
+}
+
+/** One onset considered while handling feedback_missed/feedback_false; fields vary by context (see FeedbackMsg). */
+export interface FeedbackCandidate {
+  t: number
+  zone?: string | null
+  confidence?: number
+  probability?: number
+  strength?: number
+  /** Why this specific candidate (the one named in the request) was dropped live. */
+  droppedBecause?: string
+  /** Why this candidate wasn't even considered as the reported one. */
+  skipped?: string
+}
+
+/** Reply to feedback_missed, only to the requester: "I just tapped this zone and nothing happened." */
+export interface FeedbackMissedMsg {
+  type: 'feedback'
+  kind: 'missed'
+  zone: string
+  found: boolean
+  diagnostic: string | null
+  candidates: FeedbackCandidate[]
+  retrained: boolean
+  /** Present when retrained is false: not calibrated yet, zone not calibrated, no onset found, or a save error. */
+  reason?: string
+  /** Present only when found is true. */
+  candidate?: FeedbackCandidate
+  counts?: Record<string, number>
+  overall?: number
+}
+
+/** Reply to feedback_false, only to the requester: "the last accepted tap was not meant" (nothing is undone). */
+export interface FeedbackFalseMsg {
+  type: 'feedback'
+  kind: 'false'
+  /** Both absent when there was no accepted tap in the last 60s to report. */
+  zone?: string
+  t?: number
+  retrained: boolean
+  reason?: string
+  /** Present when a strong (likely intended) tap was reported and nothing was learned. */
+  peakG?: number
+  counts?: Record<string, number>
+  overall?: number
+}
+
+export type FeedbackMsg = FeedbackMissedMsg | FeedbackFalseMsg
+
+/** Learn-from-use retrain result (settings.learnFromUse; see "Feedback loop"). */
+export interface AdaptationMsg {
+  type: 'adaptation'
+  kept: boolean
+  confirmed: number
+  accuracyBefore: number
+  accuracyAfter: number
+  /** Present when kept is false: why the confirmed taps were discarded. */
+  reason?: string
+}
+
+export interface DiagnosticsMsg {
+  type: 'diagnostics'
+  path: string
+  samples: number
+  seconds: number
 }
 
 export type DaemonMessage =
@@ -626,9 +833,13 @@ export type DaemonMessage =
   | LightMsg
   | TapMsg
   | RejectedMsg
+  | CandidateMsg
   | GestureMsg
   | ActionMsg
   | CalibrationMsg
+  | FeedbackMsg
+  | AdaptationMsg
+  | DiagnosticsMsg
   | ConfigMsg
   | ErrorMsg
   | ApprovedMsg
@@ -647,9 +858,13 @@ export const DAEMON_MESSAGE_TYPES: readonly DaemonMessageType[] = [
   'light',
   'tap',
   'rejected',
+  'candidate',
   'gesture',
   'action',
   'calibration',
+  'feedback',
+  'adaptation',
+  'diagnostics',
   'config',
   'error',
   'approved',
@@ -687,9 +902,24 @@ export type AppMessage =
   | { type: 'catalog_get' }
   | { type: 'sound_session_start'; seconds?: number }
   | { type: 'sound_session_stop' }
-  | { type: 'air_session_start'; seconds?: number; camera?: string }
+  /** "desk_view" needs settings.camera.deskMode. */
+  | { type: 'air_session_start'; seconds?: number; camera?: 'front' | 'desk_view' }
   | { type: 'air_session_stop' }
+  /** Sonar starts by itself when settings.sonar.enabled turns on; this retries at once. seconds is not accepted (no timer). */
+  | { type: 'sonar_session_start' }
+  /** Turns settings.sonar.enabled off (saved, config broadcast). */
+  | { type: 'sonar_session_stop' }
   | { type: 'calibration_taptype_start'; types?: string[]; target?: number }
   | { type: 'calibration_taptype_cancel' }
+  /** Disables the recommended drops (except merge-pair zones) and retrains. */
+  | { type: 'calibration_apply_recommendation' }
+  /** Two confused zones become one; `name` defaults to a combination of both zone names if omitted. */
+  | { type: 'calibration_apply_merge'; zones: [string, string]; name?: string }
+  /** "I just tapped this zone and nothing happened." At most one every 2s and 20/minute. */
+  | { type: 'feedback_missed'; zone: string }
+  /** "The last accepted tap was not meant" (nothing is undone). At most one every 2s and 20/minute. */
+  | { type: 'feedback_false' }
+  /** Writes the last 10s to <config dir>/diagnostics/*.gkrec. At most one every 5s. */
+  | { type: 'diagnostics_export' }
 
 export type AppMessageType = AppMessage['type']

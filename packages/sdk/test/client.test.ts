@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { WebSocket as NodeWebSocket } from 'ws'
 import { GhostkeysClient } from '../src/client.js'
 import { ConfigConflictError, GhostkeysTimeoutError } from '../src/errors.js'
+import { configRevision } from '../src/hash.js'
 import type { WebSocketCtor } from '../src/ws.js'
 import { FakeDaemon } from './fake-server.js'
 import { testConfig } from './fixtures.js'
@@ -21,18 +22,30 @@ afterEach(async () => {
 })
 
 describe('connect', () => {
-  it('resolves with hello and populates lastHello/lastStatus/lastConfig', async () => {
+  it('resolves with hello, and by then has also populated lastStatus/lastConfig/lastConfigRevision', async () => {
     client = new GhostkeysClient({ url: daemon.url, webSocket })
     const hello = await client.connect()
     expect(hello.type).toBe('hello')
     expect(hello.device.family).toBe('macbook-pro-14')
     expect(client.connected).toBe(true)
     expect(client.lastHello).toEqual(hello)
-    // status and config arrive right after hello on the same connection; give the event loop a tick.
-    await new Promise((r) => setTimeout(r, 20))
+    // No delay here on purpose: connect() now waits for the greeting's status/config too (bounded by
+    // greetTimeoutMs), specifically so a fresh client can call setConfig({ ifRevision }) right away.
     expect(client.lastStatus?.type).toBe('status')
     expect(client.lastConfig?.version).toBe(1)
     expect(client.lastConfigRevision).toBeTruthy()
+  })
+
+  it('still resolves within greetTimeoutMs if the daemon never sends an unprompted config', async () => {
+    daemon.autoGreetConfig = false
+    client = new GhostkeysClient({ url: daemon.url, webSocket, greetTimeoutMs: 150 })
+    const start = Date.now()
+    const hello = await client.connect()
+    const elapsed = Date.now() - start
+    expect(hello.type).toBe('hello')
+    expect(elapsed).toBeGreaterThanOrEqual(140) // waited out the bounded greeting wait
+    expect(elapsed).toBeLessThan(1000) // but did not hang or use some much longer default
+    expect(client.lastConfigRevision).toBeUndefined()
   })
 
   it('rejects if no hello arrives before helloTimeoutMs', async () => {
@@ -59,7 +72,7 @@ describe('events', () => {
     daemon.broadcast({ type: 'tap', t: 1, zone: 'right-grille', confidence: 0.9, x: 0.9, y: 0.2, strength: 0.5 })
     await new Promise((r) => setTimeout(r, 20))
     // The real daemon would not send this without a "taps" subscription, but the SDK's job here is
-    // only to decode and emit whatever arrives — stream gating is the daemon's responsibility.
+    // only to decode and emit whatever arrives; stream gating is the daemon's responsibility.
     expect(taps).toHaveLength(1)
   })
 
@@ -73,16 +86,30 @@ describe('events', () => {
     expect(gestures).toHaveLength(1)
   })
 
-  it('emits protocolError and does not throw on a malformed frame', async () => {
+  it('emits protocolError for unparsable JSON or a known type that fails its schema, and does not throw', async () => {
     client = new GhostkeysClient({ url: daemon.url, webSocket })
     await client.connect()
     const errors: unknown[] = []
     client.on('protocolError', (e) => errors.push(e))
     for (const c of daemon.clients) c.send('not json')
     for (const c of daemon.clients) c.send(JSON.stringify({ type: 'tap', zone: 'right-grille' })) // missing required fields
-    for (const c of daemon.clients) c.send(JSON.stringify({ type: 'not-a-real-type' }))
     await new Promise((r) => setTimeout(r, 20))
-    expect(errors).toHaveLength(3)
+    expect(errors).toHaveLength(2)
+  })
+
+  // A message type this SDK has no schema for at all (a newer protocol addition) is not an error:
+  // it's passed through on its own event instead of being silently discarded.
+  it('emits unknown, not protocolError, for a message type this SDK does not recognize', async () => {
+    client = new GhostkeysClient({ url: daemon.url, webSocket })
+    await client.connect()
+    const errors: unknown[] = []
+    const unknowns: unknown[] = []
+    client.on('protocolError', (e) => errors.push(e))
+    client.on('unknown', (e) => unknowns.push(e))
+    for (const c of daemon.clients) c.send(JSON.stringify({ type: 'not-a-real-type', foo: 'bar' }))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(errors).toHaveLength(0)
+    expect(unknowns).toEqual([{ type: 'not-a-real-type', raw: { type: 'not-a-real-type', foo: 'bar' } }])
   })
 })
 
@@ -175,6 +202,71 @@ describe('config', () => {
     const { config } = await client.getConfig()
     const result = await client.setConfig({ ...config, settings: { ...config.settings, hud: false } })
     expect(result.config.settings.hud).toBe(false)
+  })
+
+  // Regression test for the Raycast "Bind a Preset" / "Apply Layout" pattern: one short-lived client
+  // fetches a revision, disconnects, and a *different* short-lived client later calls setConfig with
+  // that revision. Since a revision is a content hash (not tied to a connection), this must work: the
+  // second client has never seen a config itself, so it must not treat "I don't know" as "conflict".
+  it('setConfig succeeds with a revision obtained by a different, already-disconnected client', async () => {
+    const readerClient = new GhostkeysClient({ url: daemon.url, webSocket })
+    await readerClient.connect()
+    const { config, revision } = await readerClient.getConfig()
+    readerClient.disconnect()
+
+    client = new GhostkeysClient({ url: daemon.url, webSocket })
+    await client.connect()
+    // This instance never called getConfig() itself, but connect() now waits for the greeting
+    // config too, so it already independently knows the (unchanged) current revision matches.
+    expect(client.lastConfigRevision).toBe(revision)
+
+    const next = { ...config, settings: { ...config.settings, sensitivity: 0.42 } }
+    const result = await client.setConfig(next, { ifRevision: revision })
+    expect(result.config.settings.sensitivity).toBe(0.42)
+  })
+
+  // Forces lastConfigRevision to still be undefined when setConfig() is called (by disabling the
+  // greeting config entirely), to exercise setConfig()'s own internal getConfig() fetch directly,
+  // separately from connect()'s now-bounded wait for the greeting.
+  it('setConfig fetches a revision itself when this client has not seen a config at all yet', async () => {
+    daemon.autoGreetConfig = false
+    client = new GhostkeysClient({ url: daemon.url, webSocket, greetTimeoutMs: 50 })
+    await client.connect()
+    expect(client.lastConfigRevision).toBeUndefined()
+
+    // The daemon's config (still testConfig(), untouched) has this exact revision; a client that
+    // never saw it must still recognize a matching ifRevision by fetching it, not by rejecting blind.
+    const expectedRevision = configRevision(testConfig())
+
+    let sawConfigGet = false
+    daemon.onMessage = (_c, m) => {
+      if (m.type === 'config_get') sawConfigGet = true
+    }
+    const result = await client.setConfig(testConfig(), { ifRevision: expectedRevision })
+    expect(sawConfigGet).toBe(true) // setConfig had to ask the daemon for the current revision first
+    expect(result.config).toEqual(testConfig())
+  })
+
+  it('setConfig still throws ConfigConflictError, using the freshly fetched revision, when a different client\'s revision is actually stale', async () => {
+    const readerClient = new GhostkeysClient({ url: daemon.url, webSocket })
+    await readerClient.connect()
+    const { revision: staleRevision } = await readerClient.getConfig()
+    readerClient.disconnect()
+
+    // The config changes after the reader disconnected, via some other actor, before our client even connects.
+    const changed = { ...testConfig(), settings: { ...testConfig().settings, sensitivity: 0.9 } }
+    daemon.config = changed
+
+    client = new GhostkeysClient({ url: daemon.url, webSocket })
+    await client.connect()
+    let sawConfigSet = false
+    daemon.onMessage = (_c, m) => {
+      if (m.type === 'config_set') sawConfigSet = true
+    }
+    const error = await client.setConfig(changed, { ifRevision: staleRevision }).catch((e) => e)
+    expect(error).toBeInstanceOf(ConfigConflictError)
+    expect((error as ConfigConflictError).currentRevision).not.toBe(staleRevision)
+    expect(sawConfigSet).toBe(false)
   })
 })
 

@@ -52,10 +52,14 @@ describe('daemonMessageSchemaByType', () => {
           typingGateMs: 450,
           doubleWindowMs: 350,
           minConfidence: 0.8,
+          followUpConfidence: 0.5,
+          lightTouch: false,
+          learnFromUse: true,
           hud: true,
           haptics: false,
           sound: { enabled: false, sessionSeconds: 30, autoApps: [] },
-          camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false }
+          camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false },
+          sonar: { enabled: false, sessionSeconds: 30, autoApps: [] }
         }
       }
     },
@@ -64,7 +68,11 @@ describe('daemonMessageSchemaByType', () => {
     revoked: { type: 'revoked', hash: 'a'.repeat(64), found: true },
     catalog: { type: 'catalog', catalog: { apps: [], commands: [], unsupported: {} } },
     session: { type: 'session', kind: 'sound', active: true, secondsLeft: 30 },
-    air: { type: 'air', t: 1.5, gesture: 'pinch_hold', phase: 'changed', dx: 0.01, dy: -0.02 }
+    air: { type: 'air', t: 1.5, gesture: 'pinch_hold', phase: 'changed', dx: 0.01, dy: -0.02 },
+    candidate: { type: 'candidate', t: 1.5, zone: 'right-grille', confidence: 0.62, strength: 1.4, outcome: 'typing' },
+    feedback: { type: 'feedback', kind: 'false', zone: 'left-grille', t: 1.5, retrained: true, counts: {}, overall: 0.95 },
+    adaptation: { type: 'adaptation', kept: true, confirmed: 14, accuracyBefore: 0.93, accuracyAfter: 0.94 },
+    diagnostics: { type: 'diagnostics', path: '/tmp/x.gkrec', samples: 7970, seconds: 10 }
   }
 
   for (const [type, sample] of Object.entries(samples)) {
@@ -92,9 +100,39 @@ describe('daemonMessageSchemaByType', () => {
     expect(schema.safeParse({ type: 'calibration', phase: 'negatives', secondsLeft: 5 }).success).toBe(true)
     expect(schema.safeParse({ type: 'calibration', phase: 'training' }).success).toBe(true)
     expect(
-      schema.safeParse({ type: 'calibration', phase: 'done', accuracy: {}, overall: 1, confusion: [[1]], labels: ['left-palm'] }).success
+      schema.safeParse({
+        type: 'calibration',
+        phase: 'done',
+        accuracy: {},
+        overall: 1,
+        confusion: [[1]],
+        labels: ['left-palm'],
+        peaks: { 'left-palm': { p10: 0.021, p50: 0.048, p90: 0.11 } },
+        recommendation: { keep: ['left-palm'], drop: {}, merge: [], expectedAccuracy: { 'left-palm': 0.97 } }
+      }).success
     ).toBe(true)
     expect(schema.safeParse({ type: 'calibration', phase: 'cancelled' }).success).toBe(true)
+    expect(
+      schema.safeParse({
+        type: 'calibration',
+        phase: 'recommendation_applied',
+        disabled: ['lid'],
+        keep: ['left-palm'],
+        mergeSuggested: [['left-grille', 'left-edge']]
+      }).success
+    ).toBe(true)
+    expect(
+      schema.safeParse({
+        type: 'calibration',
+        phase: 'merge_applied',
+        zone: 'speaker-grilles',
+        name: 'Speaker grilles',
+        merged: ['right-grille', 'left-grille'],
+        samples: 18,
+        bindingsChanged: [{ id: 'b1', label: 'Volume up', gesture: 'double', from: 'right-grille', to: 'speaker-grilles' }],
+        conflicts: [['b1', 'b2']]
+      }).success
+    ).toBe(true)
     expect(schema.safeParse({ type: 'calibration', phase: 'not-a-real-phase' }).success).toBe(false)
   })
 })
@@ -163,7 +201,8 @@ describe('sonar', () => {
       zones: [],
       bindings: [],
       settings: {
-        sensitivity: 0.5, typingGateMs: 450, doubleWindowMs: 350, minConfidence: 0.8, hud: true, haptics: false,
+        sensitivity: 0.5, typingGateMs: 450, doubleWindowMs: 350, minConfidence: 0.8,
+        followUpConfidence: 0.5, lightTouch: false, learnFromUse: true, hud: true, haptics: false,
         sound: { enabled: false, sessionSeconds: 30, autoApps: [] },
         camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false },
         sonar: { enabled: true, sessionSeconds: 30, autoApps: [] },

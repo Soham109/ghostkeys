@@ -81,10 +81,13 @@ export class FakeDaemon {
     })
   }
 
+  /** When false, greet() still sends hello/status but withholds the unprompted config (used to test connect()'s bounded wait for it). */
+  autoGreetConfig = true
+
   private greet(ws: WebSocket): void {
     this.send(ws, this.hello())
     this.send(ws, this.status())
-    this.send(ws, { type: 'config', config: this.config })
+    if (this.autoGreetConfig) this.send(ws, { type: 'config', config: this.config })
   }
 
   hello() {
@@ -162,7 +165,9 @@ export class FakeDaemon {
           accuracy: { 'right-grille': 0.97 },
           overall: 0.95,
           confusion: [[1]],
-          labels: ['right-grille']
+          labels: ['right-grille'],
+          peaks: { 'right-grille': { p10: 0.021, p50: 0.048, p90: 0.11 } },
+          recommendation: { keep: ['right-grille'], drop: {}, merge: [], expectedAccuracy: { 'right-grille': 0.97 } }
         })
         break
       case 'calibration_cancel':
