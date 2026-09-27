@@ -435,6 +435,44 @@ function simulateSonar(): void {
   if (sonarPhase % 3 === 0) emitGesture(Math.random() < 0.5 ? 'push' : 'sweep_left', 'air', ['air'])
 }
 
+// sonar_debug at 10 Hz while a sonar session runs: plausible pilot levels, a hand moving over the right speaker.
+let hoverMm = 0
+setInterval(() => {
+  if (!sessions.sonar.timer) return
+  const t = now() / 1000
+  const handR = 60 * Math.sin(t * 1.3)
+  const dR = handR - hoverMm
+  hoverMm = handR
+  const side = (hz: number, snr: number, delta: number, total: number): Record<string, unknown> => ({
+    hz,
+    pilotDbfs: -48 + rand(-0.6, 0.6),
+    noiseDbfsPerBin: -48 - snr,
+    snrDb: snr + rand(-1.5, 1.5),
+    pilotPresent: snr > 25,
+    sidebandLowDbc: -58 + Math.min(40, Math.abs(delta) * 1.6) + rand(-2, 2),
+    sidebandHighDbc: -60 + Math.min(40, Math.abs(delta) * 1.4) + rand(-2, 2),
+    dopplerShiftBins: [0, Math.round(Math.abs(delta) / 5)],
+    pathDeltaMm: delta,
+    pathStepVarMm2: 0.02 + Math.abs(delta) / 200,
+    pathTotalMm: total,
+    dynamicDb: -40 + Math.abs(delta) / 2,
+    gateOpenShare: 0.95
+  })
+  const typing = Math.random() < 0.08
+  broadcast(
+    {
+      type: 'sonar_debug',
+      t: now(),
+      windowS: 0.1,
+      left: side(19500, 56, rand(-0.8, 0.8), rand(-2, 2)),
+      right: side(20250, 38, dR, handR),
+      gates: { ready: true, warmedUp: true, tonesPlaying: true, interference: false, suppressedByDaemon: typing, episode: Math.abs(dR) > 2, hover: Math.abs(handR) > 20, slide: false, toneProblem: null, restarts: 0 },
+      input: { device: { name: 'MacBook Pro Microphones' }, highBandRolloffDb: -4, voiceProcessing: false, micMode: 'standard' }
+    } as never,
+    'debug'
+  )
+}, 100)
+
 let airPhase = 0
 function simulateAir(): void {
   airPhase += 1

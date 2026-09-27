@@ -49,7 +49,8 @@
             "w": 0.22,
             "h": 0.35
           },
-          "color": "#6E9BFF"
+          "color": "#6E9BFF",
+          "enabled": true
         },
         {
           "id": "right-palm",
@@ -61,7 +62,8 @@
             "w": 0.22,
             "h": 0.35
           },
-          "color": "#4FC9B0"
+          "color": "#4FC9B0",
+          "enabled": true
         },
         {
           "id": "left-grille",
@@ -73,7 +75,8 @@
             "w": 0.058,
             "h": 0.4
           },
-          "color": "#B58CFF"
+          "color": "#B58CFF",
+          "enabled": true
         },
         {
           "id": "right-grille",
@@ -85,7 +88,8 @@
             "w": 0.058,
             "h": 0.4
           },
-          "color": "#FF7A93"
+          "color": "#FF7A93",
+          "enabled": true
         },
         {
           "id": "top-strip",
@@ -97,7 +101,8 @@
             "w": 0.6,
             "h": 0.05
           },
-          "color": "#8AC96B"
+          "color": "#8AC96B",
+          "enabled": true
         },
         {
           "id": "left-edge",
@@ -109,7 +114,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#5FB8E8"
+          "color": "#5FB8E8",
+          "enabled": false
         },
         {
           "id": "right-edge",
@@ -121,7 +127,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#E58CD6"
+          "color": "#E58CD6",
+          "enabled": false
         },
         {
           "id": "lid",
@@ -133,7 +140,8 @@
             "w": 0.4,
             "h": 0.6
           },
-          "color": "#9AA7FF"
+          "color": "#9AA7FF",
+          "enabled": false
         }
       ]
     },
@@ -177,7 +185,8 @@
             "w": 0.24,
             "h": 0.37
           },
-          "color": "#6E9BFF"
+          "color": "#6E9BFF",
+          "enabled": true
         },
         {
           "id": "right-palm",
@@ -189,7 +198,8 @@
             "w": 0.24,
             "h": 0.37
           },
-          "color": "#4FC9B0"
+          "color": "#4FC9B0",
+          "enabled": true
         },
         {
           "id": "left-grille",
@@ -201,7 +211,8 @@
             "w": 0.08,
             "h": 0.37
           },
-          "color": "#B58CFF"
+          "color": "#B58CFF",
+          "enabled": true
         },
         {
           "id": "right-grille",
@@ -213,7 +224,8 @@
             "w": 0.08,
             "h": 0.37
           },
-          "color": "#FF7A93"
+          "color": "#FF7A93",
+          "enabled": true
         },
         {
           "id": "top-strip",
@@ -225,7 +237,8 @@
             "w": 0.6,
             "h": 0.05
           },
-          "color": "#8AC96B"
+          "color": "#8AC96B",
+          "enabled": true
         },
         {
           "id": "left-edge",
@@ -237,7 +250,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#5FB8E8"
+          "color": "#5FB8E8",
+          "enabled": false
         },
         {
           "id": "right-edge",
@@ -249,7 +263,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#E58CD6"
+          "color": "#E58CD6",
+          "enabled": false
         },
         {
           "id": "lid",
@@ -261,7 +276,8 @@
             "w": 0.4,
             "h": 0.6
           },
-          "color": "#9AA7FF"
+          "color": "#9AA7FF",
+          "enabled": false
         }
       ]
     },
@@ -292,7 +308,8 @@
             "w": 0.24,
             "h": 0.35
           },
-          "color": "#6E9BFF"
+          "color": "#6E9BFF",
+          "enabled": true
         },
         {
           "id": "right-palm",
@@ -304,7 +321,8 @@
             "w": 0.24,
             "h": 0.35
           },
-          "color": "#4FC9B0"
+          "color": "#4FC9B0",
+          "enabled": true
         },
         {
           "id": "top-strip",
@@ -316,7 +334,8 @@
             "w": 0.6,
             "h": 0.05
           },
-          "color": "#8AC96B"
+          "color": "#8AC96B",
+          "enabled": true
         },
         {
           "id": "left-edge",
@@ -328,7 +347,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#5FB8E8"
+          "color": "#5FB8E8",
+          "enabled": false
         },
         {
           "id": "right-edge",
@@ -340,7 +360,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#E58CD6"
+          "color": "#E58CD6",
+          "enabled": false
         },
         {
           "id": "lid",
@@ -352,7 +373,8 @@
             "w": 0.4,
             "h": 0.6
           },
-          "color": "#9AA7FF"
+          "color": "#9AA7FF",
+          "enabled": false
         }
       ]
     },
@@ -383,7 +405,8 @@
             "w": 0.23,
             "h": 0.365
           },
-          "color": "#6E9BFF"
+          "color": "#6E9BFF",
+          "enabled": true
         },
         {
           "id": "right-palm",
@@ -395,7 +418,8 @@
             "w": 0.23,
             "h": 0.365
           },
-          "color": "#4FC9B0"
+          "color": "#4FC9B0",
+          "enabled": true
         },
         {
           "id": "top-strip",
@@ -407,7 +431,8 @@
             "w": 0.6,
             "h": 0.05
           },
-          "color": "#8AC96B"
+          "color": "#8AC96B",
+          "enabled": true
         },
         {
           "id": "left-edge",
@@ -419,7 +444,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#5FB8E8"
+          "color": "#5FB8E8",
+          "enabled": false
         },
         {
           "id": "right-edge",
@@ -431,7 +457,8 @@
             "w": 1,
             "h": 0.6
           },
-          "color": "#E58CD6"
+          "color": "#E58CD6",
+          "enabled": false
         },
         {
           "id": "lid",
@@ -443,9 +470,11 @@
             "w": 0.4,
             "h": 0.6
           },
-          "color": "#9AA7FF"
+          "color": "#9AA7FF",
+          "enabled": false
         }
       ]
     }
-  }
+  },
+  "note": "Edges and lid start switched off: they are the least reliable surfaces. Users can switch them on in Zones."
 }

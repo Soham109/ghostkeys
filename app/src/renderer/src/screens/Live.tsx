@@ -14,6 +14,7 @@ import { LaptopMap } from '@/components/laptop/LaptopMap'
 import { Seismograph } from '@/components/Seismograph'
 import { FeedbackActions } from '@/components/Feedback'
 import { useBlockedBindings } from '@/components/SessionNeed'
+import { WhyHelper } from '@/components/WhyHelper'
 
 export function useNow(ms: number): number {
   const [now, setNow] = React.useState(() => Date.now())
@@ -289,6 +290,7 @@ export function LiveScreen(): React.JSX.Element {
               >
                 <p className="label-mono px-4 pt-6 pb-2">Recent gestures</p>
                 {config && <Feed config={config} />}
+                <WhyHelper />
                 <div className="flex h-11 shrink-0 items-center px-4 shadow-[0_-1px_0_var(--hairline)]">
                   <FeedbackActions />
                 </div>

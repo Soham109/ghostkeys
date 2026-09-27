@@ -15,6 +15,7 @@ import { SensorsScreen } from './screens/Sensors'
 import { SettingsScreen } from './screens/Settings'
 import { Onboarding } from './screens/Onboarding'
 import { GuideScreen } from './screens/Guide'
+import { SonarScreen } from './screens/Sonar'
 import { HandSheet } from './components/gestures/Hand'
 import { FrameSheet } from './components/gestures/FrameSheet'
 
@@ -45,7 +46,7 @@ function useGlobalKeys(): void {
       } else if (e.key === 's') {
         e.preventDefault()
         if (isDirty(s)) void s.saveDraft()
-      } else if (/^[1-7]$/.test(e.key) && !s.onboarding) {
+      } else if (/^[1-8]$/.test(e.key) && !s.onboarding) {
         e.preventDefault()
         s.navigate(ROUTES[Number(e.key) - 1]!)
       } else if (e.key === ',' && !s.onboarding) {
@@ -93,6 +94,7 @@ const SCREENS = {
   bindings: BindingsScreen,
   calibration: CalibrationScreen,
   sensors: SensorsScreen,
+  sonar: SonarScreen,
   settings: SettingsScreen,
   guide: GuideScreen
 } as const

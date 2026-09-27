@@ -6,8 +6,35 @@ import { Button } from './ui/button'
 import { ZoneIndex } from './ui/controls'
 import { Menu, MenuContent, MenuItem, MenuLabel, MenuTrigger } from './ui/overlays'
 
+/** Turns a raw service message into one plain sentence. */
+export function plainError(raw: string): string {
+  const m = raw.toLowerCase()
+  if (m.includes('rate limit')) return 'Too many actions fired at once, so Ghostkeys paused itself for safety. Resume it from the sidebar.'
+  if (m.includes('not approved')) return 'That action needs your approval first. Open it and choose Test or Save to approve it.'
+  if (m.includes('accessibility')) return 'Ghostkeys needs Accessibility access to press keys. Allow it in System Settings, Privacy and Security.'
+  if (m.includes('invalid config') || m.includes('config_set')) return 'Ghostkeys couldn\u2019t save that change. Nothing was changed.'
+  if (m.includes('calibration_start first')) return 'Calibration isn\u2019t running. Start it again from Calibration.'
+  if (m.includes('unknown zone')) return 'That zone no longer exists. Pick another one.'
+  if (m.includes('paused')) return 'Ghostkeys is paused, so nothing ran. Resume it from the sidebar.'
+  if (m.includes('timed out') || m.includes('timeout')) return 'That took too long and was stopped.'
+  if (m.includes('automation') || m.includes('not allowed to send apple events')) return 'macOS blocked Ghostkeys from controlling that app. Allow it in System Settings, Privacy and Security, Automation.'
+  return 'Ghostkeys couldn\u2019t do that.'
+}
+
 /** Results of "Missed a tap" and "That wasn't me", as toasts, wherever they were sent from. */
 export function wireFeedbackToasts(): void {
+  client.on('error', (e) => {
+    // Settings saves report their own errors; everything else gets one plain sentence.
+    if (/config/i.test(e.message)) return
+    const text = plainError(e.message)
+    toast(text, text === 'Ghostkeys couldn\u2019t do that.' ? { description: e.message } : undefined)
+  })
+  client.on('action', (a) => {
+    if ((a.bindingId === null || a.bindingId === 'test') && !a.ok) {
+      const text = plainError(a.error ?? '')
+      toast('The test didn\u2019t run', { description: text === 'Ghostkeys couldn\u2019t do that.' ? (a.error ?? undefined) : text })
+    }
+  })
   client.on('feedback', (m) => {
     const cfg = useStore.getState().config
     const name = (id?: string): string => (id ? (cfg?.zones.find((z) => z.id === id)?.name ?? id) : 'the last tap')

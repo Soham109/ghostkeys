@@ -2,6 +2,8 @@
 import { useStore } from './store'
 import { client } from './client'
 import { useWizard } from '@/screens/Calibration'
+import { usePractice, useTapTest, useTraining } from '@/screens/Practice'
+import { useQuickCal } from '@/screens/FirstRun'
 import type { Binding, GestureMsg, TapMsg } from '@shared/protocol'
 import { armDrawIn, skipDrawIn } from '@/components/laptop/LaptopMap'
 
@@ -28,6 +30,7 @@ async function reset(theme: 'dark' | 'light' = 'dark'): Promise<void> {
     debugFrames: false,
     route: 'live'
   })
+  usePractice.setState({ mode: 'calibrate' })
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
   await sleep(350)
 }
@@ -427,6 +430,67 @@ const SHOTS: Record<string, () => Promise<void>> = {
     await SHOTS['bindings-needs']!()
     useStore.getState().navigate('live')
     await sleep(700)
+  },
+  'onboarding-5-quick': async () => {
+    useQuickCal.setState({ phase: 'capture', zones: ['left-palm', 'right-palm'], index: 1, counts: { 'left-palm': 10, 'right-palm': 6 } })
+    useStore.setState({ onboarding: true, onboardingStep: 3 })
+    await sleep(1200)
+  },
+  'onboarding-6-first': async () => {
+    useStore.setState({ onboarding: true, onboardingStep: 4 })
+    await sleep(900)
+    client.inject({ type: 'gesture', t: dnow(), gesture: 'double', zone: 'right-palm', zones: ['right-palm'], modifiers: [], confidence: 0.95, app: null })
+    await sleep(700)
+  },
+  'tap-test': async () => {
+    usePractice.setState({ mode: 'test' })
+    useStore.getState().navigate('calibration')
+    await sleep(400)
+    useTapTest.setState({ phase: 'running', prompts: ['left-palm', 'right-grille', 'top-strip', 'right-palm', 'left-grille', 'right-palm'], index: 3, waiting: false, results: [{ zone: 'left-palm', kind: 'hit' }, { zone: 'right-grille', kind: 'hit' }, { zone: 'top-strip', kind: 'miss', reason: 'typing' }, { zone: 'right-palm', kind: 'wrong', heardAs: 'right-grille' }] })
+    await sleep(600)
+  },
+  'tap-test-done': async () => {
+    usePractice.setState({ mode: 'test' })
+    useStore.getState().navigate('calibration')
+    const rs = ['left-palm', 'right-palm', 'left-grille', 'right-grille', 'top-strip'].flatMap((z, i) => [0, 1, 2].map((k) => ({ zone: z, kind: (i === 3 && k > 0 ? 'wrong' : 'hit') as 'hit' | 'wrong', heardAs: 'top-strip' })))
+    useTapTest.setState({ phase: 'done', prompts: rs.map((r) => r.zone), index: rs.length - 1, waiting: false, results: rs })
+    await sleep(1200)
+  },
+  training: async () => {
+    usePractice.setState({ mode: 'training' })
+    useStore.getState().navigate('calibration')
+    useTraining.setState({ phase: 'running', round: 0, prompts: ['right-grille', 'left-palm', 'top-strip', 'right-palm', 'left-grille'], index: 2, counts: {} })
+    await sleep(700)
+  },
+  'training-intro': async () => {
+    usePractice.setState({ mode: 'training' })
+    useTraining.setState({ phase: 'intro' })
+    useStore.getState().navigate('calibration')
+    await sleep(600)
+  },
+  sonar: async () => {
+    useStore.getState().saveSettings({ sonar: { enabled: true, sessionSeconds: 30, autoApps: [] } })
+    await sleep(200)
+    client.send({ type: 'sonar_session_start', seconds: 60 })
+    useStore.getState().navigate('sonar')
+    await sleep(2600)
+    client.inject({ type: 'gesture', t: dnow(), gesture: 'push', zone: 'air', zones: ['air'], modifiers: [], confidence: 0.9, app: null, ...({ side: 'right' } as object) } as never)
+    await sleep(250)
+  },
+  'sonar-test': async () => {
+    useStore.getState().navigate('sonar')
+    await sleep(300)
+    clickText('[role=group] button', 'Sonar test')
+    await sleep(600)
+  },
+  'live-why': async () => {
+    usePractice.setState({ mode: 'calibrate' })
+    useStore.getState().navigate('live')
+    await sleep(700)
+    client.inject({ type: 'rejected', t: dnow(), reason: 'low_confidence', zone: 'right-grille', confidence: 0.62, strength: 1.1 })
+    await sleep(200)
+    clickText('button', 'Why didn')
+    await sleep(500)
   },
   'demo-frames': async () => {
     useStore.setState({ debugFrames: true })

@@ -11,6 +11,7 @@ export const NAV: { route: Route; label: string }[] = [
   { route: 'bindings', label: 'Gestures and actions' },
   { route: 'calibration', label: 'Calibration' },
   { route: 'sensors', label: 'Sensors' },
+  { route: 'sonar', label: 'Sonar' },
   { route: 'settings', label: 'Settings' },
   { route: 'guide', label: 'Gesture guide' }
 ]

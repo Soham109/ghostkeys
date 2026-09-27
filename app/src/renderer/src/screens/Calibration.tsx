@@ -12,6 +12,7 @@ import { Check, Segmented, ZoneIndex } from '@/components/ui/controls'
 import { Tick } from '@/components/ui/glyphs'
 import { LaptopMap } from '@/components/laptop/LaptopMap'
 import { Seismograph } from '@/components/Seismograph'
+import { ModeSwitch, TapTest, TrainingSession, usePractice } from './Practice'
 
 type Step = 'pick' | 'capture' | 'negatives' | 'training' | 'results'
 type Done = Extract<CalibrationMsg, { phase: 'done' }>
@@ -726,17 +727,31 @@ export function CalibrationScreen(): React.JSX.Element {
   const step = useWizard((s) => s.step)
   const picked = useWizard((s) => s.picked)
   const zones = useStore((s) => s.config?.zones ?? [])
+  const mode = usePractice((s) => s.mode)
 
-  // Default to every zone the first time.
+  // Default to every switched-on zone the first time.
   React.useEffect(() => {
-    if (step === 'pick' && picked.length === 0 && zones.length) useWizard.setState({ picked: zones.map((z) => z.id) })
+    if (step === 'pick' && picked.length === 0 && zones.length) useWizard.setState({ picked: zones.filter((z) => z.enabled !== false).map((z) => z.id) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zones.length])
 
   return (
     <>
-      <PageHeader title="Calibration" actions={<Stepper step={step} />} />
+      <PageHeader
+        title="Calibration"
+        actions={
+          <div className="flex items-center gap-6">
+            {mode === 'calibrate' && step !== 'pick' && <Stepper step={step} />}
+            <ModeSwitch />
+          </div>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col">
+        {mode === 'test' ? (
+          <TapTest zones={zones} />
+        ) : mode === 'training' ? (
+          <TrainingSession zones={zones} />
+        ) : (
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={step === 'training' ? 'results' : step}
@@ -752,6 +767,7 @@ export function CalibrationScreen(): React.JSX.Element {
             {(step === 'training' || step === 'results') && <Results zones={zones} />}
           </motion.div>
         </AnimatePresence>
+        )}
       </div>
     </>
   )

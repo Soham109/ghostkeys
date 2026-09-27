@@ -364,6 +364,43 @@ export type FeedbackMsg =
       overall?: number
     }
   | { type: 'feedback'; kind: 'false'; zone?: string; t?: number; retrained: boolean; reason?: string; counts?: Record<string, number>; overall?: number }
+export interface SonarSide {
+  hz: number
+  pilotDbfs: number
+  noiseDbfsPerBin: number
+  snrDb: number
+  pilotPresent: boolean
+  sidebandLowDbc: number
+  sidebandHighDbc: number
+  dopplerShiftBins?: number[]
+  pathDeltaMm: number
+  pathStepVarMm2?: number
+  pathTotalMm: number
+  dynamicDb?: number
+  gateOpenShare: number
+}
+/** "debug" stream while sonar runs, about 10 a second (GhostkeysAcoustics README, sonar_debug). */
+export interface SonarDebugMsg {
+  type: 'sonar_debug'
+  t: number
+  windowS?: number
+  left: SonarSide
+  right: SonarSide
+  gates: {
+    ready: boolean
+    warmedUp: boolean
+    tonesPlaying: boolean
+    interference: boolean
+    interferenceReason?: string
+    suppressedByDaemon: boolean
+    episode?: boolean
+    hover?: boolean
+    slide?: boolean
+    toneProblem?: string | null
+    restarts?: number
+  }
+  input?: { device?: { name?: string }; highBandRolloffDb?: number; voiceProcessing?: boolean; micMode?: string }
+}
 export interface DiagnosticsMsg {
   type: 'diagnostics'
   path: string
@@ -552,6 +589,7 @@ export type DaemonMessage =
   | CandidateMsg
   | FeedbackMsg
   | DiagnosticsMsg
+  | SonarDebugMsg
 
 export type DaemonMessageType = DaemonMessage['type']
 
@@ -607,7 +645,8 @@ const DAEMON_TYPES: ReadonlySet<string> = new Set([
   'catalog',
   'candidate',
   'feedback',
-  'diagnostics'
+  'diagnostics',
+  'sonar_debug'
 ])
 
 /** Parses a text frame. Returns null for anything that is not a known daemon message. */

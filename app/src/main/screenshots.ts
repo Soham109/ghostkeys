@@ -55,7 +55,16 @@ export const SHOTS = [
   'bindings-hover',
   'bindings-needs',
   'binding-needs-editor',
-  'live-needs'
+  'live-needs',
+  'onboarding-5-quick',
+  'onboarding-6-first',
+  'tap-test',
+  'tap-test-done',
+  'training',
+  'training-intro',
+  'sonar',
+  'sonar-test',
+  'live-why'
 ] as const
 
 /** Shots captured mid-animation: grab the frame right away. */

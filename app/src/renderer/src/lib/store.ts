@@ -18,8 +18,8 @@ import type {
 import type { AppInfo, AppPrefs, DaemonState } from '@shared/ipc'
 import { FREE_LICENSE, type LicenseState } from '@shared/license'
 
-export type Route = 'live' | 'zones' | 'bindings' | 'calibration' | 'sensors' | 'settings' | 'guide'
-export const ROUTES: Route[] = ['live', 'zones', 'bindings', 'calibration', 'sensors', 'settings', 'guide']
+export type Route = 'live' | 'zones' | 'bindings' | 'calibration' | 'sensors' | 'sonar' | 'settings' | 'guide'
+export const ROUTES: Route[] = ['live', 'zones', 'bindings', 'calibration', 'sensors', 'sonar', 'settings', 'guide']
 
 export interface FeedItem {
   id: number

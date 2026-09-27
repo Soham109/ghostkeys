@@ -26,17 +26,26 @@ app.setName('Ghostkeys')
 
 // Electron's own files (caches, local storage, prefs) live in Ghostkeys/app; the daemon owns Ghostkeys/daemon.
 // Must run before the app is ready. Idempotent: prefs from the old shared folder are copied once.
+// Scripted runs (screenshots, self-test) must not touch the user's Library: they pass GK_USERDATA (a scratch folder).
 const GK_SUPPORT = join(app.getPath('appData'), 'Ghostkeys')
-const APP_DATA = join(GK_SUPPORT, 'app')
+const SCRATCH_DATA = process.env.GK_USERDATA
+const APP_DATA = SCRATCH_DATA || join(GK_SUPPORT, 'app')
+if (SCREENSHOT && !SCRATCH_DATA) {
+  console.error('[paths] SCREENSHOT/SELFTEST needs GK_USERDATA so the user\'s Library is left alone; refusing to start.')
+  process.exit(2)
+}
 try {
   mkdirSync(APP_DATA, { recursive: true })
-  const oldPrefs = join(GK_SUPPORT, 'app-prefs.json')
-  const newPrefs = join(APP_DATA, 'app-prefs.json')
-  if (existsSync(oldPrefs) && !existsSync(newPrefs)) copyFileSync(oldPrefs, newPrefs)
+  if (!SCRATCH_DATA) {
+    const oldPrefs = join(GK_SUPPORT, 'app-prefs.json')
+    const newPrefs = join(APP_DATA, 'app-prefs.json')
+    if (existsSync(oldPrefs) && !existsSync(newPrefs)) copyFileSync(oldPrefs, newPrefs)
+  }
 } catch (e) {
   console.error('[paths] could not prepare', APP_DATA, e)
 }
 app.setPath('userData', APP_DATA)
+app.setPath('sessionData', APP_DATA)
 
 // ---------------------------------------------------------------- prefs
 
