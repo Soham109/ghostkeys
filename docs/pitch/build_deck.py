@@ -127,7 +127,7 @@ text(s, M, Inches(6.7), CW, Inches(0.4), "Measured on our own recordings and re-
 
 # 5 ---------------------------------------------------------------- business
 s = new_slide()
-h = text(s, M, Inches(0.9), Inches(11.5), Inches(1.0), "Nothing to buy. Pay once.", size=40, font=XL)
+h = text(s, M, Inches(0.9), Inches(11.5), Inches(1.0), "Free to try. Pay once to unlock everything.", size=40, font=XL)
 tiers = [("Free", "$0", "two palm buttons"), ("Pro", "$29", "once, everything"), ("Teams", "$49", "per seat, per year")]
 for i, (n_, p_, d_) in enumerate(tiers):
     x = int(M + cw * i)
@@ -144,6 +144,19 @@ scrim(s, 40)
 t1 = text(s, M, Inches(4.9), CW, Inches(1.2), "Try it on the laptop in front of you.", size=46, font=XL)
 t2 = text(s, M, Inches(6.0), CW, Inches(0.4), "ghostkeys-nine.vercel.app        github.com/Soham109/ghostkeys", size=13, font=MONO, color=INK2)
 anim(s, t1, 300, "fade", 1200)
+
+NOTES = [
+ "This is Ghostkeys. It turns the blank parts of your MacBook, the palm rests, the speaker grilles and the strip above the keys, into buttons. No new hardware, nothing to plug in.",
+ "Look at a MacBook: a lot of the top is dead space. With Ghostkeys you tap it. Tap the top strip to jump back to your last app, double tap the right grille for a screenshot, tap the left palm rest to mute a call. You choose what each spot does.",
+ "The hard part: every Apple silicon MacBook has a motion sensor inside that reads 800 times a second, and a tap barely shows up on it. Typing looks almost the same, as you can see. So every bump goes through four checks: did something hit, were you typing or on the trackpad, which spot was it, and are we sure. If we are not sure, we do nothing. A missed tap costs a second try. A wrong action costs trust.",
+ "It also works without touching. The speakers play two tones too high for people to hear, and the mic listens to how your hand changes them. Raise or lower your hand to change the volume. It is early, and it needs the Mac's own speakers.",
+ "If you have a camera, you can pinch in the air in front of the screen, like turning a dial. It is optional and off by default, and the video never leaves the Mac.",
+ "We measured it on our own recordings, and someone who did not write the code re-checked every number. Wrong taps went from 16.5 percent to 1.4. Picking up the laptop used to set off about two false taps a minute, now none. And after calibrating on your lap, it catches 84 percent of lap taps, up from zero.",
+ "The business is simple. Free gets you two palm buttons. Pro is 29 dollars once for everything. Teams is 49 dollars per seat per year. There is nothing to buy, because every Apple silicon MacBook already has the sensor. It is free while we are in beta.",
+ "It is live now. Try it on the laptop in front of you. Thank you.",
+]
+for s_, n_ in zip(prs.slides, NOTES):
+    s_.notes_slide.notes_text_frame.text = n_
 
 slides = list(prs.slides)
 for s in slides:
