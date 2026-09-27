@@ -10,6 +10,71 @@ Newest round first.
 
 ---
 
+## Round 4: 2026-09-26 19:14 local (build of `web/` as of 19:13)
+
+Same method (copy of `web/`, `next build`, port 4801, Chromium on Metal). Added this round: a scroll-snap test (`scratchpad/snap.mjs`, `snap2.mjs`) using both synthetic wheel events and real mouse-wheel input through Playwright, and a full crawl of every internal page and link (19 pages including all `/guide/*` articles).
+
+### Bugs (fix first)
+
+1. **Mouse-wheel users get stuck on the first screen (snap pulls them back to the top).** Real mouse-wheel input, 1440x900, starting at the top:
+
+   | input | where it settles |
+   |---|---|
+   | 1 notch (100px) | 0 (moved, then pulled back) |
+   | 3 notches, 250 ms apart | 0 |
+   | 3 notches, 120 ms apart | 0 |
+   | 5 notches, 120 ms apart | 350 |
+   | 8 notches, 80 ms apart | 560 |
+
+   A gentle trackpad swipe (about 150px of travel) also returns to 0, 30 times out of 30, at both 1440x900 and 1280x800. The same happens at the bottom: 30 of 30 small upward swipes spring back to the last beat (9005 at 1440, 8004 at 1280). So a normal person who scrolls one or two notches at a time sees the page nudge and bounce back, and believes it is broken.
+   Cause: `Experience.tsx:100` uses `Snap(lenis, { type: "proximity", distanceThreshold: "32%", debounce: 180 })` and `beatPositions()` in `lib/chapters.ts` always adds `0` and the page end as beats. The next beat after 0 is at 1,283px, so anything that settles within 288px (32 percent of 900) of the top is pulled back to 0.
+   Fix, in order of preference: drop `0` and the page end from the beat list (the intro and footer should scroll freely); make snap directional (only snap forward in the direction of the last input); or add a beat at the end of the intro pin so the first beat is within reach. Re-test with 1 and 3 notches from the top.
+2. **Mid-page, one notch is also undone.** From a beat at 1,300, one notch ends at 1,283 (moved 17px backwards); from 3,600 one notch moves only 23px. Scrolling slowly, a step at a time, does nothing until the user pushes harder. With the fix to bug 1 in place, consider `distanceThreshold` around 20 percent so single notches between beats are allowed to rest.
+3. **Hero headline overlaps itself when the page rests between beats.** At y=503 (1440x900) "Your MacBook" sits across "has more": `r4/art-dark-02.png`. Snap does not correct this position (503 is more than 288px from both beats), so users land here. Same at 390x844 (`r4/390x844-01.png`, top lines ghosted) and mid-reveal slices at `r4/art-dark-14.png` ("touching it." cut) and `r4/art-light-11.png` ("A different" cut). Fix: finish the exit tween before the first beat, or make lines fully in or fully out between beats.
+4. **Every purchase path loops back to the pricing page.** `lib/site.ts`: `DOWNLOAD_URL = "/pricing/"`, `BUY_URL = "/pricing/#tiers"`, `SALES_URL = "/faq/"`. On `/pricing/` itself, "Download free" reloads `/pricing/` and "Buy Pro, $19 at launch" scrolls to the table the user is already reading. The links resolve (not 404), but the moment someone tries to buy it looks broken. Use a disabled state with a mono "Available [date]" or a waitlist form until the real URLs exist.
+5. **Reduced motion: the next chapter's headline scrolls over the previous chapter's still.** "A different layout for every app." in thin white type sits on the light aluminum of the sound-mode still: `r4/reduced-06.png`. Also `r4/reduced-01.png`. Keep copy and its still in the same block, or give the still a dark lower gradient where copy passes.
+6. **Still open from earlier rounds:** no theme control in the mobile nav (`mobileToggleVisible: false`; the pill shows only "AUTO" text at 390px, see `r4/390x844-00.png`, which is not a control).
+
+Clean this round: 0 console errors or warnings on all 19 pages at all 5 viewports; 0 failed requests; 0 broken links or missing `#anchors` across the full crawl; no hydration errors; no WebGL context loss; CLS 0.0000 to 0.0065 (only the nav pill converging, value 0); theme toggle correct and persistent with no flash; 43 of 43 Tab stops have a visible focus ring; mobile `/compatibility/` table no longer overflows; 3D labels no longer render off-screen at any width; no HUD pill overlaps the copy; reduced motion now renders stills with **0 canvases** and no stacked headlines (round 2 and 3 bug fixed).
+
+### Performance (M5 Pro, Metal, 1440x900)
+
+| measure | round 3 | round 4 |
+|---|---|---|
+| First WebGL draw | 456 ms | 448 ms (461 to 543 across viewports) |
+| LCP | 68 ms | 104 ms |
+| Cold scroll pass p50 / p95 / p99 / max | 16.7 / 16.8 / 16.8 / 33.3 ms | 16.7 / 16.8 / 16.8 / 16.8 ms, **0 frames > 32 ms** |
+| Warm passes, 4x CPU throttle pass | 0 long frames | 0 long frames, max 16.8 ms |
+| JS heap growth over 3 passes | +1.7 MB | +1.4 MB (21.6 to 23.0 MB) |
+| WebGL buffers after pass 1 / 2 / 3 | 496 / 541 / 586 | **458 / 458 / 458 (leak fixed)** |
+| Programs | 107 | 119, all created before the first pass ends; no compile hitch seen |
+| Idle fps | 60.5 | 60.5 |
+
+- **The cinematic intro works.** Filmstrip `r4/load.jpg`: black at 100 ms, a macro of the palm rest edge fades up from black at ~600 ms, a touch ring lands with the "Left palm · Play or pause" pill at ~1.9 s, then the camera pulls back to the full laptop by ~2.7 s. No brightness step, no pop-in, no empty frame. This fixes the client's "the laptop loading is bad" complaint.
+- Scroll is locked at 60 fps with no long frames even on a cold first pass and at 4x CPU throttle. This machine is fast; a mid-range Intel or M1 Air test is still worth doing before launch.
+
+### Snap pacing: does it feel good?
+
+- **Big gestures: yes.** A reading-speed scroll (small continuous deltas for 2.5 s) moves freely and lands within 76px of where the user stopped. Pulled back 76px at 1440 and 0px at 1280, which is barely noticeable. Snap settles in about 1.0 s after input ends (debounce 180 ms plus the 0.8 s ease), which reads as deliberate and calm.
+- **Small gestures: no.** See bugs 1 and 2. The spring-back at the top and bottom is the one thing in this build that feels broken.
+- **Touch (390x844, real touch scroll gestures via CDP):** swipes are not fought. 10 of 12 swipes had 0px pull-back and 2 had 82px. Snap settles 0.8 to 0.9 s after the swipe. Fine.
+
+### Art direction (short)
+
+The site now reads as one short film: black void, silver laptop, one line of type per beat, a closing lid at the end. Frames `r4/art-dark-00.png`, `-05.png`, `-07.png`, `-16.png`, `-35.png` are portfolio quality. Subpages now match (`r4/subs.jpg`). Remaining taste issues, none blocking:
+- **Dead scroll is shorter but still there**: positions 11 to 13 (lid, about 750px) and 28 to 31 (laptop idling before "Try it here.", about 1,000px) have no copy; 20 to 23 carry only on-laptop labels. Consider halving the second hold.
+- The Switzer light at display size is elegant but thin; over the lit keyboard in `r4/art-dark-07.png` and the palm rest in `r4/art-dark-08.png` it loses contrast. A slightly heavier weight (300 to 400) at display size would hold up.
+- On-laptop zone labels are soft and slightly blurred in 3/4 views (`r4/art-dark-01.png`, bottom right). Check they render in screen space, not through the depth-of-field pass.
+
+### Top 5 for the builder right now
+1. Snap springs back at the top and bottom: 1 to 3 mouse-wheel notches from the top go nowhere. Remove the `0` and page-end beats, or make snap directional.
+2. Single notches mid-page are undone; lower `distanceThreshold` once 1 is fixed.
+3. Hero headline overlaps itself at rest positions between beats (y≈350 to 500).
+4. Every purchase CTA loops back to `/pricing/`; use an honest disabled or waitlist state until real URLs exist.
+5. Reduced motion: headlines scroll over the previous chapter's bright still; add a dark gradient or keep copy with its own still.
+
+---
+
 ## Round 3: 2026-09-26 18:22 local (build of `web/` as of 18:19)
 
 Changes since round 2 were in the 3D (`components/three/*`, new `air/` scenes, `director.ts`) and new `public/stills/*.avif`. Nothing in `components/site/`, `lib/` or `app/` changed, so most round 2 site bugs are unchanged.
