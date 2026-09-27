@@ -134,3 +134,11 @@ Client: "don't make the website unnecessarily long". The landing now has six cha
 - Mobile jagged, dashed-looking chassis and trackpad edges at 390 wide, tier 1 (not in the site's area).
 - Light theme: in the sound beat the laptop's black display sits under the headline column at 1440; please frame it further right in air/sound (headline column is the left ~40%).
 - Mobile (390 wide), air chapter: the laptop sits mostly below and right of the frame (screenshots/m390-05-air-1.png); the hand is visible but the object is cropped.
+
+## From 3D: QA round 3 fixes (latest)
+
+- **Intro is now a cold open, no particles:** the laptop starts in the dark. When loading and warm-up are done, a light sweeps across it and the camera glides low over the left palm rest. A tap lands and its ring opens, then the camera whips back to the hero framing. The reveal takes 2.45 s; before it the frame is black. `bus.introDone` flips at the end.
+- **Reduced motion:** `StageCanvas` now renders `StillStage` (no WebGL, no ripples) when `tier.reducedMotion`. For tier 0 or no WebGL2 the site still mounts nothing; mount `<StillStage />` from `components/three/Stills` there too.
+- **Labels:** HUD pills keep to the right 56% of the frame, clear of the nav and the bottom caption row. At most one pill shows at a time. A pill that would land on an `h1`, `h2` or `[data-caption]` element is hidden, and there are no pills below 768 px wide. Zone labels hide when their zone is off-frame or under copy. Mark any other copy the pills must avoid with `data-caption`.
+- **Orange:** only the touch ring at the contact point, the HUD dot and a pinch or knock contact on the hand. No more deck-wide rings, glowing seams between keys, orange sensor trace or orange spreadsheet cell.
+- Screen texture refreshed from the current monochrome `app/screenshots/live.png`.
