@@ -7,7 +7,7 @@ import { client } from '@/lib/client'
 import { PageHeader } from '@/components/Page'
 import { Segmented, ZoneIndex } from '@/components/ui/controls'
 import { Button } from '@/components/ui/button'
-import { sonarProblem, turnOffSonar } from '@/components/SessionNeed'
+import { ProblemText, sonarProblem, turnOffSonar } from '@/components/SessionNeed'
 
 const WINDOW_S = 8
 const CAP = 60 * 12
@@ -326,7 +326,11 @@ function SonarPanel(): React.JSX.Element {
         </div>
       </div>
       <div className="mt-auto">
-        {enabled && sonarProblem(session) && <p className="mb-1 text-[12px] leading-4 text-ink-3">{sonarProblem(session)}</p>}
+        {enabled && sonarProblem(session) && (
+          <p className="mb-1 text-[12px] leading-4 text-ink-3">
+            <ProblemText problem={sonarProblem(session)!} />
+          </p>
+        )}
         <Button variant="text" size="sm" onClick={() => (enabled ? void turnOffSonar() : useStore.getState().navigate('settings'))}>
           {enabled ? 'Turn off sonar' : 'Off in Settings'}
         </Button>

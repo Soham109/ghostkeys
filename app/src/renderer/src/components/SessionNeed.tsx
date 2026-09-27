@@ -43,7 +43,7 @@ export interface NeedState {
   enabled: boolean
   listening: boolean
   /** Sonar only: why it is on but not listening, or why the tones are off, in plain words. */
-  problem: string | null
+  problem: Problem | null
 }
 
 const WAITING: Record<string, string> = {
@@ -53,13 +53,67 @@ const WAITING: Record<string, string> = {
   lid_closed: 'the lid is closed'
 }
 
+export interface Problem {
+  /** One plain sentence for the user. */
+  text: string
+  /** The daemon's own words (error codes and all), for a small "Details" disclosure; null when text says it all. */
+  details: string | null
+}
+
+/**
+ * Turns a daemon reason (a sonar refusal, a tones-off reason, a session error) into a plain sentence. The raw text
+ * never goes in front of the user; it is kept as details.
+ */
+export function plainReason(raw: string, tonesOnly = false): Problem {
+  const r = raw.toLowerCase()
+  const out = (text: string, keep = true): Problem => ({ text, details: keep ? raw : null })
+  const device = /headphones/.test(r) ? 'headphones' : /bluetooth/.test(r) ? 'a Bluetooth device' : /external/.test(r) ? 'other speakers' : null
+  if (device) return out(`The sonar tones are off while sound goes to ${device}. They come back by themselves on the built-in speakers.`, false)
+  if (/not the built-in speakers|unknown device/.test(r)) return out('The sonar tones only play through the built-in speakers. They come back by themselves when those are the output again.')
+  if (/coreaudio|speakers could not start|-108\d\d|error domain/.test(r)) return out('The speakers couldn’t start the sonar tones. Ghostkeys keeps retrying.')
+  if (/keeps changing/.test(r)) return out('The audio devices keep changing, so the sonar tones wait 30 seconds before trying again.', false)
+  if (/audio output changed|timed out/.test(r)) return out('The audio output just changed. The sonar tones restart in a moment.', false)
+  if (/cooling down/.test(r)) return out('The sonar tones wait a few seconds after a refusal, then try again.', false)
+  if (/access is denied|microphoneDenied/i.test(raw)) return out('Ghostkeys isn’t allowed to use the microphone. Allow it in System Settings > Privacy & Security > Microphone.', false)
+  if (/permission not granted yet/.test(r)) return out('macOS hasn’t asked for microphone access yet. Turn sonar off and on again to get the prompt.', false)
+  if (/no microphone/.test(r)) return out('This Mac has no microphone Ghostkeys can use.', false)
+  if (/open the microphone|reopen the microphone/.test(r)) return out('The microphone couldn’t be opened. Ghostkeys keeps retrying.')
+  if (/sonar is off/.test(r)) return out('Sonar is off.', false)
+  if (/paused/.test(r)) return out('Ghostkeys is paused.', false)
+  if (/not connected|did not confirm/.test(r)) return out(sentence(raw), false)
+  return out(tonesOnly ? 'The sonar tones are off right now. Ghostkeys keeps retrying.' : 'Sonar couldn’t start. Ghostkeys keeps retrying.')
+}
+
 /** Plain-words state of an enabled sonar that is not doing its job, or null when it is. */
-export function sonarProblem(m: SessionMsg | null | undefined): string | null {
+export function sonarProblem(m: SessionMsg | null | undefined): Problem | null {
   if (!m) return null
-  if (m.waiting) return `Waiting: ${WAITING[m.waiting] ?? m.waiting}. It comes back by itself.`
-  if (m.error) return sentence(m.error)
-  if (m.active && m.sonarField === false) return `Listening, but the tones are off: ${m.tonesOff ?? 'the output is not the built-in speakers'}. They come back by themselves.`
+  if (m.waiting) return { text: `Waiting: ${WAITING[m.waiting] ?? m.waiting}. It comes back by itself.`, details: null }
+  if (m.error) return plainReason(m.error)
+  if (m.active && m.sonarField === false) {
+    const p = plainReason(m.tonesOff ?? 'output is not the built-in speakers', true)
+    return { ...p, text: `Listening, but the tones are off. ${p.text}` }
+  }
   return null
+}
+
+/** A problem sentence with the raw daemon text folded away under "Details". */
+export function ProblemText({ problem, className }: { problem: Problem; className?: string }): React.JSX.Element {
+  // Inline elements only: this sits inside <p> descriptions.
+  const [open, setOpen] = React.useState(false)
+  return (
+    <span className={className}>
+      {problem.text}
+      {problem.details && (
+        <>
+          {' '}
+          <button type="button" className="text-[11px] text-ink-3 underline-offset-2 hover:underline" aria-expanded={open} onClick={() => setOpen((o) => !o)}>
+            {open ? 'Hide details' : 'Details'}
+          </button>
+          {open && <span className="mt-1 block font-mono text-[11px] break-all text-ink-3 select-text">{problem.details}</span>}
+        </>
+      )}
+    </span>
+  )
 }
 
 function sentence(s: string): string {
@@ -92,7 +146,7 @@ export async function turnOn(need: Need): Promise<boolean> {
   const base = { sessionSeconds: 30, autoApps: [] as string[], ...(need === 'camera' ? { deskMode: false } : {}), ...cur }
   const err = await saveSettingsConfirmed({ [key]: { ...base, enabled: true } })
   if (err) {
-    toast(`Couldn’t turn on ${NAME[need]}`, { description: sentence(err) })
+    toast(`Couldn’t turn on ${NAME[need]}`, { description: plainReason(err).text })
     return false
   }
   if (need !== 'sonar') client.send({ type: SESSION_START[SESSION[need]] })
@@ -103,7 +157,7 @@ export async function turnOn(need: Need): Promise<boolean> {
 export async function turnOffSonar(): Promise<boolean> {
   const cur = useStore.getState().config?.settings.sonar
   const err = await saveSettingsConfirmed({ sonar: { sessionSeconds: 30, autoApps: [], ...cur, enabled: false } })
-  if (err) toast('Couldn’t turn off Sonar', { description: sentence(err) })
+  if (err) toast('Couldn’t turn off Sonar', { description: plainReason(err).text })
   return !err
 }
 
@@ -112,13 +166,13 @@ export function wireSessionToasts(): void {
   let lastSonarTones: string | null = null
   client.on('session', (m) => {
     if (m.error) {
-      toast(m.kind === 'sonar' ? 'Sonar isn’t listening' : `${SESSION_NAME[m.kind]} didn’t start`, { description: sentence(m.error) })
+      toast(m.kind === 'sonar' ? 'Sonar isn’t listening' : `${SESSION_NAME[m.kind]} didn’t start`, { description: plainReason(m.error).text })
       return
     }
     if (m.kind !== 'sonar') return
     // Tell the user once when the tones stop (headphones, audio change), and once when they are back.
     const tones = m.active && m.sonarField === false ? (m.tonesOff ?? 'output is not the built-in speakers') : null
-    if (tones && tones !== lastSonarTones) toast('Sonar tones paused', { description: `${sentence(tones)} They come back by themselves on the built-in speakers.` })
+    if (tones && tones !== lastSonarTones) toast('Sonar tones paused', { description: plainReason(tones, true).text })
     else if (!tones && lastSonarTones && m.active) toast('Sonar tones back on')
     lastSonarTones = tones
   })
@@ -161,7 +215,7 @@ export function SessionNote({ gesture }: { gesture: GestureKind }): React.JSX.El
       ) : st.need === 'sonar' ? (
         !st.listening || st.problem ? (
           <div className="flex items-start gap-3">
-            <p className="flex-1">{st.problem ?? 'Sonar is on and starting.'}</p>
+            <p className="flex-1">{st.problem ? <ProblemText problem={st.problem} /> : 'Sonar is on and starting.'}</p>
             <Button variant="text" size="sm" onClick={() => void turnOffSonar()}>
               Turn off
             </Button>

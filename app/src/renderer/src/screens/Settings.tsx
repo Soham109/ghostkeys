@@ -13,7 +13,7 @@ import { Input, ProTag, Segmented, Slider, Switch } from '@/components/ui/contro
 import { Menu, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTrigger } from '@/components/ui/overlays'
 import { AppIcon } from '@/components/AppIcon'
 import { previewTapSound } from '@/lib/sound'
-import { sonarProblem, turnOffSonar, turnOn } from '@/components/SessionNeed'
+import { ProblemText, sonarProblem, turnOffSonar, turnOn } from '@/components/SessionNeed'
 
 function Row({ title, desc, children, htmlFor, pro }: { title: string; desc?: React.ReactNode; children: React.ReactNode; htmlFor?: string; pro?: boolean }): React.JSX.Element {
   return (
@@ -425,8 +425,11 @@ export function SettingsScreen(): React.JSX.Element {
                 desc={
                   !sonar.enabled
                     ? 'Off. The tones never play while sonar is off.'
-                    : (sonarProblem(sonarSession) ??
-                      (sonarSession?.active ? 'Listening. The tones play until you turn sonar off.' : 'Starting.'))
+                    : sonarProblem(sonarSession)
+                      ? <ProblemText problem={sonarProblem(sonarSession)!} />
+                      : sonarSession?.active
+                        ? 'Listening. The tones play until you turn sonar off.'
+                        : 'Starting.'
                 }
               >
                 <SonarBench />

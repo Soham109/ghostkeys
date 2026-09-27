@@ -11,9 +11,10 @@ struct Options {
     var noHardwareSessions = false
     var configDir: String?
     var simulateSensors = false
+    var sonarToneTestSeconds: Double?
 
     static let usage = """
-    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors] [--no-hardware-sessions] [--config-dir PATH] [--simulate-sensors]
+    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors] [--no-hardware-sessions] [--config-dir PATH] [--simulate-sensors] [--sonar-tone-test SECONDS]
       --port N          WebSocket port on 127.0.0.1 (default 47823)
       --parent-pid PID  exit (restoring the sensors) when this process ends; the parent process is always watched too
       --verbose         debug logging to stderr
@@ -25,6 +26,9 @@ struct Options {
                         or GHOSTKEYS_CONFIG_DIR)
       --simulate-sensors   test mode: synthetic motion data, never touches sensor hardware (implies no sensor lock)
       --no-hardware-sessions  simulate sound/camera sessions (state and timers only; never opens the mic or camera)
+      --sonar-tone-test S  start the sonar playback engine on the default output for S seconds (1 to 30) playing
+                        SILENCE (amplitude 0, no tone), print whether the output started, exit 0 (ok) or 1. Opens no
+                        microphone, touches no sensor, takes no lock: safe next to a running daemon
     """
 
     static func parse(_ args: [String]) -> Options {
@@ -53,6 +57,9 @@ struct Options {
             case "--restore-sensors": o.restoreSensors = true
             case "--no-hardware-sessions": o.noHardwareSessions = true
             case "--simulate-sensors": o.simulateSensors = true
+            case "--sonar-tone-test":
+                guard let s = Double(value()), s >= 1, s <= 30 else { fail("--sonar-tone-test needs seconds between 1 and 30") }
+                o.sonarToneTestSeconds = s
             case "--config-dir":
                 let p = value()
                 guard !p.isEmpty else { fail("--config-dir needs a path") }

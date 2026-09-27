@@ -187,7 +187,8 @@ final class SoundSession {
             return "sonar tones stopped: \(toneProblem!); retrying"
         }
         guard now >= toneRetryAt else { return nil }
-        let g = StereoPilotGenerator()
+        // At the output device's own rate (48 kHz on current MacBooks), so the playback engine never resamples.
+        let g = StereoPilotGenerator(sampleRate: TonePlayer.outputSampleRate() ?? GhostkeysAcousticsInfo.sampleRate)
         do {
             try session.startStereoPilots(g)
             stereo = g
@@ -251,7 +252,13 @@ final class SoundSession {
         case PilotToneError.routeNotAllowed(let route): return "output is \(describe(route)), not the built-in speakers"
         case PilotToneError.coolingDown(let left): return "cooling down (\(Int(left.rounded(.up))) s left)"
         case AcousticSession.SessionError.microphoneDenied: return "microphone access is denied"
-        default: return "\(error)"
+        case TonePlayer.PlayerError.notRunning: return "the speakers could not start the tones (the output engine did not run)"
+        default:
+            let ns = error as NSError
+            if ns.domain.contains("coreaudio") || ns.domain == NSOSStatusErrorDomain {
+                return "the speakers could not start the tones (CoreAudio error \(ns.code))"
+            }
+            return "\(error)"
         }
     }
 
