@@ -84,7 +84,7 @@ export function Nav() {
             ))}
           </div>
           <ThemeCycle />
-          <a href={DOWNLOAD_URL} className="btn-ink h-8 px-4 text-[13px]">
+          <a href={DOWNLOAD_URL} target="_blank" rel="noopener" className="btn-ink h-8 px-4 text-[13px]">
             Download
           </a>
         </nav>

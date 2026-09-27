@@ -315,7 +315,7 @@ function Intro() {
             Your MacBook has <em>more</em> buttons.
           </h1>
           <div data-intro data-fade className="intro-hidden pointer-events-auto mt-10 flex items-center gap-8">
-            <a href={DOWNLOAD_URL} className="btn-ink h-11 px-6 text-[14px]">
+            <a href={DOWNLOAD_URL} target="_blank" rel="noopener" className="btn-ink h-11 px-6 text-[14px]">
               Download for Mac
             </a>
             <span className="label">Free to start</span>
@@ -444,7 +444,7 @@ function Finale() {
             The blank space is the <em>interface.</em>
           </h2>
           <div data-fade className="pointer-events-auto mt-12 flex flex-wrap items-center gap-x-8 gap-y-4">
-            <a href={DOWNLOAD_URL} className="btn-ink h-12 px-7 text-[15px]">
+            <a href={DOWNLOAD_URL} target="_blank" rel="noopener" className="btn-ink h-12 px-7 text-[15px]">
               Download for Mac
             </a>
             {pro?.launchPrice && (
