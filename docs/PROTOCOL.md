@@ -176,7 +176,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
   // "debug" stream: every tap onset the detector analysed, before the typing / trackpad / burst gates.
   // outcome: "accepted" | a rejection reason | "pending" (calibrating or paused). zone is null until calibrated.
 { "type": "feedback", "kind": "missed", "zone": "right-palm", "found": true, "retrained": true, "diagnostic": "<path>.gkrec",
-  "candidate": { "t": 1234.5, "zone": "right-palm", "confidence": 0.7, "strength": 1.2, "droppedBecause": "low_confidence" },
+  "candidate": { "t": 1234.5, "zone": "right-palm", "confidence": 0.7, "probability": 0.62, "strength": 1.2, "droppedBecause": "low_confidence" },
+  "candidates": [ { "t": 1233.9, "strength": 1.1, "skipped": "trackpad or mouse activity within 150 ms" }, { "t": 1234.5, "strength": 1.2, "probability": 0.62 } ],
   "counts": { "right-palm": 21, "none": 30 }, "overall": 0.94 }
 { "type": "feedback", "kind": "false", "zone": "left-grille", "t": 1234.5, "retrained": true, "counts": { }, "overall": 0.95 }
   // replies to feedback_missed / feedback_false, only to the requester. retrained false comes with "reason"
@@ -266,12 +267,22 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 The daemon keeps the last 10 s of raw motion samples (with key / mouse idle times and modifiers) and of detector
 decisions in memory only. Nothing is written to disk unless the app asks.
 
-- `feedback_missed {zone}`: the last 3 s are saved as `diagnostics/missed-<zone>-<time>.gkrec` and replayed offline
-  with the typing / trackpad / burst gates off. The best candidate the live detector did not accept (one the
-  classifier already placed in that zone, else the strongest) is added to `model/samples.json` as that zone, and the
-  zone model is retrained from all saved samples. Only zones that were calibrated can gain samples.
-- `feedback_false`: the features of the last accepted tap (within 60 s) are added as `none`, and the model is retrained.
-  The action that tap triggered is not undone.
+- `feedback_missed {zone}`: the last 5 s are saved as `diagnostics/missed-<zone>-<time>.gkrec` and replayed offline
+  with the typing / trackpad / burst gates off. A wrong feedback sample hurts accuracy, so at most one candidate is
+  learned, and only if it passes every check; otherwise nothing is added (the diagnostic is still saved):
+  - it happened 0.7 to 5 s before the request (the last 0.7 s is the hand moving to send the report);
+  - it was not accepted live, and there was no trackpad / mouse activity within 150 ms of it;
+  - its peak is at least half this user's gentle tap in that zone (the zone's calibrated p10), or 1.5x the onset floor
+    when the model has no peak data;
+  - the classifier does not give another zone 0.8 or more, and the claimed zone is among its top 2.
+  The best passing candidate (highest probability for the zone) is added to `model/samples.json` as that zone and the
+  model is retrained. `feedback_missed` never adds `none` samples. Only calibrated zones can gain samples. The reply's
+  `candidates` lists every onset considered, with `skipped` (the reason) or `probability`.
+- `feedback_false`: the last accepted tap (within 60 s) is added as `none` and the model is retrained, but only if the
+  tap was weaker than this user's typical tap in that zone (below the zone's calibrated p50). A tap at least that
+  strong was most likely intended: the report is accepted and logged, nothing is learned, and the reply says so
+  (`retrained: false`, `peakG`). The action the tap triggered is never undone.
+- Every retrain keeps the previous `zone-model.json`, `calibration-report.json` and `samples.json` as `*.bak`.
 - `diagnostics_export`: the last 10 s go to `diagnostics/<time>.gkrec`, the ghostkeys-lab recording format
   (`ghostkeys-lab info|replay <file>`), with the detector's decisions in the header's `notes`. The folder keeps the
   newest 50 recordings.
@@ -291,7 +302,7 @@ decisions in memory only. Nothing is written to disk unless the app asks.
       "action": { "kind": "volume", "step": 2 }, "label": "Volume knob",
       "knob": { "axis": "y", "stepPx": 24, "inverse": { "kind": "volume", "step": -2 } } }
   ],
-  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "followUpConfidence": 0.5,
+  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "followUpConfidence": 0.5, "lightTouch": false,
     "hud": true, "haptics": false,
     "sound":  { "enabled": false, "sessionSeconds": 30, "autoApps": [] },
     "camera": { "enabled": false, "sessionSeconds": 30, "autoApps": [], "deskMode": false },
@@ -309,6 +320,8 @@ decisions in memory only. Nothing is written to disk unless the app asks.
   "inverse": { "kind": "volume", "step": -2 } }`.
 - `settings.sonar`: like `settings.sound`, but the tones never play unless `enabled` is true, even when the app sends
   `sonar_session_start`. Pets and some people can hear 19 to 20 kHz; keep sessions short and say so in the UI.
+- `lightTouch` (default false): lets much lighter taps (8 to 40 mg) trigger, with an onset floor learned from
+  calibration. It also lets in more junk spikes, so only turn it on after a calibration done with light taps.
 - `followUpConfidence` (0 to `minConfidence`): in a zone with a double / triple binding, a tap at this confidence may
   complete a multi-tap whose other tap passed `minConfidence`; alone it never fires. Set equal to `minConfidence` to disable.
 - Typing gate: a tap is rejected as `typing` within `typingGateMs` of a key press, and also within 150 ms of any key

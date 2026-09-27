@@ -51,16 +51,18 @@ final class DiagnosticsRecorder {
 
     /// Test hook (simulated sessions only): adds a tap-like transient to the buffered samples `ago` seconds back,
     /// so the offline analysis has something to find without anyone touching the laptop.
-    func injectSyntheticTap(ago: Double = 0.5) {
+    func injectSyntheticTap(ago: Double = 0.5, scale: Double = 1, mouseNear: Bool = false) {
         guard filled > 0 else { return }
         let lastT = ring[(head - 1 + ring.count) % ring.count].t
         let onset = lastT - ago
         for i in 0..<filled {
             let idx = (head - 1 - i + ring.count) % ring.count
             let dt = ring[idx].t - onset
+            // Optional: a trackpad event 50 ms after the tap, as the idle-time column would show it.
+            if mouseNear, dt >= 0.05, dt < 1 { ring[idx].sinceMouse = min(ring[idx].sinceMouse, dt - 0.05) }
             guard dt >= 0, dt < 0.06 else { continue }
             // Decaying 180 Hz ring, 0.25 g peak on z and a little on x, plus a small gyro kick.
-            let v = 0.25 * exp(-dt / 0.008) * sin(2 * .pi * 180 * dt)
+            let v = 0.25 * scale * exp(-dt / 0.008) * sin(2 * .pi * 180 * dt)
             ring[idx].a += SIMD3(0.3 * v, 0.1 * v, v)
             ring[idx].g += SIMD3(20 * v, -10 * v, 5 * v)
         }

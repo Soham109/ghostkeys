@@ -151,7 +151,7 @@ final class ConfigStore {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         // Keep the previous version one step back (SAFETY_AUDIT item 13).
         let fm = FileManager.default
-        if fm.fileExists(atPath: url.path), url.lastPathComponent != "samples.json" {
+        if fm.fileExists(atPath: url.path) {
             let bak = url.appendingPathExtension("bak")
             try? fm.removeItem(at: bak)
             try? fm.copyItem(at: url, to: bak)

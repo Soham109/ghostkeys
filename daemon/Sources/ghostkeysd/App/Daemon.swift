@@ -639,7 +639,9 @@ final class Daemon: @unchecked Sendable {
             if !sessions.imuTap(t: t, zone: zone, message: msg) { server.broadcast(msg, stream: "taps") }
             // Pretend the engine accepted it, with the features of a saved sample for that zone (for feedback_false tests).
             if let sample = store.loadSamples().last(where: { $0.label == zone }) {
-                lastAccepted = SeenCandidate(t: t, features: TapFeatures(values: sample.features.values, t: t), zone: zone,
+                var values = sample.features.values
+                if let k = (m["strengthScale"] as? NSNumber)?.doubleValue, k > 0 { values[FeatureIndex.strength.rawValue] += log10(k) }
+                lastAccepted = SeenCandidate(t: t, features: TapFeatures(values: values, t: t), zone: zone,
                                              confidence: 0.95, outcome: "accepted")
             }
             let g = GestureEvent(t: t, gesture: "tap", zone: zone, zones: [zone], modifiers: [], confidence: 0.95)
@@ -666,7 +668,10 @@ final class Daemon: @unchecked Sendable {
             }
         case "sim_spike" where options.noHardwareSessions:
             // With simulated sensors the transient goes through the live detector too; otherwise only into the buffer.
-            if options.simulateSensors && (m["live"] as? Bool) == true { hub.injectSimulatedTap() } else { diag.injectSyntheticTap(ago: 0.5) }
+            if options.simulateSensors && (m["live"] as? Bool) == true { hub.injectSimulatedTap() } else {
+                diag.injectSyntheticTap(ago: (m["ago"] as? NSNumber)?.doubleValue ?? 2.0,
+                                        scale: (m["scale"] as? NSNumber)?.doubleValue ?? 1, mouseNear: (m["mouse"] as? Bool) ?? false)
+            }
         case "catalog_get":
             server.send(["type": "catalog", "catalog": catalog], to: c)
         case "sound_session_start":
@@ -725,22 +730,34 @@ final class Daemon: @unchecked Sendable {
         guard let zone, config.zones.contains(where: { $0.id == zone }) else {
             return sendError("feedback_missed needs a zone from the config", to: c)
         }
+        let now = diag.samples(lastSeconds: 0).last?.t ?? Clock.now()
         let accepted = recentCandidates.filter { $0.outcome == "accepted" }.map(\.t)
-        let found = diag.offlineCandidates(settings: engine.settings, model: engine.model, window: 3)
-            .filter { f in !accepted.contains { abs($0 - f.t) < 0.02 } }
-        // Prefer a candidate the classifier already placed in that zone; otherwise the strongest one.
-        let best = found.filter { $0.zone == zone }.max { $0.confidence < $1.confidence }
-            ?? found.max { $0.features[.strength] < $1.features[.strength] }
-        let why = best.flatMap { b in recentCandidates.first { abs($0.t - b.t) < 0.02 }?.outcome } ?? (best == nil ? nil : "not seen live")
+        // Mouse / trackpad event times in the buffer (reconstructed from the idle times).
+        let buffered = diag.samples(lastSeconds: FeedbackRule.lookBack + 0.5)
+        var mouseTimes: [Double] = []
+        for x in buffered where x.sinceMouse < 60 {
+            let e = x.t - x.sinceMouse
+            if mouseTimes.last.map({ abs($0 - e) > 0.005 }) ?? true { mouseTimes.append(e) }
+        }
+        let model = engine.model
+        var verdicts: [[String: Any]] = []
+        var best: (f: DiagnosticsRecorder.Found, p: Double)?
+        for f in diag.offlineCandidates(settings: engine.settings, model: model, window: FeedbackRule.lookBack) {
+            var v: [String: Any] = ["t": Clock.protocolMs(f.t), "strength": Self.r4(f.features[.strength])]
+            let reject = FeedbackRule.check(f, zone: zone, now: now, accepted: accepted, mouseTimes: mouseTimes, model: model)
+            if let why = reject.reason { v["skipped"] = why; verdicts.append(v); continue }
+            v["probability"] = Self.r4(reject.probability)
+            verdicts.append(v)
+            if best == nil || reject.probability > best!.p { best = (f, reject.probability) }
+        }
 
         let url = store.diagnosticsDirectory.appendingPathComponent("missed-\(zone)-\(Self.stamp()).gkrec")
         var saved: String?
         do {
-            let lastT = diag.samples(lastSeconds: 0).last?.t ?? Clock.now()
-            let seg = GkrecSegment(phase: "capture", zone: zone, start: lastT - 3, end: lastT, onsets: best.map { [$0.t] } ?? [],
-                                   discarded: false, endedBy: "feedback")
-            _ = try diag.export(to: url, seconds: 3, deviceModel: device.model, zones: config.zones.map(\.id), segments: [seg],
-                                notes: ["feedback_missed zone=\(zone)"])
+            let seg = GkrecSegment(phase: "capture", zone: zone, start: now - FeedbackRule.lookBack, end: now,
+                                   onsets: best.map { [$0.f.t] } ?? [], discarded: false, endedBy: "feedback")
+            _ = try diag.export(to: url, seconds: FeedbackRule.lookBack, deviceModel: device.model, zones: config.zones.map(\.id),
+                                segments: [seg], notes: ["feedback_missed zone=\(zone)"])
             DiagnosticsRecorder.prune(store.diagnosticsDirectory)
             saved = url.path
         } catch {
@@ -748,18 +765,21 @@ final class Daemon: @unchecked Sendable {
         }
 
         var reply: [String: Any] = ["type": "feedback", "kind": "missed", "zone": zone, "found": best != nil,
-                                    "diagnostic": saved ?? NSNull()]
-        if let best {
-            reply["candidate"] = ["t": Clock.protocolMs(best.t), "zone": engine.model == nil ? NSNull() : best.zone as Any,
-                                  "confidence": Self.r4(best.confidence), "strength": Self.r4(best.features[.strength]),
-                                  "droppedBecause": why ?? NSNull()]
-        }
+                                    "diagnostic": saved ?? NSNull(), "candidates": verdicts]
         guard let best else {
             reply["retrained"] = false
-            reply["reason"] = "no tap-like onset in the last 3 s (the tap may have been too soft)"
+            reply["reason"] = verdicts.isEmpty
+                ? "no tap-like onset 0.7 to 5 s before the request (the tap may have been too soft)"
+                : "no candidate passed the checks (see candidates); nothing was added"
+            Log.info("feedback missed \(zone): nothing qualified (\(verdicts.count) candidates); diagnostic saved only")
             return server.send(reply, to: c)
         }
-        retrain(adding: best.features, label: zone, reply: reply, client: c)
+        let why = recentCandidates.first { abs($0.t - best.f.t) < 0.02 }?.outcome ?? "not seen live"
+        reply["candidate"] = ["t": Clock.protocolMs(best.f.t), "zone": best.f.zone, "confidence": Self.r4(best.f.confidence),
+                              "probability": Self.r4(best.p), "strength": Self.r4(best.f.features[.strength]),
+                              "droppedBecause": why]
+        // feedback_missed only ever adds a sample of the claimed zone (never "none").
+        retrain(adding: best.f.features, label: zone, reply: reply, client: c)
     }
 
     /// The last accepted tap was not intended: add its features as "none" and retrain (nothing is undone).
@@ -769,7 +789,17 @@ final class Daemon: @unchecked Sendable {
                                 "reason": "no accepted tap in the last 60 s"], to: c)
         }
         lastAccepted = nil
-        let reply: [String: Any] = ["type": "feedback", "kind": "false", "zone": last.zone, "t": Clock.protocolMs(last.t)]
+        var reply: [String: Any] = ["type": "feedback", "kind": "false", "zone": last.zone, "t": Clock.protocolMs(last.t)]
+        // A tap at least as strong as this user's typical tap in that zone (its p50) was most likely meant: the
+        // report is accepted and logged, but it does not teach the model "none".
+        let peak = FeedbackRule.peakG(last.features)
+        if let p50 = engine.model?.peakQuantiles?[last.zone]?[1], peak >= p50 {
+            Log.info("feedback false on \(last.zone): strong tap (\(Self.r4(peak)) g >= p50 \(Self.r4(p50)) g); logged, not added")
+            reply["retrained"] = false
+            reply["reason"] = "that tap was as strong as your usual taps there, so it was probably intended; logged, not learned"
+            reply["peakG"] = Self.r4(peak)
+            return server.send(reply, to: c)
+        }
         retrain(adding: last.features, label: "none", reply: reply, client: c)
     }
 

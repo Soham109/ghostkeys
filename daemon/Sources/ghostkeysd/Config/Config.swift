@@ -170,6 +170,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     var minConfidence = 0.8
     /// A tap at this confidence may complete a double / triple in the same zone (see DetectionSettings).
     var followUpConfidence = 0.5
+    /// Lets much lighter taps through where the room is quiet (see DetectionSettings.lightTouch).
+    var lightTouch = false
     var hud = true
     var haptics = false
     var sound = SoundSettings()
@@ -186,6 +188,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         doubleWindowMs = try c.decodeIfPresent(Double.self, forKey: .doubleWindowMs) ?? d.doubleWindowMs
         minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence) ?? d.minConfidence
         followUpConfidence = try c.decodeIfPresent(Double.self, forKey: .followUpConfidence) ?? d.followUpConfidence
+        lightTouch = try c.decodeIfPresent(Bool.self, forKey: .lightTouch) ?? d.lightTouch
         hud = try c.decodeIfPresent(Bool.self, forKey: .hud) ?? d.hud
         haptics = try c.decodeIfPresent(Bool.self, forKey: .haptics) ?? d.haptics
         sound = try c.decodeIfPresent(SoundSettings.self, forKey: .sound) ?? SoundSettings()
@@ -193,7 +196,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         sonar = try c.decodeIfPresent(SonarSettings.self, forKey: .sonar) ?? SonarSettings()
     }
 
-    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, hud, haptics, sound, camera, sonar }
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, lightTouch, hud, haptics, sound, camera, sonar }
 
     var detection: DetectionSettings {
         var s = DetectionSettings()
@@ -202,6 +205,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         s.doubleWindowMs = max(50, doubleWindowMs)
         s.minConfidence = min(1, max(0, minConfidence))
         s.followUpConfidence = min(s.minConfidence, max(0, followUpConfidence))
+        s.lightTouch = lightTouch
         return s
     }
 }
