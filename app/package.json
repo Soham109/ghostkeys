@@ -7,6 +7,7 @@
   "private": true,
   "scripts": {
     "dev": "node scripts/sync-assets.mjs && electron-vite dev",
+    "dev:taps": "GHOSTKEYSD_ARGS=--log-taps pnpm dev",
     "dev:mock": "node scripts/dev-mock.mjs",
     "mock": "tsx scripts/mock-daemon.ts",
     "build": "node scripts/sync-assets.mjs && electron-vite build",
