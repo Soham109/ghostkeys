@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import { GetSheet } from "@/components/site/GetSheet";
 
 /** Switzer (Fontshare, ITF Free Font License): 200 for display, 300 italic for the one accent word, 300 to 500 for text. */
 const text = localFont({
@@ -44,7 +45,7 @@ export const viewport: Viewport = {
 };
 
 /** Runs before paint so the stored or system theme applies without a flash. */
-const themeScript = `(function(){document.documentElement.classList.add('js');try{var p=localStorage.getItem('gk-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var t=(p==='light'||p==='dark')?p:(d?'dark':'light');document.documentElement.dataset.theme=t;document.documentElement.dataset.themePref=p||'system';}catch(e){document.documentElement.dataset.theme='dark';}})();`;
+const themeScript = `(function(){document.documentElement.classList.add('js');if(/[?&]reduced/.test(location.search))document.documentElement.classList.add('reduced');try{var p=localStorage.getItem('gk-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var t=(p==='light'||p==='dark')?p:(d?'dark':'light');document.documentElement.dataset.theme=t;document.documentElement.dataset.themePref=p||'system';}catch(e){document.documentElement.dataset.theme='dark';}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -54,6 +55,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body>
         <div id="gk-root">{children}</div>
+        <GetSheet />
       </body>
     </html>
   );

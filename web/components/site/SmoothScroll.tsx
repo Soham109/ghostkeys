@@ -19,7 +19,7 @@ export function SmoothScroll() {
       const href = a.getAttribute("href")!;
       // same-page anchors, written either as "#id" or "/#id" while on the home page
       const hash = href.startsWith("#") ? href : href.startsWith("/#") && location.pathname === "/" ? href.slice(1) : null;
-      if (!hash || hash.length < 2) return;
+      if (!hash || hash.length < 2 || hash.startsWith("#get-")) return;
       e.preventDefault();
       scrollToHash(hash);
       history.replaceState(null, "", hash);

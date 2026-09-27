@@ -7,7 +7,6 @@ import gsap from "gsap";
 import { SplitText } from "gsap/SplitText";
 import { useTier } from "@/lib/device";
 import { bus } from "@/lib/stage";
-import Snap from "lenis/snap";
 import { scroller } from "@/lib/scroll";
 import { AIR_SOUND_SPLIT, AIR_STEPS, beatPositions, CHAPTER_SCREENS, LAYER_STEPS, SOUND_STEPS, ZONE_STEPS, stepAt, type ChapterId } from "@/lib/chapters";
 import { DOWNLOAD_URL } from "@/lib/site";
@@ -87,22 +86,50 @@ export function Experience() {
     };
   }, []);
 
-  // every beat lands and holds: after the wheel settles, Lenis eases to the nearest beat (proximity, so free scrolling still works)
+  // Every beat lands and holds, but only forward: once the scroll settles, ease on to the next beat in the direction the
+  // visitor was already moving if it is close (20% of a screen). Never pull back against their last input.
   useEffect(() => {
     if (!tier.ready || tier.reducedMotion) return;
-    let snap: Snap | null = null;
-    let removers: (() => void)[] = [];
+    let points: number[] = [];
+    let dir = 0;
+    let timer = 0;
+    let snapping = false;
     const build = () => {
+      const steps = Object.fromEntries(CHAPTERS.map((c) => [c.id, c.beats.map((b) => ({ from: b.from, to: b.to, n: b.steps?.length ?? 1 }))]));
+      points = beatPositions(steps);
+    };
+    const settle = () => {
+      const lenis = scroller.lenis;
+      if (!lenis || snapping || dir === 0) return;
+      if (Math.abs(lenis.velocity) > 0.3) {
+        timer = window.setTimeout(settle, 80);
+        return;
+      }
+      const y = lenis.scroll;
+      const reach = window.innerHeight * 0.2;
+      const ahead = points.filter((p) => (dir > 0 ? p > y + 1 && p - y <= reach : p < y - 1 && y - p <= reach));
+      if (!ahead.length) return;
+      const target = dir > 0 ? Math.min(...ahead) : Math.max(...ahead);
+      snapping = true;
+      lenis.scrollTo(target, {
+        duration: 0.8,
+        easing: (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2),
+        onComplete: () => void (snapping = false),
+      });
+      window.setTimeout(() => (snapping = false), 1000);
+    };
+    const onScroll = () => {
       const lenis = scroller.lenis;
       if (!lenis) return;
-      removers.forEach((r) => r());
-      snap ??= new Snap(lenis, { type: "proximity", distanceThreshold: "32%", debounce: 180, duration: 0.8, easing: (t) => (t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2) });
-      const steps = Object.fromEntries(
-        CHAPTERS.map((c) => [c.id, c.beats.map((b) => ({ from: b.from, to: b.to, n: b.steps?.length ?? 1 }))]),
-      );
-      removers = beatPositions(steps).map((y) => snap!.add(y));
+      if (!snapping && lenis.direction) dir = lenis.direction;
+      window.clearTimeout(timer);
+      timer = window.setTimeout(settle, 160);
     };
-    const t = window.setTimeout(build, 600);
+    let off: (() => void) | undefined;
+    const t = window.setTimeout(() => {
+      build();
+      off = scroller.lenis?.on("scroll", onScroll);
+    }, 600);
     let rt = 0;
     const onResize = () => {
       window.clearTimeout(rt);
@@ -111,9 +138,9 @@ export function Experience() {
     window.addEventListener("resize", onResize);
     return () => {
       window.clearTimeout(t);
+      window.clearTimeout(timer);
       window.removeEventListener("resize", onResize);
-      removers.forEach((r) => r());
-      snap?.destroy();
+      off?.();
     };
   }, [tier.ready, tier.reducedMotion]);
 

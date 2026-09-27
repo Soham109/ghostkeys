@@ -54,7 +54,7 @@ export const stepAt = (progress: number, n: number) => Math.min(n - 1, Math.max(
  * Reads the DOM, so call it after layout.
  */
 export function beatPositions(steps: Partial<Record<ChapterId, { from: number; to: number; n: number }[]>>) {
-  const out: number[] = [0];
+  const out: number[] = [];
   const vh = window.innerHeight;
   for (const id of CHAPTER_ORDER) {
     const el = document.querySelector<HTMLElement>(`[data-chapter="${id}"]`);
@@ -64,6 +64,5 @@ export function beatPositions(steps: Partial<Record<ChapterId, { from: number; t
     const beats = steps[id] ?? [{ from: 0, to: 1, n: 1 }];
     for (const b of beats) for (let i = 0; i < b.n; i++) out.push(Math.round(top + pin * (b.from + (b.to - b.from) * ((i + 0.55) / b.n))));
   }
-  out.push(document.documentElement.scrollHeight - vh);
   return out;
 }
