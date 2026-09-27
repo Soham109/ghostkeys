@@ -63,6 +63,9 @@ public struct ZoneModel: Codable, Sendable {
     public static let onsetFloorRange: ClosedRange<Double> = 0.004...0.0175
     /// Feature indices the model ignores (set to 0 before whitening). Optional for old models.
     var ignoredFeatures: [Int]? = nil
+    /// TapFeatures.version of the features the model was trained on; nil for models saved before versioning.
+    public var featureVersion: Int? = nil
+    public var hasCurrentFeatures: Bool { featureVersion == TapFeatures.version }
 
     public init(labels: [String]) { self.labels = labels }
 
@@ -264,6 +267,7 @@ public struct ZoneModel: Codable, Sendable {
             let gentlest = quantiles.values.map { $0[0] }.min()!
             model.onsetFloor = Stats.clamp(0.5 * gentlest, onsetFloorRange.lowerBound, onsetFloorRange.upperBound)
         }
+        model.featureVersion = TapFeatures.version
         return model
     }
 

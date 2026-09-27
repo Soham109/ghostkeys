@@ -63,6 +63,9 @@ public struct DetectionSettings: Codable, Sendable {
 
 /// Feature vector of one tap candidate (fixed length, see Features/FeatureExtractor.swift for the index table).
 public struct TapFeatures: Codable, Sendable {
+    /// Bumped whenever the extractor changes what a value means; saved samples and models of another
+    /// version cannot be mixed with new ones. 2: integrals anchored on the tap's own peak.
+    public static let version = 2
     public var values: [Double]
     public var t: Double
     public init(values: [Double], t: Double) { self.values = values; self.t = t }

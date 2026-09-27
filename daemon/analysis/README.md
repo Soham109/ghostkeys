@@ -30,6 +30,30 @@ python3 -m venv --system-site-packages .venv          # numpy, scipy, scikit-lea
 
 Copy the daemon's files before analysing them, and never modify the originals: `cp ~/Library/Application\ Support/Ghostkeys/daemon/model/*.json data/calib1/`.
 
+## Feature window anchored on the tap (26 Sep 2026, night)
+
+A second user (Mac17,9) calibrated firm and then tapped at half that strength or less: most taps came out
+`low_confidence`, and the left edge read as the right edge.
+- **Cause:** the impulse, twist and DFT windows started 3 samples before the fixed-threshold crossing. Real
+  taps ring up: the first half cycle is smaller than the rebound. Under ~50 mg the first half cycle stays below
+  17.5 mg, the crossing lands one half cycle later, and impulse and twist flip sign. Replaying one user's firm
+  left-palm taps with the motion scaled down: `impulseDirZ` +1.00 at 1x, -1.00 at 0.35x on every tap.
+- **Fix:** the window starts at the first sample whose accel magnitude reaches 30% of the tap's own peak
+  (`FeatureExtractor.anchorFraction`). The scaled replay keeps +1.00 down to 0.25x. `TapFeatures.version` is now
+  2; models and samples without it are ignored, so old calibrations have to be redone.
+- **Strength augmentation is now on** (0.4x, 0.6x, 1.6x, 2.5x). It failed before because a light tap was not a
+  scaled copy of a firm one. Cross-session on the user's live taps (train on one session, test on the other,
+  minConfidence 0.8):
+
+  | | run 3 -> run 2 | run 2 -> run 3 | typing read as a tap |
+  |---|---|---|---|
+  | old window | 21/69 | 45/133 | 0/12, 3/9 |
+  | old window + augmentation | 28/69 (16 wrong) | 53/133 | 5/12, 2/9 |
+  | anchored | 21/69 | 58/133 | 0/12, 1/9 |
+  | anchored + augmentation | 33/69 (3 wrong) | 65/133 | 0/12, 1/9 |
+
+  Run 2 had no palm taps, so 96 of run 3's 133 are reachable. Small sets: 5 to 16 taps per zone per session.
+
 ## Regression after light-touch (26 Sep 2026, evening)
 
 The user, still on a firm-tap calibration, reported taps "all over the place and mostly not registering".

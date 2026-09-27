@@ -18,13 +18,15 @@
 //
 // Feature index table (TapFeatures.values). Units: accel g, gyro deg/s, time ms, frequency Hz.
 //
-//   0  impulseX       signed accel impulse, onset-3 samples .. +15 ms (g*ms)
+// The integrals and the DFT start 3 samples before the anchor (see FeatureExtractor.anchorFraction).
+//
+//   0  impulseX       signed accel impulse, anchor-3 samples .. +15 ms (g*ms)
 //   1  impulseY
 //   2  impulseZ
 //   3  peakAccelX     signed accel value with the largest magnitude in the window (mg)
 //   4  peakAccelY
 //   5  peakAccelZ
-//   6  twistX         signed integrated gyro, onset-3 samples .. +30 ms (millidegrees)
+//   6  twistX         signed integrated gyro, anchor-3 samples .. +30 ms (millidegrees)
 //   7  twistY
 //   8  twistZ
 //   9  peakGyroX      signed gyro value with the largest magnitude in the window (deg/s)
@@ -99,7 +101,12 @@ struct FeatureExtractor {
     let baselineSamples: Int   // 100 ms
     let impulseSamples: Int    // 15 ms
     let twistSamples: Int      // 30 ms
-    let leadIn = 3             // start integrals 3 samples before the threshold crossing
+    let leadIn = 3             // start integrals 3 samples before the anchor
+    /// The integrals start at the first sample whose accel magnitude reaches this fraction of the tap's
+    /// peak, searched from 20 ms before to 15 ms after the threshold crossing. Anchoring on the tap's own
+    /// shape keeps the window in place when the same tap is made lighter: anchored on the fixed-threshold
+    /// crossing, a tap under ~50 mg crossed one half cycle later and its impulse and twist flipped sign.
+    static let anchorFraction = 0.3
     private let dftN: Int
     private let cosTable: [Double]
     private let sinTable: [Double]
@@ -149,7 +156,12 @@ struct FeatureExtractor {
             for k in 0..<3 { d[k][j] = h.accel(i, k) - ab[k]; w[k][j] = h.gyro(i, k) - gb[k] }
         }
         let onsetJ = o - winStart
-        let startJ = max(0, onsetJ - leadIn)
+        let searchLo = max(0, onsetJ - preSamples), searchHi = min(len - 1, onsetJ + impulseSamples)
+        var mag = [Double](repeating: 0, count: len)
+        for j in searchLo...searchHi { mag[j] = (d[0][j] * d[0][j] + d[1][j] * d[1][j] + d[2][j] * d[2][j]).squareRoot() }
+        let pulsePeak = mag[searchLo...searchHi].max() ?? 0
+        let anchorJ = (searchLo...searchHi).first { mag[$0] >= Self.anchorFraction * pulsePeak } ?? onsetJ
+        let startJ = max(0, anchorJ - leadIn)
 
         var impulse = [0.0, 0.0, 0.0], twist = [0.0, 0.0, 0.0]
         var peakA = [0.0, 0.0, 0.0], peakG = [0.0, 0.0, 0.0]

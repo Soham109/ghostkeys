@@ -121,7 +121,14 @@ final class ConfigStore {
 
     func loadModel() -> ZoneModel? {
         guard let data = try? Data(contentsOf: modelURL) else { return nil }
-        do { return try JSONDecoder().decode(ZoneModel.self, from: data) } catch {
+        do {
+            let model = try JSONDecoder().decode(ZoneModel.self, from: data)
+            guard model.hasCurrentFeatures else {
+                Log.info("zone model was trained on an older feature version; recalibrate to use tap zones again")
+                return nil
+            }
+            return model
+        } catch {
             Log.error("model unreadable: \(error)")
             return nil
         }
@@ -132,12 +139,22 @@ final class ConfigStore {
         try write(Self.encoder.encode(report), to: reportURL)
     }
 
-    struct LabeledSample: Codable { var label: String; var features: TapFeatures }
+    struct LabeledSample: Codable {
+        var label: String
+        var features: TapFeatures
+        var featureVersion: Int? = TapFeatures.version
+    }
 
-    /// Labeled samples saved by the last calibration or feedback (empty if none).
+    /// Labeled samples saved by the last calibration or feedback (empty if none). Samples from an older
+    /// feature extractor are left out: they cannot be trained together with current ones.
     func loadSamples() -> [LabeledSample] {
         guard let data = try? Data(contentsOf: samplesURL) else { return [] }
-        return (try? JSONDecoder().decode([LabeledSample].self, from: data)) ?? []
+        let all = (try? JSONDecoder().decode([LabeledSample].self, from: data)) ?? []
+        let current = all.filter { $0.featureVersion == TapFeatures.version }
+        if current.count < all.count {
+            Log.info("ignoring \(all.count - current.count) calibration sample(s) from an older feature version; recalibrate those zones")
+        }
+        return current
     }
 
     var diagnosticsDirectory: URL { directory.appendingPathComponent("diagnostics", isDirectory: true) }

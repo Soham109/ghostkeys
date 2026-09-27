@@ -475,7 +475,9 @@ final class Daemon: @unchecked Sendable {
         guard !cal.samples.isEmpty else { return sendError("no samples captured yet", to: client) }
         calibration = nil
         server.broadcast(["type": "calibration", "phase": "training"])
-        let samples = cal.samples
+        let samples = CalibrationMerge.merge(saved: store.loadSamples(), run: cal.samples,
+                                             knownZones: Set(config.zones.map(\.id)), label: \.label)
+        let carried = samples.count - cal.samples.count
         let disabled = disabledZones
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Disabled zones are left out of the model; their samples stay in samples.json for later.
@@ -499,7 +501,7 @@ final class Daemon: @unchecked Sendable {
                                        "recommendation": Self.recommendationJSON(rec),
                                        "peaks": Self.peaksJSON(model)])
                 self.server.broadcast(self.status())
-                Log.info("calibration done: overall accuracy \(report.overall), labels \(report.labels)")
+                Log.info("calibration done: overall accuracy \(report.overall), labels \(report.labels), \(carried) saved sample(s) kept from zones not redone")
             }
         }
     }

@@ -50,6 +50,7 @@ struct DeviceInfo {
         "Mac16,1": "macbook-pro-14", "Mac16,6": "macbook-pro-14", "Mac16,8": "macbook-pro-14",
         "Mac16,5": "macbook-pro-16", "Mac16,7": "macbook-pro-16",
         "Mac16,12": "macbook-air-13", "Mac16,13": "macbook-air-15",
+        "Mac17,9": "macbook-pro-14",
     ]
 
     static func guessFamily(model: String, diagonal: Double?) -> String {

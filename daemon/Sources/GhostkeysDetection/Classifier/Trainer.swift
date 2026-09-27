@@ -60,12 +60,13 @@ public final class Trainer {
     /// captured while the user taps a zone, and would teach the model that noise is that zone.
     public var junkPeakFraction = 0.25
 
-    /// Training options. Off by default: strength augmentation (training copies of every tap made
-    /// 0.7x/1.4x or 1.4x/2x as hard) helped synthetic zones generalize from light calibration taps to
-    /// harder ones (58% -> 95% accepted), but on the first real calibration it tripled typing
-    /// negatives read as taps (0.05 -> 0.145 per negative at minConfidence 0.8). Better: calibrate with
-    /// taps of the strengths the user will really use.
-    var options = ZoneModel.TrainingOptions()
+    /// Training options. Strength augmentation: training copies of every tap made 0.4x to 2.5x as hard,
+    /// so taps lighter or firmer than the calibration ones still match. It used to triple typing
+    /// negatives read as taps, because light taps were not really scaled copies of firm ones: the
+    /// feature window moved with tap strength (see FeatureExtractor.anchorFraction). With the anchored
+    /// window, on one user's real taps from two sessions, it raised taps accepted in the right zone
+    /// from 21/69 to 33/69 and 58/133 to 65/133, with typing read as a tap unchanged (0/12, 1/9).
+    var options = ZoneModel.TrainingOptions(augment: [0.4, 0.6, 1.6, 2.5])
 
     /// Indices of samples kept for training (see `junkPeakFraction`).
     func keptIndices() -> [Int] {
