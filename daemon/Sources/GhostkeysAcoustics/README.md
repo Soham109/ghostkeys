@@ -94,6 +94,37 @@ All times are seconds on the caller's clock. `AcousticSession` uses host time (t
   - Typing and vibration: the daemon calls `suppressSonar(until:)` on each keystroke (typing gate) and on IMU motion. Active gestures end as cancelled.
   - Missing pilot (speaker muted, blocked, wrong route): nothing is detected.
 
+## sonar_debug (tuning on real hardware)
+
+While a sonar session runs and someone subscribes to the `debug` stream, the daemon sends about 10 messages a second:
+
+```jsonc
+{ "type": "sonar_debug", "t": 1234.5, "windowS": 0.1, "basebandSamples": 150,
+  "left":  { "hz": 19500, "pilotDbfs": -48.2, "noiseDbfsPerBin": -112.0, "snrDb": 63.8, "pilotPresent": true,
+             "sidebandLowDbc": -41.0, "sidebandHighDbc": -38.5, "dopplerShiftBins": [0, 4],
+             "pathDeltaMm": -12.4, "pathStepVarMm2": 0.02, "pathTotalMm": -80.1, "dynamicDb": -31.0, "gateOpenShare": 1.0 },
+  "right": { ... same for 20250 Hz ... },
+  "gates": { "ready": true, "warmedUp": true, "tonesPlaying": true, "interference": false, "interferenceReason": "broadband",
+             "suppressedByDaemon": false, "guardPeakDbfs": -95.0, "guardMedianDbfs": -110.0, "impulseBlocks": 0,
+             "restarts": 0, "episode": true, "hover": false, "slide": false, "toneProblem": "..." },
+  "input": { "hardwareSampleRate": 48000, "measuredSampleRate": 47999.8, "channels": 1, "format": "...", "resampled": false,
+             "voiceProcessing": false, "agc": false, "voiceProcessingBypassed": false, "micMode": "standard",
+             "preferredMicMode": "standard", "bufferFrames": [480, 480], "maxTimestampGapMs": 0.02,
+             "highBandRolloffDb": -3.0, "channelPilotDbfs": [[-48.1, -51.0], [-48.2, -50.9]], "channelRmsDbfs": [-60.0, -60.1],
+             "device": { "name": "MacBook Pro Microphones", "nominalSampleRate": 48000, "inputChannels": 1, ... } } }
+```
+
+- Levels are dBFS from a 4096-point Hann FFT: a full-scale sine is 0 dBFS. The tones leave at -36 dBFS per channel. Noise is per FFT bin (11.7 Hz), as the level of a sine with the median bin power 28 to 40 bins from the pilot.
+- `snrDb` must reach 25 for `pilotPresent`. The interference gate also fires when the guard-band median is within 25 dB of the weaker pilot (`interferenceReason: "broadband"`). A weak pilot can therefore block everything through either rule.
+- `sidebandLowDbc` / `sidebandHighDbc`: strongest energy 2 to 26 bins below / above the pilot, relative to it. A moving hand should lift them by 10 dB or more.
+- `pathDeltaMm`: phase-tracker path change in the window (a hand moving at 0.3 m/s gives about 60 mm per 0.1 s window); `pathStepVarMm2` is the variance of its per-sample increments (noise when still, larger in motion); `gateOpenShare` is the share of samples the tracker trusted.
+- `suppressedByDaemon`: the typing gate or IMU motion called `suppressSonar`. `restarts`: analysis restarted because audio timestamps jumped over 10 ms (should stay 0).
+- `input.channelPilotDbfs`: per input channel, then the mono mix the detectors get, at [left pilot, right pilot]. If the mix is much lower than the single channels, averaging the channels is cancelling the pilots.
+- `input.highBandRolloffDb`: median level at 21.5 to 23.5 kHz minus 14 to 16 kHz. Around 0 to -10 dB means the input passes the top of the band; -30 dB or lower means something low-passes before 20 kHz.
+- `voiceProcessing`, `agc`, `micMode` (`voiceIsolation` would remove the pilots), `measuredSampleRate` and `resampled` show whether anything unexpected sits in the capture path.
+
+The session start also logs, once, the input and output device (name, transport, nominal rate, channel counts, data source), the engine's input format, voice processing and mic mode, and the tone player's source and device formats.
+
 ## Speaker safety (hard limits in the tone generators)
 
 These cannot be configured away, and apply to both `PilotToneGenerator` and `StereoPilotGenerator` (the stereo pair counts as one session):

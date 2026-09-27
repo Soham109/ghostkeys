@@ -25,6 +25,9 @@ public final class TonePlayer: @unchecked Sendable {
     /// itself; the owner cuts the tone and may start again later (after its route check).
     public var onConfigurationChange: (() -> Void)?
     public var isPlaying: Bool { engine?.isRunning ?? false }
+    /// Formats in use once started (diagnostics): what the tone source renders and what the output device runs at.
+    public private(set) var sourceFormat: String?
+    public private(set) var deviceFormat: String?
 
     public init() {}
     deinit { stop() }
@@ -71,6 +74,8 @@ public final class TonePlayer: @unchecked Sendable {
         guard engine.isRunning else { engine.stop(); throw PlayerError.notRunning }
         self.engine = engine
         self.node = node
+        sourceFormat = "\(format)"
+        deviceFormat = "\(engine.outputNode.outputFormat(forBus: 0))"
         observer = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine,
                                                           queue: nil) { [weak self] _ in
             self?.onConfigurationChange?()

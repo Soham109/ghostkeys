@@ -338,3 +338,33 @@ import Testing
         #expect(peak(r) == 1_728)
     }
 }
+
+@Suite struct SonarFieldDebugTests {
+    @Test func debugSnapshotReportsCalibratedLevelsAndMotion() {
+        var rng = SeededRNG(77)
+        let field = SonarField()
+        // Pilots at 0.0158 amplitude = -36 dBFS each; the hand rises 10 cm above the left speaker from 1.2 s.
+        let a = SIMD3<Double>(-0.145, 0.08, 0.10), b = a + SIMD3<Double>(0, 0, 0.10)
+        let x = Synth.field(duration: 2.4, hand: { t in Synth.lerp(a, b, Synth.ease(t, 1.2, 2.2)) }, &rng)
+        var still: SonarFieldDebug?, moving: SonarFieldDebug?
+        _ = Synth.stream(x, chunk: 480) { (c: UnsafeBufferPointer<Float>, t: Double) -> [Int] in
+            _ = field.process(c, time: t)
+            if abs(t - 1.0) < 0.005 { _ = field.debugSnapshot() }
+            if abs(t - 1.1) < 0.005 { still = field.debugSnapshot() }
+            if abs(t - 1.6) < 0.005 { _ = field.debugSnapshot() }
+            if abs(t - 1.7) < 0.005 { moving = field.debugSnapshot() }
+            return []
+        }
+        guard let still, let moving else { Issue.record("no snapshots"); return }
+        for s in [still.left, still.right] {
+            #expect(abs(s.pilotDbfs - -36) < 1.5, "pilot \(s.pilotDbfs) dBFS")
+            #expect(s.snrDb > 40 && s.pilotPresent)
+        }
+        #expect(still.ready && !still.interference && !still.suppressedByDaemon && still.restarts == 0)
+        #expect(abs(still.left.pathDeltaMm) < 1, "still hand moved \(still.left.pathDeltaMm) mm")
+        #expect(moving.left.pathDeltaMm > 10, "moving hand: \(moving.left.pathDeltaMm) mm in 0.1 s")
+        #expect(moving.left.gateOpenShare > 0.9)
+        #expect(moving.left.sidebandHighDbc > still.left.sidebandHighDbc || moving.left.sidebandLowDbc > still.left.sidebandLowDbc)
+        #expect(moving.basebandSamples > 100)
+    }
+}

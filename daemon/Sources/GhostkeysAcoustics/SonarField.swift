@@ -116,6 +116,59 @@ public struct SonarFieldStatus: Equatable, Sendable {
     public var ready: Bool { warmedUp && left.pilotPresent && right.pilotPresent && !interference && !suppressed }
 }
 
+/// Numbers for tuning on real hardware, accumulated between `debugSnapshot()` calls (the daemon asks ~10 times a
+/// second and sends them as `sonar_debug`). Levels in dBFS use the 4096-point Hann FFT: a full-scale sine is 0 dBFS;
+/// noise is per FFT bin (11.7 Hz), reported as the sine level that would give the median bin power near the pilot.
+public struct SonarFieldDebug: Sendable {
+    public struct Side: Sendable {
+        public var frequencyHz: Double = 0
+        /// Pilot as received at the mic.
+        public var pilotDbfs: Double = -200
+        /// Median bin 28 to 40 bins from the pilot.
+        public var noiseDbfsPerBin: Double = -200
+        public var snrDb: Double = 0
+        public var pilotPresent = false
+        /// Strongest energy below / above the pilot (bins 2 to 26 away), relative to the pilot, dB. Motion raises it.
+        public var sidebandLowDbc: Double = -200
+        public var sidebandHighDbc: Double = -200
+        /// Doppler widening beyond rest, bins, latest frame (negative side = away, positive = toward).
+        public var dopplerLeftShiftBins: Double = 0
+        public var dopplerRightShiftBins: Double = 0
+        /// Phase tracker: path change over the window, mm, and the variance of its per-sample increments, mm^2.
+        public var pathDeltaMm: Double = 0
+        public var pathStepVarianceMm2: Double = 0
+        public var pathTotalMm: Double = 0
+        /// Moving part relative to the static part, dB.
+        public var dynamicDb: Double = -200
+        /// Share of baseband samples in the window with the tracking gate open (0...1).
+        public var gateOpenShare: Double = 0
+    }
+    public var windowSeconds: Double = 0
+    public var left = Side()
+    public var right = Side()
+    public var warmedUp = false
+    /// Detection suppressed by interference near the pilots, and why ("tonal" peaks or "broadband" noise).
+    public var interference = false
+    public var interferenceReason: String?
+    /// Strongest and median guard-band bin near the pilots (echo zones excluded), dBFS.
+    public var guardPeakDbfs: Double = -200
+    public var guardMedianDbfs: Double = -200
+    /// `suppress(until:)` from the daemon (typing gate, IMU motion) is active.
+    public var suppressedByDaemon = false
+    /// Both pilots present, warmed up, nothing suppressing: gestures can fire.
+    public var ready = false
+    /// Median bin level at 21.5 to 23.5 kHz minus 14 to 16 kHz, dB. A strongly negative value (below about -30)
+    /// means the input path low-passes before 20 kHz.
+    public var highBandRolloffDb: Double = 0
+    public var impulseBlocks = 0
+    public var basebandSamples = 0
+    /// Times the analysis restarted because audio chunk times jumped (gaps over 10 ms). Should stay 0.
+    public var restarts = 0
+    public var episodeActive = false
+    public var hoverActive = false
+    public var slideActive = false
+}
+
 public enum SonarFieldEvent: Equatable, Sendable {
     case air(AcousticAirEvent)
     case gesture(AcousticGesture)
@@ -157,6 +210,9 @@ final class PhaseSideTracker {
     private var activity = 0.0
     private(set) var pathMm = 0.0
     private(set) var dynamicRatio = 0.0
+    /// Diagnostics for the last sample: path increment (mm) and whether the tracking gate was open.
+    private(set) var lastStepMm = 0.0
+    private(set) var gateOpen = false
 
     init(frequency: Double, config: SonarFieldConfig) {
         wavelengthMm = config.speedOfSound / frequency * 1000
@@ -171,7 +227,8 @@ final class PhaseSideTracker {
     }
 
     func step(_ z: Cx, bad: Bool, integrate: Bool, warm: Bool) {
-        if bad { return } // an impulse: keep all state, bridge the phase across the gap
+        lastStepMm = 0
+        if bad { gateOpen = false; return } // an impulse: keep all state, bridge the phase across the gap
         // Drift: a clock offset between speaker and mic makes everything, including the static part, rotate slowly.
         // Estimate that rotation from the raw signal (dominated by the static part) and undo it. Learn it only while
         // nothing moves: the static part is ~25 dB above an echo, so even a small bias picked up from a moving echo
@@ -198,11 +255,15 @@ final class PhaseSideTracker {
         staticPart = s + (zc - s) * alpha
         let sp = staticPart!.norm2
         dynamicRatio = sp > 0 ? d.norm2 / sp : 0
-        if d.norm2 > max(gateRel * sp, noiseFactor * noise!) {
+        gateOpen = d.norm2 > max(gateRel * sp, noiseFactor * noise!)
+        if gateOpen {
             if let last = lastDynamic {
                 let dphi = (d * last.conj).arg
                 activity += 0.05 * (abs(dphi) - activity)
-                if integrate { pathMm -= dphi * wavelengthMm / (2 * Double.pi) }
+                if integrate {
+                    lastStepMm = -dphi * wavelengthMm / (2 * Double.pi)
+                    pathMm += lastStepMm
+                }
             }
             lastDynamic = d
             gapBlocks = 0
@@ -291,6 +352,20 @@ public final class SonarField {
         var lastDy = 0.0
         var lastTime: Double
     }
+    private struct DebugAccumulator {
+        var pathStart: Double?
+        var sum = 0.0, sumSq = 0.0, count = 0, gateOpen = 0
+        var sideLow = -200.0, sideHigh = -200.0
+    }
+    private var dbgL = DebugAccumulator(), dbgR = DebugAccumulator()
+    private var dbgImpulses = 0, dbgRestarts = 0, dbgFrames = 0
+    private var dbgWindowStart: Double?
+    private var dbgGuardPeak = -200.0, dbgGuardMedian = -200.0, dbgRolloff = 0.0
+    private var dbgInterferenceReason: String?
+    private var lastStatusTime = 0.0
+    /// dB offset from Hann-FFT bin power to the dBFS of a sine (a full-scale sine gives (N/4)^2).
+    private lazy var binToDbfs: Double = -20 * log10(Double(config.fftSize) / 4)
+
     private var episode: Episode?
     private var contacts: [(start: Double, end: Double?)] = []
     private var slide: Slide?
@@ -447,7 +522,7 @@ public final class SonarField {
 
     public func process(_ samples: UnsafeBufferPointer<Float>, time: Double) -> [SonarFieldEvent] {
         guard let x = samples.baseAddress, !samples.isEmpty else { return [] }
-        if let expected = expectedNextTime, abs(expected - time) > 0.01 { reset() }
+        if let expected = expectedNextTime, abs(expected - time) > 0.01 { reset(); dbgRestarts += 1 }
         expectedNextTime = time + Double(samples.count) / sr
         if firstTime == nil { firstTime = time }
         var events: [SonarFieldEvent] = []
@@ -504,6 +579,7 @@ public final class SonarField {
             residualFloor = e
         }
         if impulse {
+            dbgImpulses += 1
             badUntil = blockIndex + Int(0.008 * config.basebandRate)
             for k in max(0, pending.count - Int(0.004 * config.basebandRate))..<pending.count { pending[k].bad = true }
         }
@@ -524,6 +600,13 @@ public final class SonarField {
         status.warmedUp = !warm
         status.left.pathMm = leftTracker.pathMm
         status.right.pathMm = rightTracker.pathMm
+        lastStatusTime = p.t
+        func acc(_ a: inout DebugAccumulator, _ tr: PhaseSideTracker) {
+            if a.pathStart == nil { a.pathStart = tr.pathMm }
+            a.sum += tr.lastStepMm; a.sumSq += tr.lastStepMm * tr.lastStepMm; a.count += 1
+            if tr.gateOpen { a.gateOpen += 1 }
+        }
+        acc(&dbgL, leftTracker); acc(&dbgR, rightTracker)
         guard !warm else { return }
         hT.append(p.t); hL.append(leftTracker.pathMm); hR.append(rightTracker.pathMm)
         let keep = historyKeep
@@ -557,6 +640,26 @@ public final class SonarField {
                 }
                 side(.left, dopplerL, &status.left)
                 side(.right, dopplerR, &status.right)
+                // Diagnostics: sideband energy per side, and (every 10th frame) the input's high-band rolloff.
+                func sidebands(_ bin: Int, _ a: inout DebugAccumulator) {
+                    let pilot = Double(max(p[bin], 1e-20))
+                    var lo: Float = 0, hi: Float = 0
+                    var k = 2
+                    while k <= 26 { lo += p[bin - k]; hi += p[bin + k]; k += 1 }
+                    a.sideLow = max(a.sideLow, 10 * log10(max(Double(lo), 1e-20) / pilot))
+                    a.sideHigh = max(a.sideHigh, 10 * log10(max(Double(hi), 1e-20) / pilot))
+                }
+                sidebands(binL, &dbgL); sidebands(binR, &dbgR)
+                dbgFrames += 1
+                if dbgFrames % 10 == 1 {
+                    let binHz = sr / Double(config.fftSize)
+                    func band(_ a: Double, _ b: Double) -> Double {
+                        let lo = Int(a / binHz), hi = min(fft.bins - 1, Int(b / binHz))
+                        guard hi > lo else { return -200 }
+                        return Double(DSPMath.db(DSPMath.median(Array(UnsafeBufferPointer(start: p + lo, count: hi - lo)))))
+                    }
+                    dbgRolloff = band(21_500, 23_500) - band(14_000, 16_000)
+                }
                 if let first = recentDoppler.first, first.event.time < t - 2 { recentDoppler.removeAll { $0.event.time < t - 2 } }
                 // Interference: narrow peaks or loud broadband noise near the pilots, outside the echo zones.
                 let excl = guardExclusion, bl = binL, br = binR
@@ -575,9 +678,61 @@ public final class SonarField {
                 let tonal = peakDb > pilotDb - config.tonalInterferenceDb && peakDb > medianDb + config.tonalPeakOverMedianDb
                 let broadband = medianDb > pilotDb - config.broadbandInterferenceDb
                 if tonal || broadband { interferenceUntil = t + config.interferenceHold }
+                if tonal || broadband { dbgInterferenceReason = tonal ? "tonal" : "broadband" }
+                dbgGuardPeak = peakDb; dbgGuardMedian = medianDb
             }
         }
         status.interference = t < interferenceUntil
+    }
+
+    // MARK: Diagnostics
+
+    /// Numbers since the previous call (see `SonarFieldDebug`). Cheap; call ~10 times a second.
+    public func debugSnapshot() -> SonarFieldDebug {
+        var d = SonarFieldDebug()
+        let off = binToDbfs
+        func side(_ s: SonarFieldSideStatus, _ a: DebugAccumulator, _ tr: PhaseSideTracker, _ f: Double) -> SonarFieldDebug.Side {
+            var o = SonarFieldDebug.Side()
+            o.frequencyHz = f
+            o.pilotDbfs = Double(s.pilotDb) + off
+            o.noiseDbfsPerBin = Double(s.noiseDb) + off
+            o.snrDb = Double(s.pilotDb - s.noiseDb)
+            o.pilotPresent = s.pilotPresent
+            o.sidebandLowDbc = a.sideLow
+            o.sidebandHighDbc = a.sideHigh
+            o.dopplerLeftShiftBins = s.dopplerLeftShift
+            o.dopplerRightShiftBins = s.dopplerRightShift
+            o.pathTotalMm = tr.pathMm
+            o.pathDeltaMm = tr.pathMm - (a.pathStart ?? tr.pathMm)
+            if a.count > 1 {
+                let mean = a.sum / Double(a.count)
+                o.pathStepVarianceMm2 = max(0, a.sumSq / Double(a.count) - mean * mean)
+            }
+            o.dynamicDb = Double(DSPMath.db(Float(tr.dynamicRatio)))
+            o.gateOpenShare = a.count > 0 ? Double(a.gateOpen) / Double(a.count) : 0
+            return o
+        }
+        d.left = side(status.left, dbgL, leftTracker, leftHz)
+        d.right = side(status.right, dbgR, rightTracker, rightHz)
+        d.windowSeconds = dbgWindowStart.map { lastStatusTime - $0 } ?? 0
+        d.warmedUp = status.warmedUp
+        d.interference = status.interference
+        d.interferenceReason = status.interference ? dbgInterferenceReason : nil
+        d.guardPeakDbfs = dbgGuardPeak + off
+        d.guardMedianDbfs = dbgGuardMedian + off
+        d.suppressedByDaemon = lastStatusTime < suppressedUntil
+        d.ready = status.warmedUp && status.left.pilotPresent && status.right.pilotPresent && !status.interference && !d.suppressedByDaemon
+        d.highBandRolloffDb = dbgRolloff
+        d.impulseBlocks = dbgImpulses
+        d.basebandSamples = dbgL.count
+        d.restarts = dbgRestarts
+        d.episodeActive = episode != nil
+        d.hoverActive = episode?.hover != nil
+        d.slideActive = slide != nil
+        dbgL = DebugAccumulator(); dbgR = DebugAccumulator()
+        dbgImpulses = 0
+        dbgWindowStart = lastStatusTime
+        return d
     }
 
     // MARK: Gestures
