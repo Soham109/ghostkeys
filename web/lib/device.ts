@@ -58,7 +58,8 @@ export function useTier(): Tier {
         }
       }
       const forced = params.get("tier");
-      if (forced) tier = Number(forced) as Tier["tier"];
+      // a forced tier (testing) can lower the tier, never lift a browser without WebGL2 above 0
+      if (forced) tier = (tier === 0 ? 0 : Number(forced)) as Tier["tier"];
       if (mobile && tier > 1) tier = 1;
       cached = { tier, mobile, reducedMotion, ready: true };
       if (alive) setT(cached);
