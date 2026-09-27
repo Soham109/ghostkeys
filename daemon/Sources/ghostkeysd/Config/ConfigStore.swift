@@ -101,17 +101,42 @@ final class ConfigStore {
         guard let data = try? Data(contentsOf: configURL) else {
             let c = Config.defaults(family: family)
             Log.info("created a new config for \(family) (\(c.zones.count) zones)")
+            // A config created by this version needs none of the migrations for older ones.
+            try? JSONEncoder().encode(Self.allMigrations).write(to: migrationsURL, options: .atomic)
             do { try save(c) } catch { Log.error("could not write default config: \(error)") }
             return c
         }
         do {
-            return try JSONDecoder().decode(Config.self, from: data)
+            var config = try JSONDecoder().decode(Config.self, from: data)
+            migrate(&config)
+            return config
         } catch {
             Log.error("config.json unreadable (\(error)); using defaults, original kept as config.json.bad")
             let bad = directory.appendingPathComponent("config.json.bad")
             try? FileManager.default.removeItem(at: bad)
             try? FileManager.default.copyItem(at: configURL, to: bad)
             return Config.defaults(family: family)
+        }
+    }
+
+    // MARK: One-time migrations of existing configs (recorded in migrations.json so each runs once)
+
+    var migrationsURL: URL { directory.appendingPathComponent("migrations.json") }
+
+    static let allMigrations = ["learnFromUseDefaultOff"]
+
+    private func migrate(_ config: inout Config) {
+        var done = (try? JSONDecoder().decode([String].self, from: Data(contentsOf: migrationsURL))) ?? []
+        // learnFromUse used to default to true, and configs saved since then carry that default, so a user's own
+        // choice cannot be told apart from it. Turn it off once; an explicit "true" set after this sticks.
+        if !done.contains("learnFromUseDefaultOff") {
+            if config.settings.learnFromUse {
+                config.settings.learnFromUse = false
+                Log.info("settings.learnFromUse was on (the old default); turned it off. Turn it on again in settings if you want it.")
+                do { try save(config) } catch { Log.error("could not save the migrated config: \(error)") }
+            }
+            done.append("learnFromUseDefaultOff")
+            try? JSONEncoder().encode(done).write(to: migrationsURL, options: .atomic)
         }
     }
 
@@ -132,7 +157,14 @@ final class ConfigStore {
         try write(Self.encoder.encode(report), to: reportURL)
     }
 
-    struct LabeledSample: Codable { var label: String; var features: TapFeatures }
+    /// One training sample. posture / strength / kind are recorded by calibration (older files lack them).
+    struct LabeledSample: Codable {
+        var label: String
+        var features: TapFeatures
+        var posture: String? = nil       // desk | lap | stand
+        var strength: String? = nil      // soft | firm
+        var kind: String? = nil          // single | double1 | double2 | negative | feedback | confirmed
+    }
 
     /// Labeled samples saved by the last calibration or feedback (empty if none).
     func loadSamples() -> [LabeledSample] {

@@ -32,6 +32,7 @@ final class Daemon: @unchecked Sendable {
                                  var travel = 0.0; var last = 0.0 }
     private var slider: SliderState?
     private var lastSonarSuppress = 0.0
+    private var motionGate = MotionGate()
     private lazy var catalog: Any = (try? JSONSerialization.jsonObject(with: Data(IntegrationCatalog.json.utf8))) ?? [:]
 
     private var config: Config
@@ -47,6 +48,14 @@ final class Daemon: @unchecked Sendable {
     private var lastExport = -100.0
     private lazy var learner = UseLearner(modelDirectory: store.modelDirectory)
     private var lastTapAt = -1000.0
+    private var lastUnfamiliar = false
+    /// Every retrain takes the next generation when it starts; a result is installed only if no newer retrain has been
+    /// installed meanwhile, so a slow older retrain can never overwrite a newer model (VERIFY_01 note).
+    private var modelGeneration = 0
+    private var installedGeneration = 0
+    private var cmdZWasDown = false
+    /// Test-only (--no-hardware-sessions): the next rebuildModel waits this long before installing.
+    private var testRetrainDelay = 0.0
     private var learnedTapTimes: [Double] = []
     private var lastLearnTick = 0.0
     private var lastUndoCheck = 0.0
@@ -195,16 +204,17 @@ final class Daemon: @unchecked Sendable {
                                    lidAngle: lidAngle, paused: capturing ? false : paused,
                                    secondsSinceKeyUp: snap.keyUp, secondsSinceModifierChange: snap.modifierChange)
 
-        diag.record(s, sinceKey: snap.key, sinceMouse: snap.mouse, modifiers: snap.modifiers)
+        diag.record(s, sinceKey: snap.key, sinceMouse: snap.mouse, modifiers: snap.modifiers, sinceKeyUp: snap.keyUp)
         learnFromUseTick(now: s.t)
-        // SonarField: typing (the typing gate) and laptop motion or bumps (|a| away from 1 g, or any rotation) make
-        // Doppler and phase noise; keep sonar detection off for 0.45 s after each.
-        let aMag = (s.a * s.a).sum().squareRoot(), gMag = (s.g * s.g).sum().squareRoot()
-        if snap.key * 1000 < config.settings.typingGateMs || snap.keyUp < 0.15 || abs(aMag - 1) > 0.05 || gMag > 15 {
-            if s.t - lastSonarSuppress > 0.05 {
-                lastSonarSuppress = s.t
-                sessions.suppressSonar(until: s.t + 0.45)
-            }
+        // SonarField: typing (the typing gate) and the laptop itself moving make Doppler and phase noise. Keystrokes
+        // pause sonar for 0.45 s; motion (MotionGate, not a level threshold) pauses it while moving and 0.3 s after.
+        motionGate.process(s.a, t: s.t)
+        var sonarUntil = -Double.infinity
+        if snap.key * 1000 < config.settings.typingGateMs || snap.keyUp < 0.15 { sonarUntil = s.t + 0.45 }
+        if s.t - motionGate.lastMoving <= 0.3 { sonarUntil = max(sonarUntil, motionGate.lastMoving + 0.3) }
+        if sonarUntil > s.t, s.t - lastSonarSuppress > 0.05 {
+            lastSonarSuppress = s.t
+            sessions.suppressSonar(until: sonarUntil)
         }
         // Shadow pass first: every onset that survives the motion gate becomes a classified candidate.
         var fresh: [SeenCandidate] = []
@@ -213,6 +223,7 @@ final class Daemon: @unchecked Sendable {
                                      secondsSinceKeyUp: snap.keyUp, secondsSinceModifierChange: snap.modifierChange)
         for e in shadow.ingest(s, context: shadowCtx) {
             guard case .candidate(let f) = e else { continue }
+            motionGate.freeze(until: f.t + 0.15)       // a tap's own rocking is not "the laptop moving"
             let r = engine.model?.classify(f) ?? (zone: "none", confidence: 0, x: 0.5, y: 0.5)
             fresh.append(SeenCandidate(t: f.t, features: f, zone: r.zone, confidence: r.confidence, outcome: "pending"))
         }
@@ -256,6 +267,12 @@ final class Daemon: @unchecked Sendable {
             }
         }
 
+        if engine.isUnfamiliar != lastUnfamiliar {
+            lastUnfamiliar = engine.isUnfamiliar
+            server.broadcast(["type": "detection_state", "unfamiliar": lastUnfamiliar])
+            Log.info(lastUnfamiliar ? "taps look unfamiliar: only clear taps fire until they look like the calibration again"
+                                    : "taps look familiar again")
+        }
         if !fresh.isEmpty {
             for c in fresh {
                 if c.outcome == "pending" { diag.note(c.t, "candidate zone=\(c.zone) (no decision: calibration or paused)") }
@@ -310,13 +327,16 @@ final class Daemon: @unchecked Sendable {
                                   "zones": g.zones, "modifiers": g.modifiers.sorted(), "confidence": g.confidence,
                                   "app": app ?? NSNull()]
         for (k, v) in extra where msg[k] == nil { msg[k] = v }
+        // `bound`: an enabled binding would fire for this gesture (the HUD shows only these; the Sensors screen all).
+        let calibrating = calibration != nil || sessions.tapCalibrating
+        let zoneDisabled = (g.zone.map { disabledZones.contains($0) } ?? false) || g.zones.contains { disabledZones.contains($0) }
+        let resolved = zoneDisabled ? nil : BindingResolver.resolve(g, bindings: config.bindings, app: app)
+        msg["bound"] = resolved != nil && !calibrating
         server.broadcast(msg)
         // No actions while calibrating: the user is tapping zones (or tap types) on purpose.
-        guard calibration == nil, !sessions.tapCalibrating else { return }
+        guard !calibrating else { return }
         // A disabled zone never fires (its taps are also left out of the model).
-        if let z = g.zone, disabledZones.contains(z) { return }
-        if g.zones.contains(where: { disabledZones.contains($0) }) { return }
-        guard let binding = BindingResolver.resolve(g, bindings: config.bindings, app: app) else { return }
+        guard let binding = resolved else { return }
         let label = binding.label ?? binding.id
         // A pinch_hold binding with a knob fires per step of travel (see onAir), not when the hold begins.
         if g.gesture == "pinch_hold", let spec = binding.knob {
@@ -349,7 +369,14 @@ final class Daemon: @unchecked Sendable {
                 return g.gesture == "tap" ? abs(c.t - g.t) < 0.02 : (c.t >= g.t - 1.2 && c.t <= g.t + 0.05)
             }
             learnedTapTimes = (learnedTapTimes + taps.map(\.t)).filter { g.t - $0 < 5 }
-            pendingID = learner.register(taps: taps.map { ($0.t, $0.zone, $0.confidence, $0.features) },
+            // Only taps from familiar conditions teach (DETECTION_AUDIT 6.5): not while the engine finds taps
+            // unfamiliar, and each within 1.5x the model's typical distance.
+            let model = engine.model!
+            let familiar = engine.isUnfamiliar ? [] : taps.filter { c in
+                guard let typical = model.typicalDistance, typical > 0 else { return false }
+                return model.classifyDetailed(c.features).distance <= 1.5 * typical
+            }
+            pendingID = learner.register(taps: familiar.map { ($0.t, $0.zone, $0.confidence, $0.features) },
                                          minConfidence: config.settings.minConfidence)
         }
         // Gesture actions are dropped if they would start more than 1 s late (stale).
@@ -401,7 +428,8 @@ final class Daemon: @unchecked Sendable {
         let step = s.spec.stepMm
         var fired = 0
         if s.spec.mode == "absolute" {
-            let target = Int((measure / step).rounded(.towardZero))
+            // measure can come from a message (sim_sonar) and be huge: clamp before converting (at most 10000 steps).
+            guard let target = SafeNumbers.int((measure / step).rounded(.towardZero), in: -10_000...10_000) else { slider = s; return }
             while s.applied != target && fired < 8 {
                 let up = target > s.applied
                 if fireStep(s.binding, positive: up, inverse: s.spec.inverse) { s.applied += up ? 1 : -1 }
@@ -490,19 +518,71 @@ final class Daemon: @unchecked Sendable {
 
     // MARK: Calibration
 
+    /// Calibration capture. Zone and doubles taps are decided 0.3 s later: a candidate with a key press or release,
+    /// or any pointer event, within 150 ms either side is dropped (it may be the key or the click, not a tap on the
+    /// zone). Negatives are captured at once. A raw window around every candidate is kept either way.
     private func captureCandidate(_ f: TapFeatures, now: Double) {
         guard let cal = calibration else { return }
-        // Which label this candidate gets (before capture changes the phase).
-        var rawLabel: String?
         switch cal.phase {
-        case .capturing(let z) where (cal.counts[z] ?? 0) < cal.target: rawLabel = z
-        case .negatives(let until) where now < until: rawLabel = "none"
-        default: break
+        case .idle:
+            return
+        case .negatives:
+            saveRawWindow(t: f.t, label: "none")
+            _ = cal.addNegative(f, now: now)
+        case .capturing(let zone):
+            guard (cal.counts[zone] ?? 0) < cal.target else { return }
+            saveRawWindow(t: f.t, label: zone)
+            decideLater(f) { [weak self] in
+                guard let self, let count = cal.addZoneTap(f, zone: zone) else { return }
+                self.server.broadcast(["type": "calibration", "phase": "capturing", "zone": zone, "count": count, "target": cal.target])
+                if count >= cal.target, cal.phase == .capturing(zone: zone) { cal.endPhase() }
+            } dropped: { [weak self] in
+                self?.server.broadcast(["type": "calibration", "phase": "capturing", "zone": zone, "count": cal.counts[zone] ?? 0,
+                                        "target": cal.target, "dropped": "key or pointer event within 150 ms"])
+            }
+        case .doubles(let zone, let target):
+            saveRawWindow(t: f.t, label: zone)
+            decideLater(f) { [weak self] in
+                guard let self, self.calibration === cal, cal.phase == .doubles(zone: zone, target: target) else { return }
+                let r = cal.addDoubleTap(f, zone: zone, t: f.t)
+                var m: [String: Any] = ["type": "calibration", "phase": "doubles", "zone": zone, "count": r.pairs, "target": target]
+                if let gap = r.gap { m["lastGapMs"] = (gap * 1000).rounded() }
+                self.server.broadcast(m)
+                if r.pairs >= target { self.finishDoubles(cal, zone: zone) }
+            } dropped: { [weak self] in
+                self?.server.broadcast(["type": "calibration", "phase": "doubles", "zone": zone, "count": cal.pairs[zone] ?? 0,
+                                        "target": target, "dropped": "key or pointer event within 150 ms"])
+            }
         }
-        if let rawLabel { saveRawWindow(t: f.t, label: rawLabel) }
-        guard let (zone, count) = cal.capture(f, now: now) else { return }
-        server.broadcast(["type": "calibration", "phase": "capturing", "zone": zone, "count": count, "target": cal.target])
-        if count >= cal.target { cal.endPhase() }
+    }
+
+    private func decideLater(_ f: TapFeatures, keep: @escaping () -> Void, dropped: @escaping () -> Void) {
+        core.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.calibration != nil else { return }
+            if self.diag.inputNear(f.t, radius: 0.15) { dropped() } else { keep() }
+        }
+    }
+
+    /// Enough doubles: the user's own rhythm sets the double-tap window (90th percentile of their gaps + 80 ms).
+    private func finishDoubles(_ cal: CalibrationSession, zone: String) {
+        cal.endPhase()
+        var m: [String: Any] = ["type": "calibration", "phase": "doubles_done", "zone": zone,
+                                "gapsMs": cal.gaps.map { ($0 * 1000).rounded() }]
+        if let ms = cal.suggestedDoubleWindowMs {
+            var new = config
+            new.settings.doubleWindowMs = ms
+            do {
+                try store.save(new)
+                config = new
+                applyConfigToEngine()
+                server.broadcast(configMessage())
+                m["doubleWindowMs"] = ms
+                Log.info("double-tap window set to \(Int(ms)) ms from \(cal.gaps.count) measured doubles")
+            } catch {
+                m["error"] = "could not save the new double-tap window: \(Self.plainError(error))"
+            }
+        }
+        server.broadcast(m)
     }
 
     private func startNegativesCountdown(seconds: Int) {
@@ -533,44 +613,61 @@ final class Daemon: @unchecked Sendable {
         calibration = nil
         flushRawCalibration()
         server.broadcast(["type": "calibration", "phase": "training"])
-        let samples = cal.samples
+        // Partial recalibration merges (VERIFY_01 bug 2): only the zones captured in this session are replaced;
+        // every other zone keeps its saved samples. New negatives are added to the old ones (newest 500 kept).
+        let recalibrated = Set(cal.samples.map(\.label)).subtracting([ZoneModel.noneLabel])
+        var merged = store.loadSamples().filter { !recalibrated.contains($0.label) } + cal.samples
+        let noneIdx = merged.indices.filter { merged[$0].label == ZoneModel.noneLabel }
+        if noneIdx.count > 500 { let drop = Set(noneIdx.prefix(noneIdx.count - 500)); merged = merged.indices.filter { !drop.contains($0) }.map { merged[$0] } }
+        let samples = merged
         let disabled = disabledZones
+        let gen = nextGeneration()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Disabled zones are left out of the model; their samples stay in samples.json for later.
             let trainer = Trainer()
             for s in samples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
             let (model, report) = trainer.train()
             let rec = trainer.recommendedZones()
-            guard let self else { return }
-            var saveError: Error?
-            do {
-                try self.store.saveModel(model, report: report)
-                try self.store.saveSamples(samples)
-            } catch {
-                saveError = error
-            }
-            self.core.async {
-                // Could not save (read-only or full disk): keep the previous model, say so plainly.
-                if let saveError {
-                    Log.error("calibration could not be saved (\(saveError)); keeping the previous model")
+            self?.core.async {
+                guard let self else { return }
+                guard self.isCurrent(gen, what: "calibration") else { return }
+                do {
+                    try self.store.saveModel(model, report: report)
+                    try self.store.saveSamples(samples)
+                } catch {
+                    // Could not save (read-only or full disk): keep the previous model, say so plainly.
+                    Log.error("calibration could not be saved (\(error)); keeping the previous model")
                     self.server.broadcast(["type": "calibration", "phase": "failed",
-                                           "reason": "the new calibration could not be saved (\(Self.plainError(saveError))); the previous model is still in use",
+                                           "reason": "the new calibration could not be saved (\(Self.plainError(error))); the previous model is still in use",
                                            "overall": report.overall, "labels": report.labels])
                     return
                 }
-                // A new calibration replaces what use had taught the old model.
-                self.learner.discardAll(reason: "new calibration")
+                self.installedGeneration = gen
+                // What use taught about the recalibrated zones no longer applies; other zones keep theirs.
+                self.learner.discard(labels: recalibrated, reason: "zones recalibrated")
                 self.engine.model = model
                 self.applyZoneCenters()
                 self.pendingRecommendation = rec
                 self.server.broadcast(["type": "calibration", "phase": "done", "accuracy": report.accuracy,
                                        "overall": report.overall, "confusion": report.confusion, "labels": report.labels,
+                                       "recalibrated": recalibrated.sorted(),
                                        "recommendation": Self.recommendationJSON(rec),
                                        "peaks": Self.peaksJSON(model)])
                 self.server.broadcast(self.status())
-                Log.info("calibration done: overall accuracy \(report.overall), labels \(report.labels)")
+                Log.info("calibration done: recalibrated \(recalibrated.sorted()), overall accuracy \(report.overall), labels \(report.labels)")
             }
         }
+    }
+
+    private func nextGeneration() -> Int { modelGeneration += 1; return modelGeneration }
+
+    /// True if a retrain started as generation `gen` may still be installed (no newer one was installed meanwhile).
+    private func isCurrent(_ gen: Int, what: String) -> Bool {
+        guard gen > installedGeneration else {
+            Log.info("discarded a stale \(what) retrain (generation \(gen) finished after generation \(installedGeneration) was installed)")
+            return false
+        }
+        return true
     }
 
     // MARK: Messages from the app
@@ -613,24 +710,44 @@ final class Daemon: @unchecked Sendable {
             sessions.syncSonar(trigger: "resume", userInitiated: true)
         case "calibration_start":
             let zones = (m["zones"] as? [String]) ?? config.zones.map(\.id)
-            let target = (m["target"] as? NSNumber)?.intValue ?? 20
+            guard let target = SafeNumbers.field(m["target"], in: 1...500, default: 20) else {
+                return sendError("calibration_start: target must be a finite number (1 to 500)", to: c)
+            }
+            let posture = (m["posture"] as? String) ?? "desk"
+            guard CalibrationSession.postures.contains(posture) else { return sendError("posture must be desk, lap or stand", to: c) }
             negativesTimer?.cancel(); negativesTimer = nil
             flushRawCalibration()
-            let cal = CalibrationSession(zones: zones, target: target)
+            let cal = CalibrationSession(zones: zones, target: target, posture: posture)
             calibration = cal
             calRaw = (Self.stamp(), [], [])
-            server.broadcast(["type": "calibration", "phase": "started", "zones": cal.zones, "target": cal.target])
+            // TODO(per-posture models, DETECTION_AUDIT 6.7): one model per posture needs a ZoneModelSet with gravity
+            // vectors and a public gravity accessor on TapEngine in the detection library. Samples already carry
+            // their posture, so the models can be split once that exists.
+            server.broadcast(["type": "calibration", "phase": "started", "zones": cal.zones, "target": cal.target, "posture": posture])
         case "calibration_zone":
             guard let cal = calibration else { return sendError("calibration_start first", to: c) }
             guard let zone = m["zone"] as? String, !zone.isEmpty, zone != "none" else { return sendError("calibration_zone needs a zone", to: c) }
+            let strength = m["strength"] as? String
+            if let strength, !CalibrationSession.strengths.contains(strength) { return sendError("strength must be soft or firm", to: c) }
             negativesTimer?.cancel(); negativesTimer = nil
-            cal.beginZone(zone)
+            cal.beginZone(zone, strength: strength)
             server.broadcast(["type": "calibration", "phase": "capturing", "zone": zone,
-                              "count": cal.counts[zone] ?? 0, "target": cal.target])
+                              "count": cal.counts[zone] ?? 0, "target": cal.target, "strength": strength ?? NSNull()])
+        case "calibration_doubles":
+            guard let cal = calibration else { return sendError("calibration_start first", to: c) }
+            guard let zone = m["zone"] as? String, !zone.isEmpty, zone != "none" else { return sendError("calibration_doubles needs a zone", to: c) }
+            guard let count = SafeNumbers.field(m["count"], in: 1...50, default: 8) else {
+                return sendError("calibration_doubles: count must be a finite number (1 to 50)", to: c)
+            }
+            negativesTimer?.cancel(); negativesTimer = nil
+            cal.beginDoubles(zone, target: count)
+            server.broadcast(["type": "calibration", "phase": "doubles", "zone": zone, "count": cal.pairs[zone] ?? 0,
+                              "target": max(1, min(50, count))])
         case "calibration_negatives":
             guard let cal = calibration else { return sendError("calibration_start first", to: c) }
-            let seconds = Int(((m["seconds"] as? NSNumber)?.doubleValue ?? 45).rounded())
-            let clamped = max(1, min(600, seconds))
+            guard let clamped = SafeNumbers.field(m["seconds"], in: 1...600, default: 45) else {
+                return sendError("calibration_negatives: seconds must be a finite number (1 to 600)", to: c)
+            }
             cal.beginNegatives(seconds: Double(clamped), now: Clock.now())
             startNegativesCountdown(seconds: clamped)
         case "calibration_finish":
@@ -698,7 +815,10 @@ final class Daemon: @unchecked Sendable {
                 sendError("revoke_action: \(error)", to: c)
             }
         case "calibration_taptype_start":
-            sessions.startTapCalibration(types: m["types"] as? [String], target: (m["target"] as? NSNumber)?.intValue, client: c)
+            guard let ttTarget = SafeNumbers.field(m["target"], in: 3...50, default: 15) else {
+                return sendError("calibration_taptype_start: target must be a finite number (3 to 50)", to: c)
+            }
+            sessions.startTapCalibration(types: m["types"] as? [String], target: ttTarget, client: c)
         case "calibration_taptype_cancel":
             sessions.cancelTapCalibration()
         // Test-only hooks, reachable only with --no-hardware-sessions: they inject events at the points where the
@@ -722,8 +842,13 @@ final class Daemon: @unchecked Sendable {
             lastTapAt = t
             let g = GestureEvent(t: t, gesture: "tap", zone: zone, zones: [zone], modifiers: [], confidence: 0.95)
             if !sessions.holdTapGesture(t: t, zone: zone, release: { [weak self] in self?.onGesture(g) }) { onGesture(g) }
+        case "sim_slow_retrain" where options.noHardwareSessions:
+            testRetrainDelay = min(10, max(0, SafeNumbers.finite(m["seconds"]) ?? 2))
+        case "sim_input_event" where options.noHardwareSessions:
+            // Test-only: a pointer event `ago` seconds back, written into the buffered idle times.
+            diag.markPointerEvent(at: Clock.now() - min(10, max(0, SafeNumbers.finite(m["ago"]) ?? 0)))
         case "sim_undo" where options.noHardwareSessions:
-            learner.cancelPending(reason: "Cmd+Z (simulated)")
+            learner.cancelLatest(reason: "Cmd+Z (simulated)")
         case "sim_adapt" where options.noHardwareSessions:
             // Test-only: run the idle retrain now (skips the 60 s idle wait, not the 10-confirmation minimum).
             adaptIfDue(ignoreIdle: true)
@@ -733,8 +858,10 @@ final class Daemon: @unchecked Sendable {
             sessions.simulateAir(phase: (m["phase"] as? String) ?? "changed", dx: (m["dx"] as? NSNumber)?.doubleValue ?? 0,
                                  dy: (m["dy"] as? NSNumber)?.doubleValue ?? 0)
         case "feedback_missed", "feedback_false":
-            learner.cancelPending(reason: type)
+            // Rate limit first, so a refused feedback message has no side effects (VERIFY_01 bug 5).
             guard admitFeedback() else { return sendError("\(type): at most one every 2 s and 20 per minute", to: c) }
+            // "That wasn't meant" undoes the taps of the last accepted tap's gesture; "I missed a tap" undoes nothing.
+            if type == "feedback_false", let last = lastAccepted { learner.cancelGesture(containing: last.t, reason: type) }
             if type == "feedback_missed" { feedbackMissed(zone: m["zone"] as? String, client: c) } else { feedbackFalse(client: c) }
         case "diagnostics_export":
             guard Clock.now() - lastExport >= 5 else { return sendError("diagnostics_export: at most one every 5 s", to: c) }
@@ -751,8 +878,8 @@ final class Daemon: @unchecked Sendable {
         case "sim_spike" where options.noHardwareSessions:
             // With simulated sensors the transient goes through the live detector too; otherwise only into the buffer.
             if options.simulateSensors && (m["live"] as? Bool) == true { hub.injectSimulatedTap() } else {
-                diag.injectSyntheticTap(ago: (m["ago"] as? NSNumber)?.doubleValue ?? 2.0,
-                                        scale: (m["scale"] as? NSNumber)?.doubleValue ?? 1, mouseNear: (m["mouse"] as? Bool) ?? false)
+                diag.injectSyntheticTap(ago: min(10, max(0, SafeNumbers.finite(m["ago"]) ?? 2.0)),
+                                        scale: min(100, max(0, SafeNumbers.finite(m["scale"]) ?? 1)), mouseNear: (m["mouse"] as? Bool) ?? false)
             }
         case "catalog_get":
             server.send(["type": "catalog", "catalog": catalog], to: c)
@@ -910,28 +1037,36 @@ final class Daemon: @unchecked Sendable {
             reply["retrained"] = false; reply["reason"] = "zone \(label) is not calibrated"
             return server.send(reply, to: c)
         }
-        samples.append(.init(label: label, features: TapFeatures(values: f.values, t: 0)))
+        samples.append(.init(label: label, features: TapFeatures(values: f.values, t: 0), kind: "feedback"))
         let replyID = c.id
         let disabled = disabledZones
         let confirmedSamples = config.settings.learnFromUse ? learner.asSamples : []
+        let gen = nextGeneration()
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            guard let self else { return }
             let trainer = Trainer()
             for s in samples + confirmedSamples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
             let (model, report) = trainer.train()
-            var saveError: String?
-            do {
-                try self.store.saveModel(model, report: report)
-                try self.store.saveSamples(samples)
-            } catch { saveError = "\(error)" }
-            self.core.async {
-                self.engine.model = model
-                self.applyZoneCenters()
-                reply["retrained"] = saveError == nil
-                if let saveError { reply["reason"] = "could not save: \(saveError)" }
-                reply["counts"] = trainer.counts
-                reply["overall"] = Self.r4(report.overall)
-                Log.info("feedback \(reply["kind"] ?? "?"): added a \(label) sample; accuracy \(report.overall)")
+            self?.core.async {
+                guard let self else { return }
+                if self.isCurrent(gen, what: "feedback") {
+                    do {
+                        try self.store.saveModel(model, report: report)
+                        try self.store.saveSamples(samples)
+                        self.installedGeneration = gen
+                        self.engine.model = model
+                        self.applyZoneCenters()
+                        reply["retrained"] = true
+                        reply["counts"] = trainer.counts
+                        reply["overall"] = Self.r4(report.overall)
+                        Log.info("feedback \(reply["kind"] ?? "?"): added a \(label) sample; accuracy \(report.overall)")
+                    } catch {
+                        reply["retrained"] = false
+                        reply["reason"] = "could not save (\(Self.plainError(error))); the previous model is still in use"
+                    }
+                } else {
+                    reply["retrained"] = false
+                    reply["reason"] = "a newer retrain finished first; send the feedback again if it still applies"
+                }
                 if let client = self.server.clients[replyID] { self.server.send(reply, to: client) }
                 self.server.broadcast(self.status())
             }
@@ -960,13 +1095,22 @@ final class Daemon: @unchecked Sendable {
         guard !samples.isEmpty else { done?(nil); return }
         let disabled = disabledZones
         let confirmedSamples = config.settings.learnFromUse ? learner.asSamples : []
+        let gen = nextGeneration()
+        let delay = testRetrainDelay
+        testRetrainDelay = 0
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let trainer = Trainer()
             for s in samples + confirmedSamples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
             let (model, report) = trainer.train()
-            guard let self else { return }
-            do { try self.store.saveModel(model, report: report) } catch { Log.error("could not save model: \(error)") }
-            self.core.async {
+            if delay > 0 { Thread.sleep(forTimeInterval: delay) }
+            self?.core.async {
+                guard let self else { return }
+                guard self.isCurrent(gen, what: reason) else { done?(nil); return }
+                do { try self.store.saveModel(model, report: report) } catch {
+                    Log.error("could not save model (\(reason)): \(error); keeping the previous model")
+                    done?(nil); return
+                }
+                self.installedGeneration = gen
                 self.engine.model = model
                 self.applyZoneCenters()
                 Log.info("model rebuilt (\(reason)); zones \(report.labels.filter { $0 != "none" }), overall \(report.overall)")
@@ -1088,10 +1232,11 @@ final class Daemon: @unchecked Sendable {
         if learner.hasPending, now - lastUndoCheck >= 0.01 {
             lastUndoCheck = now
             // kVK_ANSI_Z = 6 with Command held: the frontmost app's Undo.
-            if CGEventSource.keyState(.combinedSessionState, key: 6),
-               CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) {
-                learner.cancelPending(reason: "Cmd+Z")
-            }
+            let down = CGEventSource.keyState(.combinedSessionState, key: 6)
+                && CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand)
+            // Only the press counts (the keys stay down across several 10 ms polls); it undoes the latest gesture.
+            if down && !cmdZWasDown { learner.cancelLatest(reason: "Cmd+Z") }
+            cmdZWasDown = down
         }
         guard now - lastLearnTick >= 1 else { return }
         lastLearnTick = now
@@ -1113,32 +1258,56 @@ final class Daemon: @unchecked Sendable {
         guard !calib.isEmpty else { return }
         adapting = true
         let disabled = disabledZones
-        let confirmed = learner.asSamples
+        let confirmed = learner.confirmed.filter { !disabled.contains($0.label) }
         let minConf = config.settings.minConfidence
+        let gen = nextGeneration()
         DispatchQueue.global(qos: .utility).async { [weak self] in
-            let trainer = Trainer()
-            for s in calib + confirmed where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
-            let (model, report) = trainer.train()
-            let evalSet = calib.filter { !disabled.contains($0.label) }
-            let accNew = Self.accuracy(model, on: evalSet, minConfidence: minConf)
-            let accCur = Self.accuracy(current, on: evalSet, minConfidence: minConf)
-            let keep = accNew >= accCur - 0.02
-            guard let self else { return }
+            let evalCalib = calib.filter { !disabled.contains($0.label) }
+            // Ship guard, deterministic (VERIFY_01 bug 3):
+            // 1. confirmed taps that disagree with their calibration neighbours are rejected outright;
+            // 2. a model trained on calibration + half the rest (every other one, in stored order) must label the
+            //    calibration samples and the held-out half at least as well as the current model (within 0.02).
+            let rejected = UseLearner.disagreeing(confirmed, calibration: evalCalib)
+            let vetted = confirmed.filter { !rejected.contains($0.ts) }
+            let asSample = { (c: UseLearner.Confirmed) in ConfigStore.LabeledSample(label: c.label, features: c.features, kind: "confirmed") }
+            let trainHalf = vetted.enumerated().filter { $0.offset % 2 == 0 }.map { asSample($0.element) }
+            let heldOut = vetted.enumerated().filter { $0.offset % 2 == 1 }.map { asSample($0.element) }
+            let probe = Trainer()
+            for s in evalCalib + trainHalf { probe.add(s.features, label: s.label) }
+            let (probeModel, _) = probe.train()
+            let calibNew = Self.accuracy(probeModel, on: evalCalib, minConfidence: minConf)
+            let calibCur = Self.accuracy(current, on: evalCalib, minConfidence: minConf)
+            let heldNew = heldOut.isEmpty ? 1 : Self.accuracy(probeModel, on: heldOut, minConfidence: minConf)
+            let heldCur = heldOut.isEmpty ? 1 : Self.accuracy(current, on: heldOut, minConfidence: minConf)
+            let keep = !vetted.isEmpty && calibNew >= calibCur - 0.02 && heldNew >= heldCur - 0.02
+            var final: (ZoneModel, CalibrationReport)?
             if keep {
-                do { try self.store.saveModel(model, report: report) } catch { Log.error("could not save model: \(error)") }
+                let trainer = Trainer()
+                for s in evalCalib + vetted.map(asSample) { trainer.add(s.features, label: s.label) }
+                final = trainer.train()
             }
-            self.core.async {
+            self?.core.async {
+                guard let self else { return }
                 self.adapting = false
-                var msg: [String: Any] = ["type": "adaptation", "kept": keep, "confirmed": confirmed.count,
-                                          "accuracyBefore": Self.r4(accCur), "accuracyAfter": Self.r4(accNew)]
-                if keep {
+                if !rejected.isEmpty { self.learner.remove(ts: rejected, reason: "they disagree with the calibration taps around them") }
+                var msg: [String: Any] = ["type": "adaptation", "kept": keep, "confirmed": vetted.count, "rejected": rejected.count,
+                                          "accuracyBefore": Self.r4(calibCur), "accuracyAfter": Self.r4(calibNew),
+                                          "heldOutBefore": Self.r4(heldCur), "heldOutAfter": Self.r4(heldNew)]
+                if keep, let (model, report) = final {
+                    guard self.isCurrent(gen, what: "learn-from-use") else { return }
+                    do { try self.store.saveModel(model, report: report) } catch {
+                        Log.error("could not save the adapted model: \(error); keeping the previous model")
+                        return
+                    }
+                    self.installedGeneration = gen
                     self.engine.model = model
                     self.applyZoneCenters()
                     self.learner.markTrained()
-                    Log.info("learn-from-use: model updated with \(confirmed.count) confirmed taps (calibration accuracy \(Self.r4(accCur)) -> \(Self.r4(accNew)))")
+                    Log.info("learn-from-use: model updated with \(vetted.count) confirmed taps (calibration \(Self.r4(calibCur)) -> \(Self.r4(calibNew)), held-out \(Self.r4(heldCur)) -> \(Self.r4(heldNew)))")
                 } else {
-                    self.learner.discardAll(reason: "ship guard: calibration accuracy would drop \(Self.r4(accCur)) -> \(Self.r4(accNew))")
-                    msg["reason"] = "the updated model did worse on the calibration taps; confirmed taps discarded"
+                    self.learner.discardAll(reason: "ship guard: calibration \(Self.r4(calibCur)) -> \(Self.r4(calibNew)), held-out confirmed \(Self.r4(heldCur)) -> \(Self.r4(heldNew))")
+                    msg["reason"] = vetted.isEmpty ? "every confirmed tap disagreed with the calibration; discarded"
+                        : "the updated model did worse on the calibration or held-out confirmed taps; confirmed taps discarded"
                 }
                 self.server.broadcast(msg)
                 if keep { self.server.broadcast(self.status()) }
@@ -1187,7 +1356,13 @@ final class Daemon: @unchecked Sendable {
         } catch {
             Log.error("could not save raw calibration windows: \(error)")
         }
-        Self.capDirectory(dir, maxBytes: 20 * 1024 * 1024)
+        Self.capDirectory(dir, maxBytes: rawCapBytes)
+    }
+
+    /// 20 MB; tests (--no-hardware-sessions only) may lower it with GHOSTKEYS_TEST_RAW_CAP_BYTES.
+    private var rawCapBytes: Int {
+        if options.noHardwareSessions, let v = ProcessInfo.processInfo.environment["GHOSTKEYS_TEST_RAW_CAP_BYTES"], let n = Int(v) { return n }
+        return 20 * 1024 * 1024
     }
 
     private static func capDirectory(_ dir: URL, maxBytes: Int) {
@@ -1199,7 +1374,8 @@ final class Daemon: @unchecked Sendable {
                 < ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
         }
         var total = files.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
-        for f in files where total > maxBytes {
+        // Oldest first, and never the newest file (the one just written), even if it alone exceeds the budget.
+        for f in files.dropLast() where total > maxBytes {
             total -= (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             try? fm.removeItem(at: f)
         }
@@ -1250,7 +1426,7 @@ final class Daemon: @unchecked Sendable {
                 "imuHz": Int(imuHz.rounded()),
                 // Addition to PROTOCOL.md: live onset detector state, all in milli-g.
                 "detector": ["noiseFloorMg": Self.r4(engine.noiseFloor * 1000), "thresholdMg": Self.r4(engine.onsetThreshold * 1000),
-                             "level": Self.r4(engine.level * 1000)]]
+                             "level": Self.r4(engine.level * 1000), "unfamiliar": engine.isUnfamiliar]]
     }
 
     private func configMessage() -> [String: Any] {
@@ -1265,6 +1441,9 @@ final class Daemon: @unchecked Sendable {
         shadow.settings = config.settings.detection
         applyZoneCenters()
         engine.zonesNeedingMultiTap = config.zonesNeedingMultiTap
+        // Tilt detection only when something is bound to it (a tilted lap or a nudge otherwise makes noise).
+        engine.tiltEnabled = config.bindings.contains { $0.enabled && $0.gesture.hasPrefix("tilt_") }
+        Log.debug("tilt detection \(engine.tiltEnabled ? "on (a tilt binding exists)" : "off (no tilt binding)")")
         Log.debug("zones needing multi-tap: \(config.zonesNeedingMultiTap.sorted())")
     }
 

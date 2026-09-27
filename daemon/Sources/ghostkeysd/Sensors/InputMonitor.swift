@@ -46,9 +46,7 @@ final class InputMonitor: @unchecked Sendable {
         if cachedAt < 0 || now - cachedAt >= Self.refreshInterval || now < cachedAt {
             let src = CGEventSourceStateID.combinedSessionState
             keyIdle = CGEventSource.secondsSinceLastEventType(src, eventType: .keyDown)
-            mouseIdle = min(CGEventSource.secondsSinceLastEventType(src, eventType: .mouseMoved),
-                            CGEventSource.secondsSinceLastEventType(src, eventType: .leftMouseDown),
-                            CGEventSource.secondsSinceLastEventType(src, eventType: .scrollWheel))
+            mouseIdle = Self.pointerTypes.map { CGEventSource.secondsSinceLastEventType(src, eventType: $0) }.min() ?? 99
             keyUpIdle = CGEventSource.secondsSinceLastEventType(src, eventType: .keyUp)
             modifierIdle = CGEventSource.secondsSinceLastEventType(src, eventType: .flagsChanged)
             modifiers = Self.modifierNames(CGEventSource.flagsState(src))
@@ -58,6 +56,17 @@ final class InputMonitor: @unchecked Sendable {
         let age = now - cachedAt
         return (keyIdle + age, mouseIdle + age, modifiers, keyUpIdle + age, modifierIdle + age)
     }
+
+    /// Every pointer event that can shake the case: moves, drags, all buttons down and up, scroll, and the trackpad's
+    /// gesture events (18 rotate, 29 gesture, 30 magnify, 31 swipe, 34 pressure / force click). The last five are
+    /// undocumented raw values; `secondsSinceLastEventType` accepts them on macOS 14+ (checked on macOS 26).
+    static let pointerTypes: [CGEventType] = {
+        var t: [CGEventType] = [.mouseMoved, .leftMouseDown, .leftMouseUp, .rightMouseDown, .rightMouseUp,
+                                .otherMouseDown, .otherMouseUp, .leftMouseDragged, .rightMouseDragged, .otherMouseDragged,
+                                .scrollWheel]
+        for raw: UInt32 in [18, 29, 30, 31, 34] { t.append(unsafeBitCast(raw, to: CGEventType.self)) }
+        return t
+    }()
 
     static func modifierNames(_ flags: CGEventFlags) -> Set<String> {
         var s = Set<String>()

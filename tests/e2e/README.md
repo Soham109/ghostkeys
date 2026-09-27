@@ -59,6 +59,8 @@ the machine, not to a config.
 | `{ "type": "sim_spike", "live": true }` | a physical tap: with `--simulate-sensors` a tap-like transient goes through the live detector (candidates, taps, rejections, calibration capture). Without `live`, it is only added to the 10 s diagnostics buffer (for `feedback_missed`). |
 | `{ "type": "sim_tap", "zone": "right-grille", "confidence": 0.95 }` | an accepted IMU tap and its `tap` gesture (bindings, limiter, knuckle hold, learn-from-use); features come from a saved calibration sample of that zone |
 | `{ "type": "sim_undo" }` | Cmd+Z within 5 s of a tap (learn-from-use drops the pending taps) |
+| `{ "type": "sim_slow_retrain", "seconds": 2 }` | the next zone-change retrain waits before installing (to test that an older retrain never overwrites a newer one) |
+| `{ "type": "sim_input_event", "ago": 0.2 }` | a pointer event that long ago, in the diagnostics buffer (calibration's ±150 ms input filter) |
 | `{ "type": "sim_adapt" }` | the learn-from-use retrain, without waiting for 60 s of idle (still needs 10 new confirmations) |
 | `{ "type": "sim_tap_type", "tapType": "knuckle" }` | the sound classifier's verdict for the last held tap |
 | `{ "type": "sim_air", "phase": "began", "dx": 0.05, "dy": 0 }` | a `pinch_hold` event from the camera (knob bindings) |

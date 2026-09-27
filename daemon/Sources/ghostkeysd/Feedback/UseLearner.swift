@@ -63,7 +63,23 @@ final class UseLearner {
         for i in pending.indices where pending[i].id == id { pending[i].actionOK = ok }
     }
 
-    /// Something undid the recent taps (feedback, Cmd+Z): nothing from the last 5 s is learned.
+    /// Cmd+Z undoes the most recent action: drop only the taps behind the latest gesture still pending.
+    func cancelLatest(reason: String) {
+        guard let latest = pending.map(\.id).max() else { return }
+        let n = pending.filter { $0.id == latest }.count
+        pending.removeAll { $0.id == latest }
+        Log.debug("learn-from-use: dropped \(n) pending tap(s) of the latest gesture: \(reason)")
+    }
+
+    /// Drop the gesture whose taps include the tap at `t` (for example the tap feedback_false is about).
+    func cancelGesture(containing t: Double, reason: String) {
+        let ids = Set(pending.filter { abs($0.t - t) < 0.005 }.map(\.id))
+        guard !ids.isEmpty else { return }
+        pending.removeAll { ids.contains($0.id) }
+        Log.debug("learn-from-use: dropped the pending taps of \(ids.count) gesture(s): \(reason)")
+    }
+
+    /// Everything pending (learnFromUse was switched off).
     func cancelPending(reason: String) {
         guard !pending.isEmpty else { return }
         Log.debug("learn-from-use: dropped \(pending.count) pending tap(s): \(reason)")
@@ -108,6 +124,71 @@ final class UseLearner {
         confirmed.removeAll()
         newSinceTrain = 0
         save()
+    }
+
+    /// A zone was recalibrated: what use taught about it no longer applies. Other zones keep theirs.
+    func discard(labels: Set<String>, reason: String) {
+        let before = confirmed.count
+        confirmed.removeAll { labels.contains($0.label) }
+        guard confirmed.count != before else { return }
+        Log.info("learn-from-use: discarded \(before - confirmed.count) confirmed tap(s) of \(labels.sorted()): \(reason)")
+        save()
+    }
+
+    /// Removes individual confirmed taps (the ship guard's neighbour check rejected them).
+    func remove(ts: Set<Double>, reason: String) {
+        let before = confirmed.count
+        confirmed.removeAll { ts.contains($0.ts) }
+        guard confirmed.count != before else { return }
+        Log.info("learn-from-use: removed \(before - confirmed.count) confirmed tap(s): \(reason)")
+        save()
+    }
+
+    // MARK: Ship guard helpers (deterministic)
+
+    /// Rejects confirmed taps that disagree with the calibration: among the 5 nearest calibration samples (features
+    /// standardized with the calibration's mean and spread) fewer than 3 carry the same label, or the nearest same-label
+    /// calibration sample is more than twice that label's typical nearest-neighbour distance (its 95th percentile) away.
+    /// Returns the `ts` of the rejected ones.
+    static func disagreeing(_ confirmed: [Confirmed], calibration: [ConfigStore.LabeledSample]) -> Set<Double> {
+        guard let dim = calibration.first?.features.values.count, dim > 0, calibration.count >= 5 else { return [] }
+        let rows = calibration.map(\.features.values).filter { $0.count == dim }
+        var mean = [Double](repeating: 0, count: dim), sd = [Double](repeating: 0, count: dim)
+        for r in rows { for j in 0..<dim { mean[j] += r[j] } }
+        for j in 0..<dim { mean[j] /= Double(rows.count) }
+        for r in rows { for j in 0..<dim { sd[j] += (r[j] - mean[j]) * (r[j] - mean[j]) } }
+        for j in 0..<dim { sd[j] = max((sd[j] / Double(rows.count)).squareRoot(), 1e-9) }
+        func z(_ v: [Double]) -> [Double] { (0..<dim).map { (v[$0] - mean[$0]) / sd[$0] } }
+        func dist(_ a: [Double], _ b: [Double]) -> Double {
+            var sum = 0.0
+            for i in 0..<min(a.count, b.count) { let d = a[i] - b[i]; sum += d * d }
+            return sum.squareRoot()
+        }
+        let calib = calibration.filter { $0.features.values.count == dim }.map { (label: $0.label, v: z($0.features.values)) }
+        // Per label: 95th percentile of each sample's distance to its nearest same-label neighbour.
+        var typical: [String: Double] = [:]
+        for label in Set(calib.map(\.label)) {
+            let members = calib.filter { $0.label == label }
+            guard members.count >= 3 else { continue }
+            var nn: [Double] = []
+            for (i, m) in members.enumerated() {
+                nn.append(members.enumerated().filter { $0.offset != i }.map { dist(m.v, $0.element.v) }.min()!)
+            }
+            nn.sort()
+            typical[label] = nn[min(nn.count - 1, Int((Double(nn.count - 1) * 0.95).rounded(.up)))]
+        }
+        var rejected = Set<Double>()
+        for c in confirmed {
+            guard c.features.values.count == dim else { rejected.insert(c.ts); continue }
+            let v = z(c.features.values)
+            var ranked: [(label: String, d: Double)] = calib.map { (label: $0.label, d: dist(v, $0.v)) }
+            ranked.sort { (x, y) in x.d != y.d ? x.d < y.d : x.label < y.label }
+            let same = ranked.prefix(5).filter { $0.label == c.label }.count
+            let nearestSame = ranked.first { $0.label == c.label }?.d ?? .infinity
+            if same < 3 { rejected.insert(c.ts); continue }
+            if let t = typical[c.label], t > 0, nearestSame > 2 * t { rejected.insert(c.ts) }
+        }
+        return rejected
     }
 
     /// Merge support: confirmed taps of either zone now belong to the merged zone.

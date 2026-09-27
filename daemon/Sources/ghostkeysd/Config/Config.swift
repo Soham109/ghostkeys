@@ -173,7 +173,8 @@ struct AppSettings: Codable, Equatable, Sendable {
     /// Lets much lighter taps through where the room is quiet (see DetectionSettings.lightTouch).
     var lightTouch = false
     /// Online adaptation: taps that fired an action and were not undone within 5 s refine the zone model.
-    var learnFromUse = true
+    /// Off by default (DETECTION_AUDIT 6.5) until the guided training session exists.
+    var learnFromUse = false
     var hud = true
     var haptics = false
     var sound = SoundSettings()

@@ -9,3 +9,4 @@ release/
 .env
 .build-*/
 *.gkrec
+__pycache__/
