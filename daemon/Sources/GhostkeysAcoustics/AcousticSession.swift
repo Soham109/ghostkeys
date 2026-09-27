@@ -88,6 +88,21 @@ public final class AcousticSession: @unchecked Sendable {
     private var probeSin: [[Float]] = []
     private var probeWindowSum: Float = 1
     private static let probeLength = 4096
+    private let rawLock = NSLock()
+    private var raw: RawCapture?
+    /// Plain flag read on the tap thread without the lock (a stale read only delays the capture by one buffer).
+    private var rawArmed = false
+
+    private struct RawCapture {
+        var url: URL
+        var startAt: Double
+        var frames: Int
+        var channels = 0
+        var rate = 0.0
+        var samples: [Float] = []
+        var firstTime: Double?
+        var done: (String) -> Void
+    }
 
     /// Tone playback formats (source rendered by the generator, output device), nil while no tone engine runs.
     public var tonePlayerFormats: (source: String, device: String)? {
@@ -236,10 +251,68 @@ public final class AcousticSession: @unchecked Sendable {
         isPilotPlaying = false
     }
 
+    /// Diagnostics only (tuning sonar on real hardware): records the raw input, every channel at the hardware rate,
+    /// starting `delay` seconds from now, for `seconds` (at most 30), and writes it as a 32-bit float WAV to `url` (a
+    /// local file; nothing is sent anywhere). `done` gets a one-line result on a background thread.
+    public func captureRaw(to url: URL, seconds: Double, delay: Double, done: @escaping (String) -> Void) {
+        let start = ProcessInfo.processInfo.systemUptime + max(0, delay)
+        rawLock.lock()
+        raw = RawCapture(url: url, startAt: start, frames: Int(min(30, max(0.5, seconds)) * 48_000), done: done)
+        rawArmed = true
+        rawLock.unlock()
+    }
+
+    private func recordRaw(_ channels: UnsafePointer<UnsafeMutablePointer<Float>>, channelCount: Int, frames n: Int,
+                           rate: Double, time: Double) {
+        rawLock.lock()
+        guard var r = raw, time >= r.startAt else { rawLock.unlock(); return }
+        if r.firstTime == nil {
+            r.firstTime = time; r.channels = channelCount; r.rate = rate
+            r.frames = Int(Double(r.frames) / 48_000 * rate)
+            r.samples.reserveCapacity(r.frames * channelCount)
+        }
+        let take = min(n, r.frames - r.samples.count / max(1, r.channels))
+        if channelCount == r.channels, take > 0 {
+            for i in 0..<take { for c in 0..<channelCount { r.samples.append(channels[c][i]) } }
+        }
+        let finished = r.samples.count / max(1, r.channels) >= r.frames
+        raw = finished ? nil : r
+        if finished { rawArmed = false }
+        rawLock.unlock()
+        guard finished else { return }
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                try Self.writeFloatWav(r.samples, channels: r.channels, rate: r.rate, to: r.url)
+                r.done("raw capture written: \(r.url.path) (\(r.channels) ch, \(Int(r.rate)) Hz, \(r.frames) frames, starts at host time \(r.firstTime ?? 0))")
+            } catch {
+                r.done("raw capture failed: \(error)")
+            }
+        }
+    }
+
+    /// 32-bit float WAV (format 3), interleaved.
+    public static func writeFloatWav(_ samples: [Float], channels: Int, rate: Double, to url: URL) throws {
+        var d = Data()
+        func u32(_ v: UInt32) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        func u16(_ v: UInt16) { withUnsafeBytes(of: v.littleEndian) { d.append(contentsOf: $0) } }
+        let bytes = UInt32(samples.count * 4)
+        d.append(contentsOf: Array("RIFF".utf8)); u32(36 + bytes); d.append(contentsOf: Array("WAVE".utf8))
+        d.append(contentsOf: Array("fmt ".utf8)); u32(16); u16(3); u16(UInt16(channels)); u32(UInt32(rate))
+        u32(UInt32(rate) * UInt32(channels) * 4); u16(UInt16(channels * 4)); u16(32)
+        d.append(contentsOf: Array("data".utf8)); u32(bytes)
+        samples.withUnsafeBufferPointer { d.append(UnsafeBufferPointer(start: UnsafeRawPointer($0.baseAddress!).assumingMemoryBound(to: UInt8.self), count: samples.count * 4)) }
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try d.write(to: url, options: .atomic)
+    }
+
     private func handle(_ buffer: AVAudioPCMBuffer, time: AVAudioTime) {
         let n = Int(buffer.frameLength)
         guard n > 0, let channels = buffer.floatChannelData else { return }
         let channelCount = Int(buffer.format.channelCount)
+        if rawArmed {
+            let t = time.isHostTimeValid ? AVAudioTime.seconds(forHostTime: time.hostTime) : ProcessInfo.processInfo.systemUptime
+            recordRaw(channels, channelCount: channelCount, frames: n, rate: buffer.format.sampleRate, time: t)
+        }
         var mono = [Float](repeating: 0, count: n)
         for c in 0..<channelCount {
             let src = channels[c]

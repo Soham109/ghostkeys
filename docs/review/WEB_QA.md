@@ -10,6 +10,66 @@ Newest round first.
 
 ---
 
+## Round 5: 2026-09-27 00:51 local (build of `web/` as of 00:51), plus the live deploy
+
+Same method, run at `nice -n 10`, checking the thermal log and load before every heavy step (load stayed between 3.4 and 7.8; there were no thermal warnings). New this round: snap regression with real mouse-wheel input both directions (`scratchpad/snap5.mjs`), a whole-page flicker scan that records every compositor frame through CDP screencast and scores one-frame flashes (`flicker.mjs`, `flicker.py`), a waitlist sheet test (`sheet.mjs`), a light-theme sweep at all 5 viewports, and a local vs live comparison against https://ghostkeys-nine.vercel.app (`live.mjs` plus `curl -I`). Shots: `scratchpad/rounds/r5/` (dark) and `rounds/r5light/` (light).
+
+### Bugs (fix first)
+
+1. **The knock beat still strobes, and in light theme it is a full-screen white/black strobe.** In the sound chapter the whole WebGL frame drops to near-black for single frames, repeatedly:
+   - 1440x900 light, scrolling through y 4,573 to 4,901: 8 alternations between mean luminance ~155 and ~17 in about 0.4 s. Filmstrip `r5/flicker-light.jpg` (frames 372 to 389): scene, black, black, scene, and so on.
+   - 1920x1080 light, y 5,494 to 5,745: luminance 161 to 12 and back, 8 times.
+   - 1440x900 dark, y 4,536 to 4,863: luminance 33 to 5 and back, 12 times, on alternate frames.
+   - **It also happens with the page parked, not only while scrolling.** Parked at y 4,550 for 2 s: 21 of 120 frames black in light, 16 of 120 in dark. Parked at 4,650: 8 and 7. Clean at 4,750 and 4,850.
+   - Frame with the black state: `r5light/shots/1920x1080-07.png` (headline over a black void with one radial light, laptop gone).
+   A light-to-dark full-screen flash several times a second can trigger photosensitive seizures (WCAG 2.3.1, three flashes per second). This is the one bug that must be fixed before anyone sees the site. Likely cause: something in the sound/knock scene toggles the renderer's clear or scene visibility on a per-frame condition near the beat boundary (for example a threshold on smoothed chapter progress that oscillates). Nothing else on the page flickered: the only other brightness steps are the intended chapter cuts (y≈2,381 and y≈1,487).
+2. **Duplicate guide articles.** `web/content/guide/` now has 13 copies named `"01-getting-started 3.md"` to `"13-developers 3.md"` (byte-identical to the originals; they look like Finder or iCloud sync conflict copies). The build turns them into 13 extra pages at URLs with a space (`/guide/actions 3/`), and `/guide/` lists every article twice ("01 Getting started, 02 Getting started, 03 Calibration, 04 Calibration..."). `web/.next/` also has dozens of `"* 2.json"` copies, and so does `web/screenshots/`. **The live deploy does not have this yet** (live `/guide/actions%203/` is 404 and live `/guide/` lists each article once), so the next deploy from `web/` would ship it. Delete the `* 3.md` files (the lead's call, since QA does not touch `web/`) and consider a build check that fails on filenames with a space.
+3. **Mobile dark theme: the page is 469px wide on a 390px phone.** `innerWidth` and `scrollWidth` are 469 on `/` at 390x844 in dark theme (390 in light). The cause is `.scrim` in `app/globals.css:299`: under 767px it is `left: -20vw; width: 140vw`, so it runs from -78 to 468px. Light theme overrides the width to 62vw, which is why light is fine. Phones can pan sideways and the nav pill sits off-centre (`r5/shots/390x844-01.png`). Fix: `overflow-x: clip` on the chapter sections (or `body`), or keep the scrim inside 100vw.
+4. **The waitlist sheet promises an email that can never be sent.** The copy says "Leave your email and we'll email you when the Mac download is ready", and after submitting, "Saved. You're on the list." But `GetSheet.tsx` only writes to `localStorage` (`gk-mac-waitlist`), so nobody ever receives the address. The idle line ("Kept in this browser until signup opens. Nothing is sent yet.") is honest, but it disappears once the visitor submits. Anyone who signs up will believe they are on a list that does not exist. Wire a real endpoint, or change the saved message to "Saved in this browser only. Nothing was sent." and drop "we'll email you".
+5. **Waitlist sheet: the page scrolls behind the open sheet.** A 600px mouse wheel over the open dialog scrolls the page 415px on `/`, `/pricing/` and `/guide/getting-started/`. Lenis keeps handling wheel events while the modal is open. Call `lenis.stop()` on open and `lenis.start()` on close.
+6. **Waitlist sheet: the email input has no visible focus ring** (the Tab cycle shows `ring: false` on the input, while Close and Notify me have one). On phones the input is 14px, so iOS Safari zooms the page when it is focused. Use 16px on mobile and a 1px `--ink` outline on `:focus-visible`.
+7. **Mobile light theme: headlines in dark ink sit on the black laptop screen.** "Every blank surface is a key." (`r5light/shots/390x844-02.png`, `-03.png`) and "A different layout for every app." (`r5light/shots/390x844-10.png`) are dark grey on a near-black display and cannot be read. In the hero at y 497, the fading "Download for Mac" button and "FREE TO START" sit on top of the laptop (`r5light/shots/390x844-01.png`).
+8. **Mid-reveal slices at rest points** (minor now): "touching it." cut at `r5/shots/art-dark-14.png` and "A different" cut at `r5/shots/art-light-11.png`, `r5light/shots/1920x1080-09.png`.
+9. **Reduced motion:** "A different layout for every app." still scrolls over the bright hand-wave still (`r5/shots/reduced-06.png`); the new scrim does not reach it.
+10. **Small ones:**
+    - The skip link is now "Skip to download" and opens the waitlist sheet. A skip link should skip to the main content.
+    - `/compatibility/` is still built but nothing links to it any more (it was dropped from the single-row footer). Link it or remove the route.
+    - No theme control in the mobile nav; the pill shows "AUTO" as plain text.
+
+### Verified fixed
+
+- **Snap spring-back: fixed.** Real mouse wheel, 1 / 3 / 5 notches, from the top, three mid-page beats and the bottom, both directions, at 1440 and 1280: every input moves the page (70px per notch) and **0px of pull-back in all 64 cases**. 38 trackpad-like flicks go from top to bottom and 37 go back up, with 0px pull-back. Forward snap only adds small nudges in the direction of travel (for example 3 notches from 3,623 land at 3,911, not 3,833). Pacing now feels right.
+- **Hero headline moves as one block:** at y 503 the hero is a single fading block with no line overlap (`r5/shots/art-dark-02.png`).
+- **Purchase paths no longer loop:** every Download and Buy link on all 18 pages now points at the sheet (tested by click on `/`, `/pricing/`, `/faq/` and `/guide/getting-started/`); the Pro variant shows the Pro copy. The sheet opens with Enter from the keyboard, focus lands on Close, Tab stays inside (one stop goes to the page body before wrapping, which is normal for a native `<dialog>`), Escape and a backdrop click close it, focus returns to the trigger, invalid and valid emails get the right messages, and it fits at 390px (352px wide, 19px margins). Screens: `r5/sheet/sheets.jpg`.
+- **Footer** is a single row at 1440 (`r5/shots/art-dark-36.png`).
+- **Everything else clean:** 0 console errors or warnings, 0 failed requests and 0 hydration errors across all pages and viewports, no WebGL context loss, CLS ≤ 0.0074, theme toggle correct with no flash, 43 of 43 Tab stops with a focus ring, reduced motion renders stills with 0 canvases.
+
+### Performance (M5 Pro, Metal, 1440x900)
+
+| measure | round 4 | round 5 |
+|---|---|---|
+| First WebGL draw | 448 ms | 459 ms |
+| LCP | 104 ms | 100 ms |
+| Cold / warm / 4x-throttled scroll p99, max | 16.8, 16.8 ms | 16.8, 16.8 ms, 0 frames > 32 ms |
+| JS heap growth over 3 passes | +1.4 MB | +1.4 MB |
+| WebGL buffers after passes 1 / 2 / 3 | 458 / 458 / 458 | 453 / 453 / 453 (no leak) |
+
+### Live deploy vs local build
+
+- **Content and visuals match.** Page text is identical on `/`, `/pricing/`, `/faq/`, `/privacy/` and `/compatibility/`, and screenshots differ by 0.0 to 0.3 percent of pixels at y 0, 1,500, 4,200, 9,000 and on the subpages. The only text difference is `/guide/` (bug 2: local has the duplicates, live does not). No console errors on live. All fonts load on live (Switzer 200 to 500, Fragment Mono).
+- **Caching is wrong on live.** Every file, including content-hashed ones, is served with `cache-control: public, max-age=0, must-revalidate`: `/_next/static/chunks/*.js`, `/_next/static/media/*.woff2`, `/hdr/studio.hdr` (1.7 MB), `/stills/*.avif`, `/video/teaser-540.mp4`. Every repeat visit revalidates every asset. The deploy looks like a plain static-folder upload, so Vercel's usual `immutable` headers for Next are missing. Add a `vercel.json` `headers` rule: `/_next/static/(.*)` gets `public, max-age=31536000, immutable`; fonts, the HDR, stills and video get at least `max-age=86400`.
+- **Missing on live:** `/robots.txt` and `/sitemap.xml` both 404. There are no `X-Content-Type-Options`, `Referrer-Policy`, `X-Frame-Options` or CSP headers (HSTS is present). No `og:image` or canonical link on `/`. None of these are visible to visitors, but they matter for link previews and search.
+- Compression (brotli) and content types are correct. The page cache showed `age: 19143` on `/`, so the live build is about 5 hours old.
+
+### Top 5 for the builder right now
+1. Knock beat strobe (white/black flashes several times a second in light theme, also while parked). Fix before anyone sees it.
+2. Delete the 13 duplicate `* 3.md` guide files before the next deploy; `/guide/` lists every article twice.
+3. Mobile dark page is 469px wide (`.scrim` 140vw); add `overflow-x: clip`.
+4. Waitlist sheet: remove the false "we'll email you" promise, stop Lenis while it is open, add a focus ring and a 16px input on mobile.
+5. Mobile light theme: dark headlines on the black laptop screen are unreadable.
+
+---
+
 ## Round 4: 2026-09-26 19:14 local (build of `web/` as of 19:13)
 
 Same method (copy of `web/`, `next build`, port 4801, Chromium on Metal). Added this round: a scroll-snap test (`scratchpad/snap.mjs`, `snap2.mjs`) using both synthetic wheel events and real mouse-wheel input through Playwright, and a full crawl of every internal page and link (19 pages including all `/guide/*` articles).

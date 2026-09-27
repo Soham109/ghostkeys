@@ -82,3 +82,29 @@ public struct AudioDeviceSummary: Sendable, CustomStringConvertible {
             dataSource: uint(kAudioDevicePropertyDataSource, scope: scope).map(OutputRoute.fourCC))
     }
 }
+
+public extension AudioDeviceSummary {
+    /// The default output's volume slider (0...1, the scalar macOS shows) and mute state, or nil if unreadable.
+    /// The pilots are rendered at a fixed digital level and then scaled by this slider, so a low volume lowers the
+    /// pilot at the microphone one for one (in dB). Reading it changes nothing.
+    static func defaultOutputVolume() -> (scalar: Double, muted: Bool)? {
+        guard let device = defaultDevice(kAudioHardwarePropertyDefaultOutputDevice) else { return nil }
+        func scalar(_ element: UInt32) -> Float32? {
+            var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyVolumeScalar,
+                                                     mScope: kAudioDevicePropertyScopeOutput, mElement: element)
+            guard AudioObjectHasProperty(device, &address) else { return nil }
+            var v: Float32 = 0
+            var size = UInt32(MemoryLayout<Float32>.size)
+            return AudioObjectGetPropertyData(device, &address, 0, nil, &size, &v) == noErr ? v : nil
+        }
+        let values = [scalar(kAudioObjectPropertyElementMain), scalar(1), scalar(2)].compactMap { $0 }
+        guard !values.isEmpty else { return nil }
+        var address = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyMute, mScope: kAudioDevicePropertyScopeOutput,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var mute: UInt32 = 0
+        var size = UInt32(4)
+        let muted = AudioObjectHasProperty(device, &address)
+            && AudioObjectGetPropertyData(device, &address, 0, nil, &size, &mute) == noErr && mute != 0
+        return (Double(values.max()!), muted)
+    }
+}

@@ -29,18 +29,28 @@ public struct SonarFieldConfig: Codable, Equatable, Sendable {
     public var hopSize: Int = 1024
     public var speedOfSound: Double = 343
 
-    /// Static-component tracker time constant, seconds. Anything that stops moving fades into "static" this fast.
-    public var staticTimeConstant: Double = 0.3
+    /// Static-component tracker time constant, seconds (two stages). Anything that stops moving fades into "static"
+    /// this fast. 25 ms (about 6 Hz) removes the real pilot's slow wander; a hand moving 5 cm/s or faster still
+    /// passes (its Doppler is above 6 Hz).
+    public var staticTimeConstant: Double = 0.025
+    /// Low-pass on the moving part, Hz: hand Doppler stays below about 150 Hz (a 1.3 m/s swipe).
+    public var basebandLowpassHz: Double = 150
     /// The moving part must be at least this strong relative to the static part to be tracked, dB.
     public var dynamicGateDb: Double = -65
-    /// ...and this many times the baseband noise power.
-    public var noiseGateFactor: Double = 6
-    /// Baseband samples are held this long so an impulse (key click) can also void the samples just before it.
-    public var processingDelay: Double = 0.02
+    /// ...and this far above its own learned noise floor, dB.
+    public var gateOverFloorDb: Double = 6
+    /// Averaging time of the moving part's power for that comparison, seconds (longer = steadier noise estimate).
+    public var gatePowerSmoothing: Double = 0.03
+    /// Noise floor: log-average of the moving part's power with this time constant, frozen while tracking and for
+    /// 0.3 s after.
+    public var noiseFloorTime: Double = 1.5
+    /// Baseband samples are held this long so an impulse (key click) can also void the samples just before it, and a
+    /// noise burst seen in a whole 85 ms FFT frame can void every sample of that frame.
+    public var processingDelay: Double = 0.09
     /// Residual (non-pilot) ultrasonic energy jump that marks an impulse, dB above its floor.
     public var impulseDb: Double = 12
-    /// Seconds after start used only to settle the static and drift trackers.
-    public var warmup: Double = 0.4
+    /// Seconds after start used only to settle the static, drift and noise-floor trackers.
+    public var warmup: Double = 0.6
 
     /// Path speed (either side) that counts as motion, mm/s.
     public var movingSpeedMmPerSec: Double = 40
@@ -57,29 +67,55 @@ public struct SonarFieldConfig: Codable, Equatable, Sendable {
     public var hoverRangeMm: Double = 150
     public var hoverStepMm: Double = 1
     public var pushMinPathMm: Double = 30
+    /// A side's motion counts only when its tracker measured at least this share of the velocity window...
+    public var minTrackedShare: Double = 0.6
+    /// ...and its net path change over the window is at least this share of all its steps (one direction).
+    public var minCoherence: Double = 0.6
+    /// A gesture or hover needs the whole episode to be this one-directional (hovers that go up then down still
+    /// pass: 0.5 allows a return of a third of the way).
+    public var minEpisodeCoherence: Double = 0.5
+    /// hover_level starts only while the path still moves at least this much within `hoverProgressWindow`.
+    public var hoverMinProgressMm: Double = 12
+    public var hoverProgressWindow: Double = 0.25
+    /// A quick move's duration is measured where its speed is at least this share of its peak.
+    public var coreSpeedShare: Double = 0.33
     public var pushMaxDuration: Double = 0.45
     public var pushDominance: Double = 1.5
     public var sweepMinDiffMm: Double = 60
     public var sweepDominance: Double = 1.5
     public var sweepMaxDuration: Double = 1.5
+    /// Echo balance ((L - R) / (L + R)) that the start and the end of a sweep must each reach, on opposite sides.
+    public var sweepBalance: Double = 0.3
+    /// Also accept a sweep from the balance crossing alone (without a large differential path). Off: on the
+    /// simulated MacBook scenes it added more wrong gestures than it found.
+    public var sweepByBalance = false
     /// Minimum finger travel estimate for a slide, mm.
     public var slideMinMm: Double = 3
     /// Finger travel that maps to value 1.0.
     public var slideRangeMm: Double = 40
 
-    /// Pilot must stand this far above the local noise, dB.
-    public var minPilotSnrDb: Double = 25
+    /// Pilot must stand this far above the local noise (per FFT bin), dB. Measured on the M5 Pro MacBook Pro at 19%
+    /// volume: 57 dB left, 27 to 41 dB right (the right speaker is far from the mics).
+    public var minPilotSnrDb: Double = 15
     /// Narrow peaks near the pilots within this many dB of the weaker pilot mean music or another ultrasonic source.
-    public var tonalInterferenceDb: Double = 45
+    /// (45 dB tripped on the real mic's own spurs: the weaker pilot arrives at about -95 dBFS, so anything above
+    /// -140 dBFS counted.)
+    public var tonalInterferenceDb: Double = 30
     /// A peak counts as narrow when this far above the guard band's median, dB.
-    public var tonalPeakOverMedianDb: Double = 15
+    public var tonalPeakOverMedianDb: Double = 20
     /// Broadband noise near the pilots within this many dB of the weaker pilot also counts as interference.
-    public var broadbandInterferenceDb: Double = 25
+    public var broadbandInterferenceDb: Double = 15
+    /// ...or rising this far above its own learned quiet level (a hiss, a fan, rustling near the mics), dB.
+    public var broadbandRiseDb: Double = 15
+    /// A guard level this far above usual voids the baseband samples of that FFT frame (no suppression), dB.
+    public var burstVoidDb: Double = 8
     /// Bins around each pilot left out of the interference check (they hold the hand's own Doppler echoes).
     public var guardExclusionBins: Int = 30
     public var guardSpanBins: Int = 60
     /// How long detection stays suppressed after interference is last seen, seconds.
     public var interferenceHold: Double = 0.5
+    /// Broadband bursts (a creak, a click, fan or coil noise) on the real Mac last about 0.1 s; hold them this long.
+    public var broadbandHold: Double = 0.15
 
     public init() {}
 
@@ -112,8 +148,8 @@ public struct SonarFieldStatus: Equatable, Sendable {
     public var interference = false
     public var suppressed = false
     public var warmedUp = false
-    /// Both pilots present, warmed up, nothing suppressing detection.
-    public var ready: Bool { warmedUp && left.pilotPresent && right.pilotPresent && !interference && !suppressed }
+    /// At least one pilot present, warmed up, nothing suppressing detection (sweeps also need both pilots).
+    public var ready: Bool { warmedUp && (left.pilotPresent || right.pilotPresent) && !interference && !suppressed }
 }
 
 /// Numbers for tuning on real hardware, accumulated between `debugSnapshot()` calls (the daemon asks ~10 times a
@@ -142,6 +178,8 @@ public struct SonarFieldDebug: Sendable {
         public var dynamicDb: Double = -200
         /// Share of baseband samples in the window with the tracking gate open (0...1).
         public var gateOpenShare: Double = 0
+        /// Moving part over its learned noise floor, dB, largest in the window (the gate opens at `gateOverFloorDb`).
+        public var overFloorDb: Double = 0
     }
     public var windowSeconds: Double = 0
     public var left = Side()
@@ -161,6 +199,8 @@ public struct SonarFieldDebug: Sendable {
     /// means the input path low-passes before 20 kHz.
     public var highBandRolloffDb: Double = 0
     public var impulseBlocks = 0
+    /// FFT frames in the window whose samples were voided by a noise burst near the pilots.
+    public var burstFrames = 0
     public var basebandSamples = 0
     /// Times the analysis restarted because audio chunk times jumped (gaps over 10 ms). Should stay 0.
     public var restarts = 0
@@ -189,27 +229,56 @@ struct Cx {
 }
 
 /// Phase tracker for one pilot's baseband signal: drift correction, static removal, phase integration.
+///
+/// Tuned on real recordings from a MacBook Pro (see docs/review/SONAR_REPORT.md): there the pilot's "static" part is
+/// not static. It wanders by about 1 dB and 0.05 rad a few times a second (air, speaker processing), which after the
+/// old 0.3 s static tracker left a moving part only 20 dB below the pilot, far above a hand echo (30 to 45 dB below
+/// the direct path). So:
+/// - the static tracker is faster (`staticTimeConstant`, about 6 Hz), and a second stage removes what the first
+///   lets through, so the slow wander is gone while hand Doppler (10 to 150 Hz) passes;
+/// - the moving part is low-passed to the band a hand can produce (`basebandLowpassHz`), dropping most of the mic's
+///   own noise;
+/// - the tracking gate compares the moving part with a noise floor learned from the moving part itself while
+///   nothing moves (the old sample-difference estimate read 5 to 10 times too low on real, correlated baseband
+///   noise, so the gate stayed open on noise and the path wandered by hundreds of millimetres).
 final class PhaseSideTracker {
     let wavelengthMm: Double
     private let alpha: Double
+    private let lpCoef: Double
     private let driftRateWarm: Double
+    private let maxDriftRad: Double
     private let driftRate: Double
     private let activityThreshold: Double
     private let maxGapBlocks: Int
     private let gateRel: Double
-    private let noiseFactor: Double
+    private let floorFactor: Double
+    private let floorFall: Double
+    private let powerSmooth: Double
     private var rawPrev: Cx?
     private var rotation = Cx(re: 0, im: 0)
     private var derotation = Cx(re: 1, im: 0)
     private var staticPart: Cx?
-    private var previous: Cx?
-    private var noise: Double?
+    private var static2 = Cx(re: 0, im: 0)
+    private var lp1 = Cx(re: 0, im: 0), lp2 = Cx(re: 0, im: 0)
+    private var power = 0.0
+    private(set) var noiseFloor: Double?
+    private var closedFor = 0
+    private var openFor = 0
+    private let holdAfterOpen: Int
+    private let lockOpenAfter: Int
+    private let lockRise: Double
     private var lastDynamic: Cx?
     private var gapBlocks = 0
     /// Smoothed |phase change| per baseband sample of the moving part.
     private var activity = 0.0
     private(set) var pathMm = 0.0
     private(set) var dynamicRatio = 0.0
+    /// Moving-part power over the learned noise floor, dB (diagnostics).
+    private(set) var overFloorDb = 0.0
+    /// Moving-part power above the noise floor (linear, baseband units): the echo's strength. Both pilots leave the
+    /// speakers at the same level and reach the same mic, so comparing this across sides says which speaker the
+    /// hand is nearer, even when one side's path is poorly measured.
+    private(set) var excessPower = 0.0
     /// Diagnostics for the last sample: path increment (mm) and whether the tracking gate was open.
     private(set) var lastStepMm = 0.0
     private(set) var gateOpen = false
@@ -217,13 +286,20 @@ final class PhaseSideTracker {
     init(frequency: Double, config: SonarFieldConfig) {
         wavelengthMm = config.speedOfSound / frequency * 1000
         alpha = 1 / (config.staticTimeConstant * config.basebandRate)
+        lpCoef = 1 - exp(-2 * Double.pi * config.basebandLowpassHz / config.basebandRate)
         let perSecond = config.basebandRate
-        driftRateWarm = 37.5 / perSecond      // about 27 ms time constant while warming up
+        driftRateWarm = 5 / perSecond         // about 0.2 s time constant while warming up
+        maxDriftRad = 2 * Double.pi * 2 / perSecond
         driftRate = 1.5 / perSecond           // about 0.7 s afterwards
         activityThreshold = 7.5 / perSecond   // 7.5 rad/s of phase change counts as motion
         maxGapBlocks = Int(0.04 * perSecond)
         gateRel = pow(10, config.dynamicGateDb / 10)
-        noiseFactor = config.noiseGateFactor
+        floorFactor = pow(10, config.gateOverFloorDb / 10)
+        floorFall = 1 / (config.noiseFloorTime * perSecond)
+        holdAfterOpen = Int(0.3 * perSecond)
+        lockOpenAfter = Int(2 * perSecond)
+        lockRise = 2 * log(10) / 10 / perSecond     // 2 dB/s in natural-log power units
+        powerSmooth = 1 / (config.gatePowerSmoothing * perSecond)
     }
 
     func step(_ z: Cx, bad: Bool, integrate: Bool, warm: Bool) {
@@ -233,29 +309,54 @@ final class PhaseSideTracker {
         // Estimate that rotation from the raw signal (dominated by the static part) and undo it. Learn it only while
         // nothing moves: the static part is ~25 dB above an echo, so even a small bias picked up from a moving echo
         // would leak more static signal into the moving part than the echo itself.
-        if let p = rawPrev, warm || activity < activityThreshold { rotation = rotation + (z * p.conj - rotation) * (warm ? driftRateWarm : driftRate) }
+        // On the MacBook Pro the real drift was under 0.01 Hz, while a drift estimate learned from a noisy weak pilot
+        // could lock onto tens of Hz (then the rotating "static" part looked like endless motion and froze further
+        // learning). So: learn slowly, keep learning (very slowly) during motion, and never believe more than 2 Hz.
+        if let p = rawPrev {
+            let rate = warm ? driftRateWarm : (activity < activityThreshold ? driftRate : driftRate / 20)
+            rotation = rotation + (z * p.conj - rotation) * rate
+        }
         rawPrev = z
         let rn = rotation.norm2
         if rn > 0 {
-            derotation = derotation * rotation.conj * (1 / rn.squareRoot())
+            var r = rotation * (1 / rn.squareRoot())
+            let angle = r.arg
+            if abs(angle) > maxDriftRad { let a = angle > 0 ? maxDriftRad : -maxDriftRad; r = Cx(re: cos(a), im: sin(a)) }
+            derotation = derotation * r.conj
             derotation = derotation * (1 / derotation.norm2.squareRoot())
         }
         let zc = z * derotation
-        guard let s = staticPart, let prev = previous else { staticPart = zc; previous = zc; return }
-        // Baseband noise: half the squared sample-to-sample difference. For white noise that equals the noise power,
-        // and the moving part is about as big as the difference. For a real echo rotating by dphi per sample the
-        // moving part is much bigger (ratio 2 / dphi^2), so the estimate may only rise when the ratio says "noise";
-        // otherwise fast motion would lift the floor and close the gate mid-gesture.
-        let e = (zc - prev).norm2 / 2
-        previous = zc
-        let d = zc - s
-        if let n = noise {
-            if e < n { noise = n + 0.1 * (e - n) } else if d.norm2 < 4 * e { noise = n * 1.002 }
-        } else { noise = e }
-        staticPart = s + (zc - s) * alpha
+        guard let s = staticPart else { staticPart = zc; static2 = Cx(re: 0, im: 0); lp1 = Cx(re: 0, im: 0); lp2 = lp1; return }
+        // Two-stage static removal (second-order high-pass), then a two-pole low-pass to the hand's Doppler band.
+        let d1 = zc - s
+        staticPart = s + d1 * alpha
+        let d2 = d1 - static2
+        static2 = static2 + d2 * alpha
+        lp1 = lp1 + (d2 - lp1) * lpCoef
+        lp2 = lp2 + (lp1 - lp2) * lpCoef
+        let d = lp2
         let sp = staticPart!.norm2
         dynamicRatio = sp > 0 ? d.norm2 / sp : 0
-        gateOpen = d.norm2 > max(gateRel * sp, noiseFactor * noise!)
+        power += (d.norm2 - power) * powerSmooth
+        // Noise floor of the moving part: falls quickly to quiet levels, creeps up slowly (never while the gate is
+        // open), so it follows the room but not a hand.
+        // The floor is the typical (log-average) level of the moving part while nothing is tracked, so the gate
+        // threshold sits a fixed distance above the usual noise rather than above its quietest moments.
+        let lp = log(max(power, 1e-30))
+        if let f = noiseFloor {
+            let lf = log(f)
+            if warm { noiseFloor = exp(lf + (lp - lf) * 10 * floorFall) }
+            else if !gateOpen && closedFor > holdAfterOpen { noiseFloor = exp(lf + (lp - lf) * floorFall) }
+            // Open for over 2 s without a break: more likely the noise got louder (or the floor was learned in a
+            // quiet moment) than a hand moving that long. Let the floor rise 2 dB/s so the gate cannot lock open.
+            else if gateOpen && openFor > lockOpenAfter && lp > lf { noiseFloor = exp(lf + min(lp - lf, lockRise)) }
+        } else { noiseFloor = power }
+        let floor = max(noiseFloor!, 1e-30)
+        overFloorDb = 10 * log10(max(power, 1e-30) / floor)
+        excessPower = max(0, power - floor)
+        gateOpen = !warm && power > floorFactor * floor && d.norm2 > gateRel * sp
+        closedFor = gateOpen ? 0 : closedFor + 1
+        openFor = gateOpen ? openFor + 1 : 0
         if gateOpen {
             if let last = lastDynamic {
                 let dphi = (d * last.conj).arg
@@ -305,11 +406,18 @@ public final class SonarField {
     private var leftTracker: PhaseSideTracker
     private var rightTracker: PhaseSideTracker
     private struct Pending { var t: Double; var zL: Cx; var zR: Cx; var bad: Bool }
+    /// Delay line of baseband samples; live entries are `pending[pendingHead...]` (compacted now and then, so taking
+    /// one sample out is not an array shift per sample).
     private var pending: [Pending] = []
+    private var pendingHead = 0
     private var blockIndex = 0
     private var badUntil = -1
     private let delayBlocks: Int
     private var hT: [Double] = [], hL: [Double] = [], hR: [Double] = []
+    /// Per baseband sample: was each side's tracking gate open (its path is measured, not held).
+    private var hGL: [Int] = [], hGR: [Int] = []   // running counts of open-gate samples
+    /// Running sums of |path step| per side: with the path itself they give how one-directional the motion was.
+    private var hAL: [Double] = [], hAR: [Double] = []
     private var sinceEval = 0
     private let fft: RealFFT
     private let framer: SlidingFramer
@@ -324,6 +432,11 @@ public final class SonarField {
     private let impulseFactor: Double
     private let warmupSeconds: Double
     private var interferenceUntil = -Double.infinity
+    private var guardFloorDb: Double?
+    private var impulseRun = 0
+    private var lastTonalBin: Int?
+    /// Baseband samples up to this time are void (a noise burst was seen in the FFT frame covering them).
+    private var voidUntilTime = -Double.infinity
     private var suppressedUntil = -Double.infinity
     private var firstTime: Double?
     private var expectedNextTime: Double?
@@ -336,9 +449,26 @@ public final class SonarField {
         var lastMoving: Double
         var maxAbsCommon = 0.0
         var tainted = false
+        /// Tainted by the daemon's suppression (typing, laptop motion), which never clears within an episode.
+        var suppressedByDaemon = false
         var contact = false
         var hover: Hover?
         var hoverEnded = false
+        /// Evaluations so far, and how many of them each side's tracker measured (a side whose gate stays closed
+        /// has no path information: its zero path means "unknown", not "still").
+        var evals = 0, trackedL = 0, trackedR = 0
+        var useL: Bool { Double(trackedL) >= 0.4 * Double(max(1, evals)) }
+        var useR: Bool { Double(trackedR) >= 0.4 * Double(max(1, evals)) }
+        /// Common-mode speed samples (time, |speed|) for the "core" duration of a quick move.
+        var speeds: [(t: Double, v: Double)] = []
+        var peakSpeed = 0.0
+        /// Echo strength per side, summed, and the left/right balance over time ((L - R) / (L + R), weighted).
+        var echoL = 0.0, echoR = 0.0
+        /// Travel (sum of |change| between evaluations) of the common and differential motion, for how
+        /// one-directional the episode was.
+        var commonTravel = 0.0, diffTravel = 0.0
+        var lastCommon = 0.0, lastDiff = 0.0
+        var balance: [(t: Double, b: Double, w: Double)] = []
     }
     private struct Hover {
         var side: SpeakerSide
@@ -356,9 +486,10 @@ public final class SonarField {
         var pathStart: Double?
         var sum = 0.0, sumSq = 0.0, count = 0, gateOpen = 0
         var sideLow = -200.0, sideHigh = -200.0
+        var overFloor = -200.0
     }
     private var dbgL = DebugAccumulator(), dbgR = DebugAccumulator()
-    private var dbgImpulses = 0, dbgRestarts = 0, dbgFrames = 0
+    private var dbgImpulses = 0, dbgRestarts = 0, dbgFrames = 0, dbgBurstFrames = 0
     private var dbgWindowStart: Double?
     private var dbgGuardPeak = -200.0, dbgGuardMedian = -200.0, dbgRolloff = 0.0
     private var dbgInterferenceReason: String?
@@ -423,6 +554,7 @@ public final class SonarField {
             s.sampleRate = c.sampleRate; s.fftSize = c.fftSize; s.hopSize = c.hopSize; s.pilotHz = f
             s.maxScanBins = 26
             s.noiseReferenceBins = 28...40
+            s.minPilotSnrDb = c.minPilotSnrDb
             return DopplerBandTracker(config: s)
         }
         dopplerL = doppler(leftHz)
@@ -446,13 +578,17 @@ public final class SonarField {
         for i in history.indices { history[i] = 0 }
         residualFilter.reset()
         residualFloor = nil
-        pending.removeAll()
+        pending.removeAll(); pendingHead = 0
         blockIndex = 0; badUntil = -1
-        hT.removeAll(); hL.removeAll(); hR.removeAll()
+        hT.removeAll(); hL.removeAll(); hR.removeAll(); hGL.removeAll(); hGR.removeAll(); hAL.removeAll(); hAR.removeAll()
         sinceEval = 0
         framer.reset()
         dopplerL.reset(); dopplerR.reset()
         interferenceUntil = -.infinity
+        guardFloorDb = nil
+        impulseRun = 0
+        lastTonalBin = nil
+        voidUntilTime = -.infinity
         suppressedUntil = -.infinity
         firstTime = nil
         expectedNextTime = nil
@@ -572,23 +708,34 @@ public final class SonarField {
         // and knocks are broadband and light it up; steady pilots and moving echoes barely touch it.
         filteredBlock.withUnsafeBufferPointer { e = Double(DSPMath.meanSquare($0.baseAddress!, n)) }
         var impulse = false
-        if let floor = residualFloor {
+        let warm = t - (firstTime ?? t) < warmupSeconds
+        if let floor = residualFloor, !warm {
             impulse = e > floor * impulseFactor && e > 1e-13
-            if !impulse { residualFloor = e < floor ? floor + 0.05 * (e - floor) : floor * 1.0003 }
+            if !impulse { residualFloor = e < floor ? floor + 0.05 * (e - floor) : floor * 1.0003; impulseRun = 0 }
+            else {
+                // A click lasts a few milliseconds. Energy that stays up for 40 ms is a new level (the audio started
+                // from silence, a fan spun up), not an impulse: take it as the floor instead of voiding forever.
+                // (On the MacBook the floor was learned from the first near-silent buffers and every later block
+                // counted as an impulse, so the phase trackers never ran.)
+                impulseRun += 1
+                if Double(impulseRun) > 0.04 * config.basebandRate { residualFloor = e; impulseRun = 0; impulse = false }
+            }
         } else {
-            residualFloor = e
+            // Warm-up: follow the level both ways.
+            residualFloor = residualFloor.map { $0 + 0.2 * (e - $0) } ?? e
         }
         if impulse {
             dbgImpulses += 1
             badUntil = blockIndex + Int(0.008 * config.basebandRate)
-            for k in max(0, pending.count - Int(0.004 * config.basebandRate))..<pending.count { pending[k].bad = true }
+            for k in max(pendingHead, pending.count - Int(0.004 * config.basebandRate))..<pending.count { pending[k].bad = true }
         }
-        pending.append(Pending(t: t, zL: zL, zR: zR, bad: blockIndex <= badUntil))
+        pending.append(Pending(t: t, zL: zL, zR: zR, bad: blockIndex <= badUntil || t <= voidUntilTime))
         blockIndex += 1
-        if pending.count > delayBlocks {
-            let ready = pending.count - delayBlocks
-            for k in 0..<ready { integrate(pending[k], events: &events) }
-            pending.removeFirst(ready)
+        if pending.count - pendingHead > delayBlocks {
+            let ready = pending.count - pendingHead - delayBlocks
+            for k in pendingHead..<(pendingHead + ready) { integrate(pending[k], events: &events) }
+            pendingHead += ready
+            if pendingHead > 512 { pending.removeFirst(pendingHead); pendingHead = 0 }
         }
     }
 
@@ -605,14 +752,18 @@ public final class SonarField {
             if a.pathStart == nil { a.pathStart = tr.pathMm }
             a.sum += tr.lastStepMm; a.sumSq += tr.lastStepMm * tr.lastStepMm; a.count += 1
             if tr.gateOpen { a.gateOpen += 1 }
+            a.overFloor = max(a.overFloor, tr.overFloorDb)
         }
         acc(&dbgL, leftTracker); acc(&dbgR, rightTracker)
         guard !warm else { return }
         hT.append(p.t); hL.append(leftTracker.pathMm); hR.append(rightTracker.pathMm)
+        hGL.append((hGL.last ?? 0) + (leftTracker.gateOpen ? 1 : 0)); hGR.append((hGR.last ?? 0) + (rightTracker.gateOpen ? 1 : 0))
+        hAL.append((hAL.last ?? 0) + abs(leftTracker.lastStepMm)); hAR.append((hAR.last ?? 0) + abs(rightTracker.lastStepMm))
         let keep = historyKeep
         if hT.count > 2 * keep {
             let drop = hT.count - keep
-            hT.removeFirst(drop); hL.removeFirst(drop); hR.removeFirst(drop)
+            hT.removeFirst(drop); hL.removeFirst(drop); hR.removeFirst(drop); hGL.removeFirst(drop); hGR.removeFirst(drop)
+            hAL.removeFirst(drop); hAR.removeFirst(drop)
         }
         sinceEval += 1
         if sinceEval >= evalEvery {
@@ -675,9 +826,35 @@ public final class SonarField {
                 let pilotDb = Double(min(DSPMath.db(p[binL]), DSPMath.db(p[binR])))
                 let peakDb = Double(DSPMath.db(guardBins.max()!))
                 let medianDb = Double(DSPMath.db(DSPMath.median(guardBins)))
-                let tonal = peakDb > pilotDb - config.tonalInterferenceDb && peakDb > medianDb + config.tonalPeakOverMedianDb
+                // Typical guard level (dB average over about 2 s, frozen while interference is flagged). On the real
+                // mic the guard median moves by up to 9 dB from frame to frame, so this is an average, not a minimum.
+                let warmNow = t - (firstTime ?? t) < warmupSeconds
+                if let g = guardFloorDb {
+                    if warmNow { guardFloorDb = g + (medianDb - g) * 0.2 }
+                    else if t >= interferenceUntil { guardFloorDb = g + (medianDb - g) * Double(config.hopSize) / sr / 2 }
+                } else { guardFloorDb = medianDb }
+                // Tonal: a narrow peak that stays on the same bin in consecutive frames (music, another device). The
+                // largest of ~100 noise bins alone often sits 10 to 15 dB above the median, so a single frame is not
+                // enough.
+                var peakBin = lo
+                var kk = lo
+                while kk <= hi { if abs(kk - bl) > excl && abs(kk - br) > excl && p[kk] > p[peakBin] { peakBin = kk }; kk += 1 }
+                let peakHere = peakDb > pilotDb - config.tonalInterferenceDb && peakDb > medianDb + config.tonalPeakOverMedianDb
+                let tonal = peakHere && lastTonalBin.map { abs($0 - peakBin) <= 1 } == true
+                lastTonalBin = peakHere ? peakBin : nil
                 let broadband = medianDb > pilotDb - config.broadbandInterferenceDb
-                if tonal || broadband { interferenceUntil = t + config.interferenceHold }
+                    || (t - (firstTime ?? t) > warmupSeconds && medianDb > guardFloorDb! + config.broadbandRiseDb)
+                if tonal || broadband {
+                    interferenceUntil = max(interferenceUntil, t + (tonal ? config.interferenceHold : config.broadbandHold))
+                }
+                // Smaller noise bursts (a few dB over the usual guard level) do not block detection, but the phase of
+                // a weak echo cannot be trusted under them: void the baseband samples this frame covers.
+                if !warmNow, let g = guardFloorDb, medianDb > g + config.burstVoidDb || tonal || broadband {
+                    let half = Double(config.fftSize) / 2 / sr
+                    voidUntilTime = max(voidUntilTime, t + half)
+                    for k in pendingHead..<pending.count where pending[k].t >= t - half { pending[k].bad = true }
+                    dbgBurstFrames += 1
+                }
                 if tonal || broadband { dbgInterferenceReason = tonal ? "tonal" : "broadband" }
                 dbgGuardPeak = peakDb; dbgGuardMedian = medianDb
             }
@@ -710,6 +887,7 @@ public final class SonarField {
             }
             o.dynamicDb = Double(DSPMath.db(Float(tr.dynamicRatio)))
             o.gateOpenShare = a.count > 0 ? Double(a.gateOpen) / Double(a.count) : 0
+            o.overFloorDb = a.overFloor
             return o
         }
         d.left = side(status.left, dbgL, leftTracker, leftHz)
@@ -721,9 +899,10 @@ public final class SonarField {
         d.guardPeakDbfs = dbgGuardPeak + off
         d.guardMedianDbfs = dbgGuardMedian + off
         d.suppressedByDaemon = lastStatusTime < suppressedUntil
-        d.ready = status.warmedUp && status.left.pilotPresent && status.right.pilotPresent && !status.interference && !d.suppressedByDaemon
+        d.ready = status.warmedUp && (status.left.pilotPresent || status.right.pilotPresent) && !status.interference && !d.suppressedByDaemon
         d.highBandRolloffDb = dbgRolloff
         d.impulseBlocks = dbgImpulses
+        d.burstFrames = dbgBurstFrames
         d.basebandSamples = dbgL.count
         d.restarts = dbgRestarts
         d.episodeActive = episode != nil
@@ -731,14 +910,17 @@ public final class SonarField {
         d.slideActive = slide != nil
         dbgL = DebugAccumulator(); dbgR = DebugAccumulator()
         dbgImpulses = 0
+        dbgBurstFrames = 0
         dbgWindowStart = lastStatusTime
         return d
     }
 
     // MARK: Gestures
 
+    /// Each side is judged on its own: one healthy pilot is enough for push, pull and hover (the right speaker
+    /// reaches the mics of a MacBook Pro 20 to 23 dB weaker than the left). Sweeps need both.
     private func isSuppressed(at t: Double) -> Bool {
-        t < suppressedUntil || t < interferenceUntil || !status.left.pilotPresent || !status.right.pilotPresent
+        t < suppressedUntil || t < interferenceUntil || (!status.left.pilotPresent && !status.right.pilotPresent)
     }
 
     private func isSuppressed(during a: Double, _ b: Double) -> Bool {
@@ -783,6 +965,31 @@ public final class SonarField {
                                 confidence: 0.8, cancelled: cancelled)
     }
 
+    /// The speaker the hand was nearer: stronger echo (both pilots leave at the same level, one mic hears both).
+    /// Decided by echo strength when it is clear (3 dB or more apart), else by which side's path changed more.
+    private func nearerSide(_ ep: Episode, dL: Double, dR: Double, useL: Bool, useR: Bool) -> SpeakerSide {
+        if ep.echoL > 2 * ep.echoR { return .left }
+        if ep.echoR > 2 * ep.echoL { return .right }
+        return !useR || (useL && abs(dL) >= abs(dR)) ? .left : .right
+    }
+
+    /// A hand passing across moves the echo from one speaker to the other: the weighted left/right balance of the
+    /// first third of the episode and of the last third have opposite signs, each at least `sweepBalance`.
+    /// +1 = left to right (sweep_right), -1 = right to left, nil = no crossing.
+    private func balanceCrossing(_ ep: Episode) -> Int? {
+        guard ep.balance.count >= 6, let t0 = ep.balance.first?.t, let t1 = ep.balance.last?.t, t1 > t0 else { return nil }
+        func mean(_ a: Double, _ b: Double) -> Double? {
+            var s = 0.0, w = 0.0
+            for x in ep.balance where x.t >= a && x.t <= b { s += x.b * x.w; w += x.w }
+            return w > 0 ? s / w : nil
+        }
+        let third = (t1 - t0) / 3
+        guard let first = mean(t0, t0 + third), let lastB = mean(t1 - third, t1) else { return nil }
+        if first >= config.sweepBalance && lastB <= -config.sweepBalance { return 1 }
+        if first <= -config.sweepBalance && lastB >= config.sweepBalance { return -1 }
+        return nil
+    }
+
     private func evaluate(t: Double, events: inout [SonarFieldEvent]) {
         status.left.dynamicDb = DSPMath.db(Float(leftTracker.dynamicRatio))
         status.right.dynamicDb = DSPMath.db(Float(rightTracker.dynamicRatio))
@@ -793,7 +1000,19 @@ public final class SonarField {
         let vR = (hR[last] - hR[last - w]) / config.velocityWindow
         let suppressed = isSuppressed(at: t)
         status.suppressed = t < suppressedUntil
-        let moving = max(abs(vL), abs(vR)) > config.movingSpeedMmPerSec
+        // Motion counts only on a side whose tracker actually measured most of the window (noise that briefly opens
+        // the gate makes a few large random steps, not a sustained speed).
+        func tracked(_ g: [Int]) -> Bool { Double(g[last] - g[last - w]) >= config.minTrackedShare * Double(w) }
+        let okL = status.left.pilotPresent, okR = status.right.pilotPresent
+        // ...and only when it went one way: noise that opens the gate makes steps of random sign (measured live on the
+        // weak right pilot: 10 to 40 mm per 0.1 s back and forth), a hand turns the phase steadily one way.
+        func coherent(_ p: [Double], _ a: [Double]) -> Bool {
+            let total = a[last] - a[last - w]
+            return total > 0 && abs(p[last] - p[last - w]) >= config.minCoherence * total
+        }
+        let movingL = okL && abs(vL) > config.movingSpeedMmPerSec && tracked(hGL) && coherent(hL, hAL)
+        let movingR = okR && abs(vR) > config.movingSpeedMmPerSec && tracked(hGR) && coherent(hR, hAR)
+        let moving = movingL || movingR
 
         // Continuous finger slide while in contact.
         if var s = slide {
@@ -812,11 +1031,40 @@ public final class SonarField {
         }
         var ep = episode!
         if moving { ep.lastMoving = t }
+        if t < suppressedUntil { ep.suppressedByDaemon = true }
+        // A noise burst (interference) spoils only the motion it overlapped: once it is over, motion that goes on
+        // starts a fresh episode. Daemon suppression (typing) does not clear: lifting the hands off the keys after
+        // typing must not become a gesture.
+        if ep.tainted && !suppressed && !ep.suppressedByDaemon && ep.hover == nil && moving {
+            ep = Episode(start: t, startL: hL[last], startR: hR[last], lastMoving: t)
+            if contacts.contains(where: { ($0.end ?? .infinity) > t - 0.3 }) { ep.contact = true }
+        }
         if suppressed { ep.tainted = true }
         if slide != nil { ep.contact = true }
-        let dL = hL[last] - ep.startL, dR = hR[last] - ep.startR
-        let common = (dL + dR) / 2, diff = dL - dR
+        ep.evals += 1
+        if okL && tracked(hGL) { ep.trackedL += 1 }
+        if okR && tracked(hGR) { ep.trackedR += 1 }
+        // Echo strength only where that side's tracker is open: the left pilot's own wander is ~10 dB stronger at
+        // the mic than the right's noise, and would otherwise read as an echo.
+        let xL = okL && leftTracker.gateOpen ? leftTracker.excessPower : 0
+        let xR = okR && rightTracker.gateOpen ? rightTracker.excessPower : 0
+        ep.echoL += xL; ep.echoR += xR
+        if xL + xR > 0 { ep.balance.append((t, (xL - xR) / (xL + xR), xL + xR)) }
+        // One usable side: it alone gives the common motion (no differential, so no sweeps).
+        let useL = ep.useL || !ep.useR && okL && abs(vL) >= abs(vR), useR = ep.useR || !useL
+        let both = useL && useR
+        let dL = useL ? hL[last] - ep.startL : 0, dR = useR ? hR[last] - ep.startR : 0
+        let common = both ? (dL + dR) / 2 : dL + dR, diff = both ? dL - dR : 0
+        // How one-directional the episode was (1 = every step the same way): the common part for push, pull and
+        // hover, the differential part for sweeps.
+        ep.commonTravel += abs(common - ep.lastCommon); ep.lastCommon = common
+        ep.diffTravel += abs(diff - ep.lastDiff); ep.lastDiff = diff
+        let commonCoherent = ep.commonTravel > 0 && abs(common) >= config.minEpisodeCoherence * ep.commonTravel
+        let diffCoherent = ep.diffTravel > 0 && abs(diff) >= config.minEpisodeCoherence * ep.diffTravel
         ep.maxAbsCommon = max(ep.maxAbsCommon, abs(common))
+        let vc = both ? max(abs(vL), abs(vR)) : (useL ? abs(vL) : abs(vR))
+        ep.speeds.append((t, vc))
+        ep.peakSpeed = max(ep.peakSpeed, vc)
 
         if var h = ep.hover {
             let path = h.side == .left ? hL[last] : hR[last]
@@ -829,15 +1077,20 @@ public final class SonarField {
                 ep.hover = h
                 events.append(.air(hoverEvent(.changed, h, path: path, time: t)))
             }
-        } else if !ep.hoverEnded && !ep.tainted && !ep.contact && moving && t - ep.start >= config.hoverDelay
+        } else if !ep.hoverEnded && !ep.tainted && !ep.contact && moving && commonCoherent && t - ep.start >= config.hoverDelay
                     && abs(common) >= config.hoverDominance * abs(diff)
                     && max(abs(dL), abs(dR)) >= config.hoverMinPathMm
                     && abs(common) >= 0.8 * ep.maxAbsCommon {
-            let side: SpeakerSide = abs(dL) >= abs(dR) ? .left : .right
-            let h = Hover(side: side, startPath: side == .left ? ep.startL : ep.startR,
-                          lastReported: side == .left ? hL[last] : hR[last], lastTime: t)
-            ep.hover = h
-            events.append(.air(hoverEvent(.began, h, path: h.lastReported, time: t)))
+            let side = nearerSide(ep, dL: dL, dR: dR, useL: useL, useR: useR)
+            // Still progressing: a quick push that is over (only noise left) must not turn into a hover.
+            let path = side == .left ? hL : hR
+            let back = index(at: t - config.hoverProgressWindow) ?? last
+            if abs(path[last] - path[back]) >= config.hoverMinProgressMm {
+                let h = Hover(side: side, startPath: side == .left ? ep.startL : ep.startR,
+                              lastReported: path[last], lastTime: t)
+                ep.hover = h
+                events.append(.air(hoverEvent(.began, h, path: h.lastReported, time: t)))
+            }
         }
 
         let idleLimit = ep.hover != nil ? config.hoverIdleEnd : config.idleEnd
@@ -849,21 +1102,27 @@ public final class SonarField {
             return
         }
         guard !ep.tainted, !ep.contact, !ep.hoverEnded else { return }
-        let duration = ep.lastMoving - ep.start
-        if abs(diff) >= config.sweepMinDiffMm && abs(diff) >= config.sweepDominance * abs(common) && duration <= config.sweepMaxDuration {
-            let conf = min(1, abs(diff) / (2 * config.sweepMinDiffMm)) * min(1, abs(diff) / max(1e-6, 3 * abs(common)) + 0.5)
-            events.append(.gesture(AcousticGesture(kind: diff > 0 ? .sweepRight : .sweepLeft, time: ep.lastMoving,
+        // Duration of the move itself: where the speed was at least a third of its peak (noise before and after
+        // the move stretches the episode, not the move).
+        let core = ep.speeds.filter { $0.v >= config.coreSpeedShare * ep.peakSpeed }
+        let duration = max(0, (core.last?.t ?? ep.lastMoving) - (core.first?.t ?? ep.start))
+        let end = core.last?.t ?? ep.lastMoving
+        let crossing: Int? = config.sweepByBalance ? balanceCrossing(ep) : nil
+        if duration <= config.sweepMaxDuration,
+           let dir = crossing ?? (both && diffCoherent && abs(diff) >= config.sweepMinDiffMm && abs(diff) >= config.sweepDominance * abs(common) ? (diff > 0 ? 1 : -1) : nil) {
+            let conf = crossing != nil ? 0.8 : min(1, abs(diff) / (2 * config.sweepMinDiffMm)) * min(1, abs(diff) / max(1e-6, 3 * abs(common)) + 0.5)
+            events.append(.gesture(AcousticGesture(kind: dir > 0 ? .sweepRight : .sweepLeft, time: end,
                                                    confidence: min(1, conf), duration: duration, distanceMm: abs(diff) / 2)))
-        } else if abs(common) >= config.pushMinPathMm && abs(common) >= config.pushDominance * abs(diff)
+        } else if commonCoherent && abs(common) >= config.pushMinPathMm && abs(common) >= config.pushDominance * abs(diff)
                     && duration <= config.pushMaxDuration && abs(common) >= 0.7 * ep.maxAbsCommon {
-            let side: SpeakerSide = abs(dL) >= abs(dR) ? .left : .right
+            let side = nearerSide(ep, dL: dL, dR: dR, useL: useL, useR: useR)
             let isPush = common < 0
             var conf = min(1, 0.5 + abs(common) / (4 * config.pushMinPathMm))
             let wanted: SonarWaveKind = isPush ? .toward : .away
             if recentDoppler.contains(where: { $0.side == side && $0.event.kind == wanted && $0.event.time >= ep.start - 0.1 }) {
                 conf = min(1, conf + 0.2)
             }
-            events.append(.gesture(AcousticGesture(kind: isPush ? .push : .pull, time: ep.lastMoving, confidence: conf,
+            events.append(.gesture(AcousticGesture(kind: isPush ? .push : .pull, time: end, confidence: conf,
                                                    duration: duration, side: side,
                                                    distanceMm: abs(side == .left ? dL : dR) / 2)))
         }

@@ -120,10 +120,13 @@ final class SoundSession {
         fieldMode = sonarField
         toneRetryAt = 0
         toneProblem = nil
+        lastVolume = nil
+        volumeHint = nil
         MicMarker.set(true)
         if sonarField {
             let line = maintainSonarTones()
             Log.info("sonar session started (microphone open; \(line ?? "tones playing"))")
+            if let volumeHint { Log.info("sonar: \(volumeHint)") }
             return nil
         } else if wantSonar {
             // The generator enforces its own limits (-30 dBFS, built-in speaker only, 60 s, cooldown after a refusal).
@@ -193,6 +196,12 @@ final class SoundSession {
     private var toneRetryAt = 0.0
     private var fieldMode = false
     private var configChanges: [Double] = []
+    private var lastVolume: Double?
+    /// Advice about the output volume for sonar_debug (nil when it is fine).
+    private(set) var volumeHint: String?
+    /// Measured on an M5 Pro MacBook Pro at 19% (CoreAudio: -36 dB): simulated hand echoes sat at or below the
+    /// mic noise and almost nothing was detected; each volume step up raises the pilots at the mic by a few dB.
+    static let recommendedVolume = 0.5
 
     /// Sonar mode, called every second: renews the tones (the renewal re-runs the built-in-speakers route check, so a
     /// switch to headphones or Bluetooth stops them within a second, or at once via the audio configuration change),
@@ -202,6 +211,23 @@ final class SoundSession {
     func maintainSonarTones() -> String? {
         guard fieldMode, !simulate, let session else { return nil }
         let now = Clock.now()
+        // The tones are scaled by the macOS volume slider. Muted: nothing reaches the mic, so stop them (a plain
+        // stop, no cooldown) until it is unmuted. A changed volume changes every level the trackers learned.
+        let volume = outputVolume(at: now)
+        if let v = volume {
+            if let last = lastVolume, abs(v.scalar - last) >= 0.05 { processor?.field.reset() }
+            lastVolume = v.scalar
+            volumeHint = v.muted ? "the output is muted: sonar needs sound on"
+                : v.scalar < Self.recommendedVolume
+                ? "output volume \(Int((v.scalar * 100).rounded()))%: sonar hears hands far better at \(Int(Self.recommendedVolume * 100))% or more"
+                : nil
+        }
+        if volume?.muted == true {
+            let was = toneProblem
+            if let stereo { stereo.stop(); session.stopPilotTone(); self.stereo = nil; sonarFieldOn = false }
+            toneProblem = "output is muted"
+            return was == toneProblem ? nil : "sonar tones paused: the output is muted; they resume when it is unmuted"
+        }
         if let stereo {
             if stereo.state == .playing {
                 if stereo.renew() { return nil }
@@ -393,7 +419,7 @@ extension SoundSession {
              "dopplerShiftBins": [Self.r(s.dopplerLeftShiftBins), Self.r(s.dopplerRightShiftBins)],
              "pathDeltaMm": Self.r(s.pathDeltaMm, 100), "pathStepVarMm2": Self.r(s.pathStepVarianceMm2, 1000),
              "pathTotalMm": Self.r(s.pathTotalMm), "dynamicDb": Self.r(s.dynamicDb),
-             "gateOpenShare": Self.r(s.gateOpenShare, 100)]
+             "gateOpenShare": Self.r(s.gateOpenShare, 100), "overFloorDb": Self.r(s.overFloorDb)]
         }
         let i = session.inputPathInfo
         var input: [String: Any] = [
@@ -417,10 +443,11 @@ extension SoundSession {
             "ready": d.ready, "warmedUp": d.warmedUp, "tonesPlaying": sonarFieldOn,
             "interference": d.interference, "suppressedByDaemon": d.suppressedByDaemon,
             "guardPeakDbfs": Self.r(d.guardPeakDbfs), "guardMedianDbfs": Self.r(d.guardMedianDbfs),
-            "impulseBlocks": d.impulseBlocks, "restarts": d.restarts,
+            "impulseBlocks": d.impulseBlocks, "burstFrames": d.burstFrames, "restarts": d.restarts,
             "episode": d.episodeActive, "hover": d.hoverActive, "slide": d.slideActive]
         if let reason = d.interferenceReason { gates["interferenceReason"] = reason }
         if let toneProblem { gates["toneProblem"] = toneProblem }
+        if let hint = volumeHint { gates["volumeHint"] = hint }
         return ["type": "sonar_debug", "t": Clock.protocolMs(t), "windowS": Self.r(d.windowSeconds, 1000),
                 "basebandSamples": d.basebandSamples, "left": side(d.left), "right": side(d.right),
                 "gates": gates, "input": input]
