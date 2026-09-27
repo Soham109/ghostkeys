@@ -143,13 +143,17 @@ final class WebSocketServer {
     private func receive(_ client: Client) {
         client.connection.receive(minimumIncompleteLength: 1, maximumLength: 64 * 1024) { [weak self, weak client] data, _, isComplete, error in
             guard let self, let client, self.clients[client.id] != nil else { return }
-            if let data, !data.isEmpty {
+            // VERIFY_06: while closing, input is still read but discarded, until the peer closes or the 1 s
+            // fallback in `forceDropLater`. Cancelling a socket with unread input makes the kernel send RST, which
+            // can destroy the close frame / error response in flight: Node `ws` saw 1006 instead of 1009 for 4 of
+            // 20 oversize messages.
+            if let data, !data.isEmpty, !client.closing {
                 client.lastActivity = Clock.now()
                 client.inbox.append(data)
                 if client.ready { self.processFrames(client) } else { self.processHandshake(client) }
             }
             if error != nil || isComplete { self.drop(client); return }
-            if self.clients[client.id] != nil, !client.closing { self.receive(client) }
+            if self.clients[client.id] != nil { self.receive(client) }
         }
     }
 
@@ -164,6 +168,12 @@ final class WebSocketServer {
         let head = String(decoding: client.inbox[..<end.lowerBound], as: UTF8.self)
         let rest = client.inbox[end.upperBound...]
         var lines = head.components(separatedBy: "\r\n")
+        // VERIFY_06: a bare CR or LF inside a line, or an obsolete folded line (leading space or tab), would let a
+        // header hide inside another header's value (e.g. "X-A: b\nOrigin: evil" parsed as one X-A header). Browsers
+        // never send either, so refuse the request outright rather than guess how to split it.
+        if lines.contains(where: { $0.contains("\r") || $0.contains("\n") || $0.hasPrefix(" ") || $0.hasPrefix("\t") }) {
+            return reject(client, status: "400 Bad Request", reason: "malformed header line")
+        }
         let requestLine = lines.removeFirst().split(separator: " ")
         var headers: [String: String] = [:]
         for line in lines {
@@ -206,10 +216,12 @@ final class WebSocketServer {
     private func reject(_ client: Client, status: String, reason: String) {
         guard clients[client.id] != nil, !client.closing else { return }
         client.closing = true
+        Self.forceDropLater(self, client)
         let body = reason + "\n"
         let response = "HTTP/1.1 \(status)\r\nContent-Type: text/plain\r\nContent-Length: \(body.utf8.count)\r\nConnection: close\r\n\r\n\(body)"
-        client.connection.send(content: Data(response.utf8), isComplete: true, completion: .contentProcessed { [weak self, weak client] _ in
-            guard let self, let client else { return }
+        // Dropped when the peer closes (see `receive`), on a send error, or by `forceDropLater`.
+        client.connection.send(content: Data(response.utf8), isComplete: true, completion: .contentProcessed { [weak self, weak client] err in
+            guard let self, let client, err != nil else { return }
             self.drop(client)
         })
     }
@@ -237,6 +249,9 @@ final class WebSocketServer {
                 len = Int(v); offset = 10
             }
             guard len <= Self.maxMessageBytes else { return closeWith(client, code: 1009, "message too big") }
+            // VERIFY_06: RFC 6455 5.5: every control frame (close, ping, pong) must be unfragmented and at most 125
+            // bytes. Previously only ping was checked (and only after its whole body had arrived).
+            if opcode & 0x8 != 0, !(fin && len <= 125) { return closeWith(client, code: 1002, "bad control frame") }
             guard b.count >= offset + 4 + len else { return }          // wait for the rest of the frame
             let mask = [b[i0 + offset], b[i0 + offset + 1], b[i0 + offset + 2], b[i0 + offset + 3]]
             let start = i0 + offset + 4
@@ -248,17 +263,30 @@ final class WebSocketServer {
 
             switch opcode {
             case 0x8:                                                  // close
-                return closeWith(client, code: payload.count >= 2 ? UInt16(payload[payload.startIndex]) << 8 | UInt16(payload[payload.startIndex + 1]) : 1000, nil)
+                // VERIFY_06: RFC 6455 5.5.1 / 7.4: a 1-byte body, a code that may not appear on the wire (e.g. 1005,
+                // 1006, <1000, >=5000) or a reason that is not UTF-8 is a protocol error; never echo such a code.
+                if payload.isEmpty { return closeWith(client, code: 1000, nil, echo: true) }
+                guard payload.count >= 2 else { return closeWith(client, code: 1002, "bad close frame") }
+                let code = UInt16(payload[payload.startIndex]) << 8 | UInt16(payload[payload.startIndex + 1])
+                guard (1000...1003).contains(code) || (1007...1014).contains(code) || (3000...4999).contains(code) else {
+                    return closeWith(client, code: 1002, "bad close code")
+                }
+                guard Self.isValidUTF8(payload.dropFirst(2)) else { return closeWith(client, code: 1007, "close reason not UTF-8") }
+                return closeWith(client, code: code, nil, echo: true)
             case 0x9:                                                  // ping
-                guard fin, len <= 125 else { return closeWith(client, code: 1002, "bad control frame") }
-                sendFrame(client, opcode: 0xA, payload: payload)
+                // VERIFY_06: pongs go through the bounded send queue (skipped while the client is behind). They used
+                // to be sent directly, so a client that sent pings and never read made the daemon buffer pongs
+                // without limit (measured: RSS 32 MB -> 265 MB in 8 s).
+                enqueueFrame(Self.frame(opcode: 0xA, payload: payload), to: client, droppable: true)
             case 0xA:                                                  // pong
                 break
             case 0x1, 0x2, 0x0:
+                // VERIFY_06: track "a message is in progress" by its opcode, not by buffered bytes: an empty non-final
+                // first fragment left `message` empty, so a new data frame was wrongly accepted mid-message.
                 if opcode != 0 {
-                    guard client.message.isEmpty else { return closeWith(client, code: 1002, "expected a continuation frame") }
+                    guard client.messageOpcode == 0 else { return closeWith(client, code: 1002, "expected a continuation frame") }
                     client.messageOpcode = opcode
-                } else if client.message.isEmpty && client.messageOpcode == 0 {
+                } else if client.messageOpcode == 0 {
                     return closeWith(client, code: 1002, "unexpected continuation frame")
                 }
                 guard client.message.count + payload.count <= Self.maxMessageBytes else {
@@ -267,8 +295,11 @@ final class WebSocketServer {
                 client.message.append(payload)
                 if fin {
                     let data = client.message
+                    let wasText = client.messageOpcode == 0x1
                     client.message = Data()
                     client.messageOpcode = 0
+                    // VERIFY_06: RFC 6455 8.1: a text message that is not valid UTF-8 fails the connection with 1007.
+                    guard !wasText || Self.isValidUTF8(data) else { return closeWith(client, code: 1007, "text message not UTF-8") }
                     deliver(client, data)
                 }
             default:
@@ -331,17 +362,43 @@ final class WebSocketServer {
         return maxDepth
     }
 
-    private func closeWith(_ client: Client, code: UInt16, _ reason: String?) {
+    /// Strict UTF-8 check (rejects overlong forms, surrogates and code points above U+10FFFF). Works on macOS 14,
+    /// where `String(validating:as:)` is unavailable.
+    static func isValidUTF8<C: Collection>(_ bytes: C) -> Bool where C.Element == UInt8 {
+        var it = bytes.makeIterator(), decoder = UTF8()
+        while true {
+            switch decoder.decode(&it) {
+            case .scalarValue: continue
+            case .emptyInput: return true
+            case .error: return false
+            }
+        }
+    }
+
+    /// Sends a close frame. `echo`: the peer already sent its close, so the handshake is complete and the server
+    /// closes TCP right after (RFC 6455 7.1.1). Otherwise wait for the peer to close (see `receive`), at most 1 s.
+    private func closeWith(_ client: Client, code: UInt16, _ reason: String?, echo: Bool = false) {
         guard clients[client.id] != nil, !client.closing else { return }
         client.closing = true
+        Self.forceDropLater(self, client)
         if let reason { Log.debug("closing client \(client.id): \(reason) (\(code))") }
         var payload = Data([UInt8(code >> 8), UInt8(code & 0xFF)])
         if let reason { payload.append(Data(reason.utf8.prefix(120))) }
         let frame = Self.frame(opcode: 0x8, payload: payload)
-        client.connection.send(content: frame, isComplete: true, completion: .contentProcessed { [weak self, weak client] _ in
-            guard let self, let client else { return }
+        client.connection.send(content: frame, isComplete: true, completion: .contentProcessed { [weak self, weak client] err in
+            guard let self, let client, echo || err != nil else { return }
             self.drop(client)
         })
+    }
+
+    /// VERIFY_06: `reject` and `closeWith` drop the connection only once their last bytes are handed to TCP. A peer
+    /// that stops reading can keep that send pending forever, and the half-closed connection kept its slot (a ready
+    /// one counted toward `maxClients`). Drop it after 1 s regardless; `drop` is idempotent.
+    private static func forceDropLater(_ server: WebSocketServer, _ client: Client) {
+        server.queue.asyncAfter(deadline: .now() + 1.0) { [weak server, weak client] in
+            guard let server, let client else { return }
+            server.drop(client)
+        }
     }
 
     func drop(_ client: Client) {
@@ -368,10 +425,6 @@ final class WebSocketServer {
         else { f.append(127); for k in (0..<8).reversed() { f.append(UInt8((UInt64(n) >> (8 * UInt64(k))) & 0xFF)) } }
         f.append(payload)
         return f
-    }
-
-    private func sendFrame(_ client: Client, opcode: UInt8, payload: Data) {
-        client.connection.send(content: Self.frame(opcode: opcode, payload: payload), completion: .idempotent)
     }
 
     func send(_ message: [String: Any], to client: Client) {
