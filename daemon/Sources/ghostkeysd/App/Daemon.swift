@@ -532,8 +532,6 @@ final class Daemon: @unchecked Sendable {
         guard !cal.samples.isEmpty else { return sendError("no samples captured yet", to: client) }
         calibration = nil
         flushRawCalibration()
-        // A new calibration replaces what use had taught the old model.
-        learner.discardAll(reason: "new calibration")
         server.broadcast(["type": "calibration", "phase": "training"])
         let samples = cal.samples
         let disabled = disabledZones
@@ -544,13 +542,24 @@ final class Daemon: @unchecked Sendable {
             let (model, report) = trainer.train()
             let rec = trainer.recommendedZones()
             guard let self else { return }
+            var saveError: Error?
             do {
                 try self.store.saveModel(model, report: report)
                 try self.store.saveSamples(samples)
             } catch {
-                Log.error("could not save model: \(error)")
+                saveError = error
             }
             self.core.async {
+                // Could not save (read-only or full disk): keep the previous model, say so plainly.
+                if let saveError {
+                    Log.error("calibration could not be saved (\(saveError)); keeping the previous model")
+                    self.server.broadcast(["type": "calibration", "phase": "failed",
+                                           "reason": "the new calibration could not be saved (\(Self.plainError(saveError))); the previous model is still in use",
+                                           "overall": report.overall, "labels": report.labels])
+                    return
+                }
+                // A new calibration replaces what use had taught the old model.
+                self.learner.discardAll(reason: "new calibration")
                 self.engine.model = model
                 self.applyZoneCenters()
                 self.pendingRecommendation = rec
@@ -1193,6 +1202,20 @@ final class Daemon: @unchecked Sendable {
         for f in files where total > maxBytes {
             total -= (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             try? fm.removeItem(at: f)
+        }
+    }
+
+    /// "permission denied", "disk full" and similar, without Foundation's long error dump.
+    static func plainError(_ e: Error) -> String {
+        let ns = e as NSError
+        if let posix = (ns.userInfo[NSUnderlyingErrorKey] as? NSError), posix.domain == NSPOSIXErrorDomain {
+            return String(cString: strerror(Int32(posix.code))).lowercased()
+        }
+        switch ns.code {
+        case NSFileWriteNoPermissionError: return "no permission to write the model folder"
+        case NSFileWriteOutOfSpaceError: return "the disk is full"
+        case NSFileWriteVolumeReadOnlyError: return "the disk is read-only"
+        default: return ns.localizedDescription
         }
     }
 

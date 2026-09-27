@@ -54,9 +54,14 @@ The daemon only accepts WebSocket handshakes from the app, never from a browser 
   `GHOSTKEYS_TOKEN` in the daemon's environment (at least 32 characters), that value is accepted too.
 - Handshake: the client must send the header `X-Ghostkeys-Token: <token>`. A missing or wrong token is rejected.
 - Any handshake that carries an `Origin` header is rejected (browsers always send one; the app must not).
-- Handshakes are served one at a time: connections that arrive together (for example a main window and the HUD) are
-  queued and each is answered in turn, so simultaneous valid connections all succeed without retries. A handshake that
-  does not complete within 2 s is closed; at most 16 connections may be waiting.
+- Each connection's upgrade request is checked on its own (the daemon implements the WebSocket handshake and
+  framing itself), so simultaneous connections never wait for each other. A connection must send its first bytes within
+  0.5 s and a complete request (at most 8 KB of headers) within 2 s, else it is closed (408 / 431). Unauthenticated
+  connections never count against authenticated ones: at most 64 may wait, and when full the one idle longest is
+  closed. Rejections: 400 (no or wrong token, `Origin` present, not a WebSocket upgrade), 503 (already 8 clients).
+- Messages: at most 1 MB (close 1009) and at most 64 levels of JSON nesting (objects and arrays together; deeper
+  messages are refused with an `error` before parsing). Each refused deep message counts heavily toward the rate
+  limit, and the third one closes the connection (1008). Invalid JSON just gets an `error` reply.
 - Limits: at most 8 clients; more than 200 messages per second from one client disconnects it; at most 2
   `test_action` per second per client. A client that stops reading first loses stream frames (`imu`, `light`, `lid`,
   `taps`), then is disconnected once about 1 MB is waiting.
@@ -195,6 +200,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "action", "t": 1234.5, "bindingId": "b1", "label": "Volume up", "ok": true, "error": null }
 { "type": "calibration", "phase": "capturing", "zone": "left-palm", "count": 7, "target": 20 }
 { "type": "calibration", "phase": "negatives", "secondsLeft": 42 }
+{ "type": "calibration", "phase": "failed", "reason": "the new calibration could not be saved (permission denied); the previous model is still in use" }
+  // calibration_finish when the model could not be saved (read-only folder, full disk): nothing changes
 { "type": "calibration", "phase": "done", "accuracy": { "left-palm": 0.97 }, "overall": 0.95, "confusion": [[...]], "labels": ["..."],
   "peaks": { "left-palm": { "p10": 0.021, "p50": 0.048, "p90": 0.11 } },
   "recommendation": { "keep": ["left-palm"], "drop": { "lid": "recognised 56% of the time (needs 80%)" },

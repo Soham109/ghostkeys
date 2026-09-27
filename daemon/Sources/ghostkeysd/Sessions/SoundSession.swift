@@ -35,6 +35,13 @@ final class SoundSession {
     static var debugWanted: () -> Bool = { false }
     static var debugSink: ([String: Any]) -> Void = { _ in }
     private var lastDebugAt = 0.0
+    private var volumeCache: (t: Double, value: (scalar: Double, muted: Bool)?) = (-1e9, nil)
+
+    /// Output volume slider, read from CoreAudio at most once a second.
+    func outputVolume(at t: Double) -> (scalar: Double, muted: Bool)? {
+        if t - volumeCache.t >= 1 || t < volumeCache.t { volumeCache = (t, AudioDeviceSummary.defaultOutputVolume()) }
+        return volumeCache.value
+    }
     private var loggedToneFormats = false
 
     var onGesture: (Gesture) -> Void = { _ in }
@@ -72,6 +79,10 @@ final class SoundSession {
         var opts = SoundModeProcessor.Options()
         opts.sonar = wantSonar && !sonarField        // SonarField replaces the single pilot
         opts.sonarField = sonarField
+        if let pilots = SonarDiagnostics.pilots {
+            opts.fieldConfig.leftPilotHz = pilots.left
+            opts.fieldConfig.rightPilotHz = pilots.right
+        }
         opts.tapTypes = classifier != nil
         let proc = SoundModeProcessor(options: opts, tapClassifier: classifier)
         tapTypesOn = classifier != nil
@@ -97,6 +108,10 @@ final class SoundSession {
             return "could not open the microphone: \(error)"
         }
         Self.logAudioPath(s)
+        if sonarField, let cap = SonarDiagnostics.capture {
+            s.captureRaw(to: cap.url, seconds: cap.seconds, delay: cap.delay) { line in Log.info(line) }
+            Log.info("sonar diagnostics: raw capture armed (\(cap.seconds) s after \(cap.delay) s) to \(cap.url.path)")
+        }
         loggedToneFormats = false
         session = s
         processor = proc
@@ -207,7 +222,11 @@ final class SoundSession {
         }
         guard now >= toneRetryAt else { return nil }
         // At the output device's own rate (48 kHz on current MacBooks), so the playback engine never resamples.
-        let g = StereoPilotGenerator(sampleRate: TonePlayer.outputSampleRate() ?? GhostkeysAcousticsInfo.sampleRate)
+        let pilots: (left: Double, right: Double) = processor?.field.pilotFrequencies ?? (SonarFieldConfig.defaultLeftPilotHz, SonarFieldConfig.defaultRightPilotHz)
+        let level = SonarDiagnostics.levelAmplitude ?? SpeakerSafety.maxAmplitude / 2
+        let g = StereoPilotGenerator(leftFrequency: pilots.left, rightFrequency: pilots.right,
+                                     sampleRate: TonePlayer.outputSampleRate() ?? GhostkeysAcousticsInfo.sampleRate,
+                                     leftAmplitude: level, rightAmplitude: level)
         do {
             try session.startStereoPilots(g)
             stereo = g
@@ -389,6 +408,11 @@ extension SoundSession {
             "channelPilotDbfs": i.channelProbeDbfs.map { $0.map { Self.r($0) } },
             "channelRmsDbfs": i.channelRmsDbfs.map { Self.r($0) }]
         if let dev = i.device { input["device"] = dev.dictionary }
+        // The pilots are scaled by the macOS output volume slider: at 25% they reach the mic far weaker than at 75%.
+        if let v = outputVolume(at: t) {
+            input["outputVolume"] = Self.r(v.scalar, 1000)
+            input["outputMuted"] = v.muted
+        }
         var gates: [String: Any] = [
             "ready": d.ready, "warmedUp": d.warmedUp, "tonesPlaying": sonarFieldOn,
             "interference": d.interference, "suppressedByDaemon": d.suppressedByDaemon,
@@ -500,7 +524,11 @@ extension SoundSession {
 /// `<default daemon dir>/mic.active` exists (with the daemon's pid) while a real microphone session is open, so
 /// `ghostkeys-lab sonar-bench` can refuse to run at the same time. Removed on stop and at exit.
 enum MicMarker {
-    static var url: URL { ConfigStore.defaultDirectory.appendingPathComponent("mic.active") }
+    /// A daemon started with its own --config-dir (tests, measurements) keeps the marker there, so it never writes
+    /// into the real app's directory.
+    static var url: URL {
+        (ConfigStore.isDefaultDirectory ? ConfigStore.defaultDirectory : ConfigStore.baseDirectory).appendingPathComponent("mic.active")
+    }
     /// At exit: remove the marker if this process wrote it.
     static func clearIfOurs() {
         guard let s = try? String(contentsOf: url, encoding: .utf8),
@@ -510,5 +538,34 @@ enum MicMarker {
     static func set(_ on: Bool) {
         if on { try? "\(getpid())\n".write(to: url, atomically: true, encoding: .utf8) }
         else { try? FileManager.default.removeItem(at: url) }
+    }
+}
+
+// MARK: - Measurement knobs (development daemons only)
+
+/// Environment knobs for measuring sonar on real hardware. Honoured only by a daemon started with its own
+/// `--config-dir` (never the installed app's daemon), so a stray environment variable cannot change the product.
+/// - `GHOSTKEYS_SONAR_CAPTURE=/path/file.wav` (+ `_SECONDS`, default 10, `_DELAY`, default 3): record the raw mic
+///   input once, locally, for offline analysis.
+/// - `GHOSTKEYS_SONAR_PILOTS=19500,20250`: pilot frequencies (snapped to the 750 Hz grid).
+/// - `GHOSTKEYS_SONAR_LEVEL_DB=-36`: per-channel pilot level; the generator's -30 dBFS combined cap still applies.
+enum SonarDiagnostics {
+    private static var env: [String: String] {
+        ConfigStore.isDefaultDirectory ? [:] : ProcessInfo.processInfo.environment
+    }
+    static var capture: (url: URL, seconds: Double, delay: Double)? {
+        guard let path = env["GHOSTKEYS_SONAR_CAPTURE"], !path.isEmpty else { return nil }
+        let seconds = min(10, max(1, Double(env["GHOSTKEYS_SONAR_CAPTURE_SECONDS"] ?? "") ?? 10))
+        let delay = min(20, max(0, Double(env["GHOSTKEYS_SONAR_CAPTURE_DELAY"] ?? "") ?? 3))
+        return (URL(fileURLWithPath: (path as NSString).expandingTildeInPath), seconds, delay)
+    }
+    static var pilots: (left: Double, right: Double)? {
+        let parts = (env["GHOSTKEYS_SONAR_PILOTS"] ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 2, parts.allSatisfy({ (15_000...21_750).contains($0) }), parts[0] != parts[1] else { return nil }
+        return (parts[0], parts[1])
+    }
+    static var levelAmplitude: Float? {
+        guard let db = Double(env["GHOSTKEYS_SONAR_LEVEL_DB"] ?? ""), db <= -20 else { return nil }
+        return Float(pow(10, db / 20))
     }
 }
