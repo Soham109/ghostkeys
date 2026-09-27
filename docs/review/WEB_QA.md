@@ -10,6 +10,63 @@ Newest round first.
 
 ---
 
+## Round 6 (live): 2026-09-27 02:04 local (checked `https://ghostkeys-nine.vercel.app` directly, no local build)
+
+Different method this round: no `next build`, no local server. Every check ran straight against the live URL with headless Chromium on the Metal GPU (confirmed renderer string: `ANGLE (Apple, ANGLE Metal Renderer: Apple M5 Pro, Unspecified Version)`). Load average stayed 3.8 to 8.3 the whole session (checked before every heavy step; never near the 20 pause point). Scripts, all under `scratchpad/rounds/r6/` and adapted from the Round 5 / Round 5 fixes scripts in `r5fix/` and `rounds/r5/`: `strobe-live.mjs` (from `r5fix/strobe-full.mjs`, pointed at the live URL instead of a local server), `checks-live.mjs`, `meta-live.mjs`, `mobile-live.mjs`, `perf-live.mjs`, `gpucheck.mjs`, `guideindex.mjs`.
+
+### Bugs
+
+None found. Every item below came back clean on the live site.
+
+### What was verified
+
+**1. No strobe.** `strobe-live.mjs`, CDP screencast of every compositor frame, 1440x900:
+
+| run | light | dark |
+|---|---|---|
+| parked y 4,550, 2 s | 153.3 to 153.8, 0 jumps, step 0.1 | 32.7 to 33.1, 0 jumps, step 0 |
+| parked y 4,650, 2 s | 153.0 to 153.0, 0 jumps, step 0 | 32.2 to 33.2, 0 jumps, step 0 |
+| scroll y 4,400 to 5,000 (sound chapter) | 152.5 to 154.7, 0 jumps, step 1.9 | 33.4 to 39.1, 0 jumps, step 0.6 |
+| full page, 0 to 9,045 (page height at 1440x900) | 50.8 to 226.0, 0 jumps over 40, 0 one-frame spikes, largest step 25.6 | 21.5 to 107.8, 0 jumps over 40, 0 one-frame spikes, largest step 39.6 |
+
+No one-frame spikes anywhere, in either theme, parked or scrolling, in the sound chapter or across the whole page. The dark full-page largest step (39.6) is a real chapter-cut brightness change, not a flash: it is a single sustained step, not a spike that returns. This matches the Round 5 fixes numbers and confirms the strobe fix holds on the live deploy.
+
+**2. CSP breaks nothing.** `checks-live.mjs` loaded the home page plus all 18 sitemap pages (19 total) at 1440x900, dark theme, with a `securitypolicyviolation` listener attached before navigation. Result on every single page: 0 console errors, 0 console warnings, 0 page errors, 0 failed requests, 0 responses over 400, **0 CSP violations**. The live CSP header is:
+`default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; connect-src 'self' data: blob:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'`, plus `x-content-type-options: nosniff`, `x-frame-options: DENY`, `referrer-policy: strict-origin-when-cross-origin`, and HSTS. This matches the Round 5 fixes deploy-hygiene item.
+- **3D canvas renders, not blank.** On `/` the WebGL canvas reports `drawingBufferWidth/Height` 1440x900, and a full-viewport screenshot has stdev 44.2 to 44.6 per channel (a blank single-colour frame would read near 0), confirming real rendered content.
+- **Fonts load.** Every font family actually used on a page loads (`text 200/400/500`, `mono 400` all report `loaded` on every page checked). The only `unloaded` entries are declared weights the page never uses in visible text (`text 300`, the generic `Fallback` face) — normal lazy font behaviour, not a bug.
+- **Film video:** `public/video/ghostkeys-film.mp4` and `teaser-540.mp4` exist as static files, but a source search (`grep` across `components/` and `app/`) plus the live DOM check found **no `<video>` element anywhere on any of the 19 pages**. There is nothing to verify play behaviour on; this is unchanged from the Round 5 fixes note ("the home page has no video element") except now checked across the whole site, not just the home page.
+
+**3. Caching headers are as intended**, checked with `curl -sI` against the live site:
+- `/_next/static/...` (JS chunks, the CSS chunk, `.woff2` fonts): `cache-control: public, max-age=31536000, immutable` on every file checked.
+- `/hdr/studio.hdr`, `/stills/air-dark.avif`, `/video/teaser-540.mp4`, `/video/ghostkeys-film.mp4`, `/textures/live.webp`, `/og.jpg`, `/noise.png`: `cache-control: public, max-age=86400, stale-while-revalidate=604800` (1 day, plus a week of stale-while-revalidate on top, which does not violate the 1-day intent).
+- HTML pages (`/`, `/sitemap.xml`) correctly stay `max-age=0, must-revalidate` (not asked for, but confirms the rule is scoped, not blanket).
+
+**4. robots.txt, sitemap.xml, og:image, canonical, guide index.**
+- `robots.txt`: `User-Agent: *`, `Allow: /`, `Sitemap: https://ghostkeys-nine.vercel.app/sitemap.xml`.
+- `sitemap.xml`: 200, 19 URLs, matches the site (home, 5 top-level pages, 13 guide articles).
+- Every one of the 19 pages has its own `<link rel="canonical">` (home is `https://ghostkeys-nine.vercel.app/`, subpages are `.../slug/`), its own `og:image` (`https://ghostkeys-nine.vercel.app/og.jpg`), and `twitter:card summary_large_image`. Checked with `meta-live.mjs`.
+- **Guide index lists each article once.** `/guide/` text dump shows the 13 articles numbered 01 to 13, each appearing exactly one time, in the same order as the sitemap (Getting started through For developers). The Round 5 duplicate-file bug (bug 2) is confirmed gone on the live deploy.
+
+**5. 390px, both themes.** `mobile-live.mjs`, real mobile viewport (390x844, `isMobile`, `hasTouch`):
+- `scrollWidth` equals `innerWidth` (390) at 8 scroll positions spanning the full page height, in both light and dark, and on all 6 subpages checked (`/pricing/`, `/faq/`, `/guide/`, `/privacy/`, `/compatibility/`, `/guide/getting-started/`). No sideways scroll anywhere.
+- Headlines are readable in both themes: spot-checked screenshots at the previously-broken spots ("Every blank surface is a key.", "A different layout for every app.") show the scrim clearly separating the dark headline text from the display behind it in light theme, and the hero headline plus "Download for Mac" / "FREE TO START" sit below the laptop, not over it.
+- Waitlist sheet shows the honest copy: idle state reads "The Mac download is not out yet." and "Kept in this browser only. Nothing is sent."; after submitting, "Saved in this browser only. Nothing was sent." No "we'll email you" promise anywhere.
+- The page does not scroll behind the open sheet: a 600px wheel event while the dialog was open moved the page 0px in both themes (was 415px in Round 5).
+- The email field is 16px on mobile (no iOS zoom risk).
+
+**6. Performance: 60 fps holds, cold and warm.** `perf-live.mjs`, 1440x900, a 12-second scripted scroll from top to bottom via `window.__gkScroll`, timed with in-page `requestAnimationFrame`:
+
+| pass | p50 | p95 | p99 | max | frames over 32 ms |
+|---|---|---|---|---|---|
+| cold (first pass after load) | 16.7 ms | 16.8 ms | 16.8 ms | 16.8 ms | 0 |
+| warm 1 | 16.7 ms | 16.8 ms | 16.8 ms | 16.8 ms | 0 |
+| warm 2 | 16.7 ms | 16.7 ms | 16.8 ms | 16.8 ms | 0 |
+
+Idle fps at the top: 60.2. First WebGL draw: 356.9 ms after load start (`loadMs` 382 ms for the `load` event). No dropped frames in any pass; the live deploy holds 60 fps as well as the local builds in earlier rounds.
+
+---
+
 ## Round 5 fixes: 2026-09-27 01:50 local (builder pass on `web/`)
 
 What changed, in the order of the Round 5 list. `pnpm build` passes, `tsc --noEmit` is clean, 0 console errors at 1440 and 390 in both themes with the new security headers applied.
