@@ -39,9 +39,29 @@ Exit status:
 
 Output of each run is kept in `.build-tests/T/`: `build.log` has the compiler output and `test.log` the full test output. Runs after the first reuse the build cache. `.build-tests/` is gitignored through `.build-*/`.
 
+### Without swift-testing: the shim runner
+
+Swift 5.10 Command Line Tools ship no swift-testing at all (`no such module 'Testing'`). The script notices (no
+`Testing.framework` in the Command Line Tools) and switches to the shim runner by itself; `--shim` forces it.
+`lib/shim_tests.py` copies the test files and rewrites the few swift-testing constructs they use:
+
+| swift-testing | shim |
+| --- | --- |
+| `#expect(x)`, `#expect(await x)` | `__gkExpect(x)`, `await __gkExpectAsync(await x)` |
+| `#expect(throws: E.self) { }`, `#expect(throws: value) { }` | `__gkExpectThrows(...) { }` |
+| `#require(x)`, `#require(await x)` | `__gkRequire(x)`, `await __gkRequireAsync(await x)` |
+| `Issue.record(...)` | a shim `Issue` type |
+| `@Suite`, `@Test`, `@Test(.enabled(if: c))` | a generated `@main` that calls every test (skipping disabled ones) |
+
+Anything else (parameterized `@Test(arguments:)`, traits other than `.enabled(if:)`, other macros) makes the target
+fail to generate, with a message, rather than silently skipping tests. The summary line says "shim runner". The
+test sources are not changed. Checked on 2026-09-27: 243 tests over the 4 targets pass, and putting back a known
+bug makes the matching test fail with exit status 1.
+
 ### Limits
 
 - Test targets that depend on products of other packages, or on executable targets, are skipped with a message. The package has neither today.
 - Build settings with platform or configuration conditions are dropped, with a note.
 - Test targets must not contain a `main.swift`.
-- In files that `import Testing`, use `import Darwin` instead of `import Foundation`. Having both imports in one file needs an add-on module that the Command Line Tools cannot load. Put Foundation-dependent helpers in a separate file of the test target that does not import Testing.
+- In files that `import Testing`, use `import Darwin` instead of `import Foundation` (this matters for the
+  swift-testing runner only; the shim runner does not care). Having both imports in one file needs an add-on module that the Command Line Tools cannot load. Put Foundation-dependent helpers in a separate file of the test target that does not import Testing.

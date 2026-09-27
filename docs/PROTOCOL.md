@@ -267,6 +267,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "calibration_doubles", "zone": "right-grille", "count": 8 }     // the user double-taps in their own rhythm, `count` times
 { "type": "calibration_negatives", "seconds": 45 }          // user types/uses the trackpad; everything is labeled none
 { "type": "calibration_finish" }                             // train, save, reply with calibration done
+  // the run replaces the saved samples of the zones it captured (and of none, if it captured negatives); saved
+  // samples of every other zone still in the config are kept, so redoing some zones never erases the rest
 { "type": "calibration_cancel" }
 { "type": "calibration_apply_recommendation" }  // disable the recommended drops (except merge-pair zones), retrain
 { "type": "calibration_apply_merge", "zones": ["right-grille", "left-grille"], "name": "Speaker grilles" }

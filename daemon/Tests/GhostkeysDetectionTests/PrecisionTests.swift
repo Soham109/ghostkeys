@@ -18,9 +18,9 @@ import Testing
         }
     }
 
-    static func onsets(_ samples: [IMUSample], tailSkip: Int) -> [Double] {
+    static func onsets(_ samples: [IMUSample], tailLag: Int) -> [Double] {
         var d = OnsetDetector()
-        d.tailSkip = tailSkip
+        d.tailLag = tailLag
         var out: [Double] = []
         for (i, s) in samples.enumerated() {
             if case .onset(let info) = d.process(ax: s.a.x, ay: s.a.y, az: s.a.z, t: s.t, index: i) { out.append(info.t) }
@@ -36,8 +36,8 @@ import Testing
         Self.addSlowTap(&b, at: 1.0, amp: 0.12)
         Self.addSlowTap(&b, at: 1.3, amp: 0.12)
         let samples = b.samples()
-        let fixed = Self.onsets(samples, tailSkip: OnsetDetector().tailSkip)
-        let old = Self.onsets(samples, tailSkip: 0)
+        let fixed = Self.onsets(samples, tailLag: OnsetDetector().tailLag)
+        let old = Self.onsets(samples, tailLag: 0)
         let second = fixed.first { $0 > 1.2 }
         #expect(second.map { $0 - 1.3 } ?? 1 < 0.012, "fixed: \(fixed)")
         let oldSecond = old.first { $0 > 1.2 }
@@ -47,7 +47,7 @@ import Testing
     @Test func slowRingingTapStillTriggersOnce() {
         var b = StreamBuilder(seconds: 3, seed: 82)
         Self.addSlowTap(&b, at: 1.0, amp: 0.4)
-        let found = Self.onsets(b.samples(), tailSkip: OnsetDetector().tailSkip)
+        let found = Self.onsets(b.samples(), tailLag: OnsetDetector().tailLag)
         #expect(found.count == 1, "\(found)")
     }
 

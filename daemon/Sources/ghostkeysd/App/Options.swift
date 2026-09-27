@@ -12,13 +12,15 @@ struct Options {
     var configDir: String?
     var simulateSensors = false
     var sonarToneTestSeconds: Double?
+    var logTaps = false
 
     static let usage = """
-    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors] [--no-hardware-sessions] [--config-dir PATH] [--simulate-sensors] [--sonar-tone-test SECONDS]
+    usage: ghostkeysd [--port N] [--parent-pid PID] [--verbose] [--dry-run] [--dump-imu SECONDS] [--selftest] [--restore-sensors] [--no-hardware-sessions] [--config-dir PATH] [--simulate-sensors] [--sonar-tone-test SECONDS] [--log-taps]
       --port N          WebSocket port on 127.0.0.1 (default 47823)
       --parent-pid PID  exit (restoring the sensors) when this process ends; the parent process is always watched too
       --verbose         debug logging to stderr
       --dry-run         log actions instead of running them
+      --log-taps        print every tap candidate with its zone guess, confidence and fate, and every gesture's outcome
       --dump-imu S      print S seconds of motion samples as CSV to stdout, then exit
       --selftest        open the sensors for 3 s, print rates, lid angle and light, exit 0 (ok) or 1
       --restore-sensors restore sensor settings left behind by a crashed run, then exit
@@ -50,6 +52,7 @@ struct Options {
                 o.parentPID = p
             case "--verbose", "-v": o.verbose = true
             case "--dry-run": o.dryRun = true
+            case "--log-taps": o.logTaps = true
             case "--dump-imu":
                 guard let s = Double(value()), s > 0, s <= 600 else { fail("--dump-imu needs seconds between 0 and 600") }
                 o.dumpIMUSeconds = s

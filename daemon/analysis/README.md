@@ -73,6 +73,54 @@ The second real calibration (calib2) has 0.90 overall, but only 11 typing negati
   - Richer shape and spectral features: +3.5 recall points on session1 only. They can't be tested on the calibrations (only features are stored), they change the feature vector, and session1's zone blocks may confound them.
   - Time-jitter and noise augmentation, and posture features: they need raw calibration windows (see the daemon spec in the report).
   - Gain augmentation: rejected earlier (it tripled typing false taps).
+## Double taps never detected: tail guard compared a tap with its own ring-up (26 Sep 2026, late night)
+
+On Mac17,9 every double tap came out as a single tap: 9 of 9 real doubles (5 right palm, 4 left palm), so no
+`double` binding could fire.
+- **Cause:** for 300 ms after a pulse, the onset detector's ringing-tail guard required a new onset to exceed twice
+  the highest level of the preceding 25 ms. Real taps ring up over several samples, so by the time the second tap of
+  a double was large, the 25 ms before it held its own rising edge and it never reached 2x. The recordings show the
+  second tap 155 to 200 ms after the first, peaking at 38 to 54 mg (trigger 17.5 mg), with the first tap's tail at
+  7 to 9 mg just before it.
+- **Not a fix:** turning the guard off. Every single tap also has a rebound 80 to 95 ms later that crosses the
+  trigger, so every single tap would become a double.
+- **Fix:** the guard's reference window is lagged: twice the highest level of the 25 ms that ended 25 ms earlier
+  (`OnsetDetector.tailLag`). The rebound is still riding on the first tap's tail and fails; a real second tap comes
+  after the tail has decayed and passes.
+- **Replay of all 20 exported recordings of the evening, live model, all four zones waiting for multi-taps:**
+  right-palm doubles 0 -> 4 of 4 detected as `double`; left-palm doubles 0 -> 2 (plus 1 `sequence`, 1 single: the
+  second tap sometimes reads as right-palm); all 11 single-tap recordings unchanged (no phantom doubles).
+- **Tests:** new `OnsetTests.doubleTapThatRingsUpIsTwoOnsets` (fails on the old detector); all 83 Detection tests
+  pass (run through a converted plain-executable runner, since this machine's toolchain has no swift-testing).
+- **Open:** the second tap's features include the first tap's tail in their pre-window, which may be why a left-palm
+  second tap is sometimes classified as right-palm.
+
+## Feature window anchored on the tap (26 Sep 2026, night)
+
+**Not on `main`** (kept on branch `demo-fixes`, commit c6419e4): the real-data benchmark above rejected peak-aligned
+integrals, and this change needs feature versioning. See DECISIONS.md, 27 Sep 2026.
+
+A second user (Mac17,9) calibrated firm and then tapped at half that strength or less: most taps came out
+`low_confidence`, and the left edge read as the right edge.
+- **Cause:** the impulse, twist and DFT windows started 3 samples before the fixed-threshold crossing. Real
+  taps ring up: the first half cycle is smaller than the rebound. Under ~50 mg the first half cycle stays below
+  17.5 mg, the crossing lands one half cycle later, and impulse and twist flip sign. Replaying one user's firm
+  left-palm taps with the motion scaled down: `impulseDirZ` +1.00 at 1x, -1.00 at 0.35x on every tap.
+- **Fix:** the window starts at the first sample whose accel magnitude reaches 30% of the tap's own peak
+  (`FeatureExtractor.anchorFraction`). The scaled replay keeps +1.00 down to 0.25x. `TapFeatures.version` is now
+  2; models and samples without it are ignored, so old calibrations have to be redone.
+- **Strength augmentation is now on** (0.4x, 0.6x, 1.6x, 2.5x). It failed before because a light tap was not a
+  scaled copy of a firm one. Cross-session on the user's live taps (train on one session, test on the other,
+  minConfidence 0.8):
+
+  | | run 3 -> run 2 | run 2 -> run 3 | typing read as a tap |
+  |---|---|---|---|
+  | old window | 21/69 | 45/133 | 0/12, 3/9 |
+  | old window + augmentation | 28/69 (16 wrong) | 53/133 | 5/12, 2/9 |
+  | anchored | 21/69 | 58/133 | 0/12, 1/9 |
+  | anchored + augmentation | 33/69 (3 wrong) | 65/133 | 0/12, 1/9 |
+
+  Run 2 had no palm taps, so 96 of run 3's 133 are reachable. Small sets: 5 to 16 taps per zone per session.
 
 ## Regression after light-touch (26 Sep 2026, evening)
 

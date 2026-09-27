@@ -24,16 +24,13 @@
 //      A width measured against the (noise-driven) trigger threshold
 //      instead made most palm taps "too long" in that recording, because lap noise sat near it.
 //   6. Refractory: 60 ms from onset and until the previous pulse has ended. For 300 ms after a pulse
-//      ends, a new onset must also be a fresh jump: above twice the highest level of the tail before
-//      it, i.e. from 30 ms to 10 ms before the sample. A decaying ring never jumps like that (each
-//      swing is lower than the last, and one swing always falls in that span); a real second tap
-//      does. This stops the ringing tail of a hard tap from triggering a second onset.
-//      The newest 10 ms are left out on purpose (fixed 27 Sep 2026). Comparing with the whole
-//      preceding 25 ms included the new tap's own rising edge, which never doubles from one sample to
-//      the next: the second tap of a double 300 ms after the first was only detected when the guard
-//      expired, 20 to 70 ms into its pulse, and its features were then too far off to be recognised
-//      (real grille taps composed into doubles: 9 of 18 second taps accepted, against 12 of 13 when
-//      isolated; analysis/bench "splice").
+//      ends, a new onset must also be a fresh jump: above twice the highest level of the 25 ms that
+//      ended 25 ms earlier. A decaying ring never jumps like that (each swing is lower than the last);
+//      a real second tap does. This stops the ringing tail of a hard tap from triggering a second onset.
+//      The window is lagged because real taps ring up over a few samples: measured against the 25 ms
+//      just before it, the second tap of a double was compared with its own rising edge and never
+//      counted (26 Sep 2026, Mac17,9: 9 of 9 real double taps came out as single taps; the case's
+//      rebound 80 to 95 ms after each tap is still rejected, see daemon/analysis/README.md).
 //   7. Burst lockout: 4 onsets within 0.5 s mute detection for 0.4 s (rattling, drumming, typing).
 
 import Foundation
@@ -67,8 +64,8 @@ struct OnsetDetector {
     var maxPulseSettle = 0.400         // a pulse that has not ended after this is too long regardless
     var tailGuardDuration = 0.300      // ringing tail guard, see header
     var tailJumpFactor = 2.0
-    var tailLookback = 24              // samples, about 30 ms
-    var tailSkip = 8                   // the newest samples (10 ms) are left out of the tail level, see header
+    var tailLookback = 20              // samples, about 25 ms
+    var tailLag = 20                   // samples, about 25 ms: skipped so a tap's own ring-up is not its reference
     var restartFactor = 3.0            // a hit this many times the active pulse's peak restarts it
     var burstCount = 4
     var burstWindow = 0.5
@@ -104,6 +101,7 @@ struct OnsetDetector {
     // Last finished pulse, for the ringing-tail guard.
     private var tailGuardUntil = -Double.infinity
     private var recentLevels: [Double] = []
+    private var recentCursor = 0             // ring position: the oldest entry once recentLevels is full
     private var lastLevel = 0.0
     private var lastOnsetT = -Double.infinity
     private var recentOnsets: [Double] = []
@@ -174,6 +172,7 @@ struct OnsetDetector {
         lastOnsetT = -.infinity
         tailGuardUntil = -.infinity
         recentLevels.removeAll()
+        recentCursor = 0
         recentOnsets.removeAll()
         lockoutUntil = -.infinity
     }
@@ -194,16 +193,17 @@ struct OnsetDetector {
         // Levels of the preceding samples (for the tail guard), excluding this one.
         let previousLevel = lastLevel
         lastLevel = m
-        // Chronological (oldest first); at most tailLookback entries.
-        recentLevels.append(previousLevel)
-        if recentLevels.count > tailLookback { recentLevels.removeFirst(recentLevels.count - tailLookback) }
+        if recentLevels.count < tailLookback + tailLag { recentLevels.append(previousLevel) } else {
+            recentLevels[recentCursor] = previousLevel
+            recentCursor = (recentCursor + 1) % (tailLookback + tailLag)
+        }
 
         switch pulse {
         case .active:
             // A fresh, much stronger hit inside a weak pulse (a gentle desk wobble just before a
             // real tap): restart the onset at the hit, otherwise the tap is swallowed by the wobble.
             if lightTouch, m > restartFactor * pulsePeak, t - pulseOnsetT >= 0.02, m > threshold,
-               m > tailJumpFactor * (recentLevels.max() ?? 0) {
+               m > tailJumpFactor * recentMax() {
                 return .restart(startPulse(m: m, t: t, index: index, thr: threshold, burst: false))
             }
             if m > pulsePeak { pulsePeak = m; pulsePeakT = t }
@@ -239,7 +239,7 @@ struct OnsetDetector {
         guard m > thr, t - lastOnsetT >= refractory else { return nil }
         // Ringing-tail guard (see header).
         if t < tailGuardUntil {
-            guard m > tailJumpFactor * tailLevel else { return nil }
+            guard m > tailJumpFactor * laggedMax() else { return nil }
         }
 
         // New onset.
@@ -267,12 +267,15 @@ struct OnsetDetector {
         return OnsetInfo(index: index, t: t, threshold: thr, noise: noise, burst: burst)
     }
 
-    /// Highest level of the ringing tail before the current rise: the previous `tailLookback` samples except the
-    /// newest `tailSkip` (see header, step 6).
-    private var tailLevel: Double {
-        let n = recentLevels.count - tailSkip
-        return n > 0 ? recentLevels[0..<n].max() ?? 0 : 0
+    /// Levels of the preceding samples, oldest first.
+    private func previousLevels() -> [Double] {
+        recentLevels.count < tailLookback + tailLag ? recentLevels
+            : Array(recentLevels[recentCursor...]) + Array(recentLevels[..<recentCursor])
     }
+    /// Highest level of the last `tailLookback` samples.
+    private func recentMax() -> Double { previousLevels().suffix(tailLookback).max() ?? 0 }
+    /// Highest level of the `tailLookback` samples before the last `tailLag` ones.
+    private func laggedMax() -> Double { previousLevels().dropLast(tailLag).suffix(tailLookback).max() ?? 0 }
 
     private mutating func rememberTail() {
         tailGuardUntil = pulseLastAbove + tailGuardDuration

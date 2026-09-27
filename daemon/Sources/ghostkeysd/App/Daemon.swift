@@ -41,7 +41,9 @@ final class Daemon: @unchecked Sendable {
     /// which gives rejections a zone guess and feeds the debug stream.
     private let shadow: TapEngine
     private let diag = DiagnosticsRecorder()
-    private struct SeenCandidate { var t: Double; var features: TapFeatures; var zone: String; var confidence: Double; var outcome: String }
+    private struct SeenCandidate { var t: Double; var features: TapFeatures; var zone: String; var confidence: Double; var outcome: String
+                                   var detail: ZoneModel.Result? = nil }
+    private lazy var tapLog = TapLog(enabled: options.logTaps)
     private var recentCandidates: [SeenCandidate] = []
     private var lastAccepted: SeenCandidate?
     private var feedbackTimes: [Double] = []
@@ -229,9 +231,17 @@ final class Daemon: @unchecked Sendable {
         for e in shadow.ingest(s, context: shadowCtx) {
             guard case .candidate(let f) = e else { continue }
             motionGate.freeze(until: f.t + 0.15)       // a tap's own rocking is not "the laptop moving"
-            let r = engine.model?.classify(f) ?? (zone: "none", confidence: 0, x: 0.5, y: 0.5)
-            fresh.append(SeenCandidate(t: f.t, features: f, zone: r.zone, confidence: r.confidence, outcome: "pending"))
+            // --log-taps wants the runner-up zone too, which only the detailed result carries.
+            let detail = tapLog.enabled ? engine.model?.classifyDetailed(f) : nil
+            let r = detail.map { (zone: $0.zone, confidence: $0.confidence, x: $0.x, y: $0.y) }
+                ?? engine.model?.classify(f) ?? (zone: "none", confidence: 0, x: 0.5, y: 0.5)
+            fresh.append(SeenCandidate(t: f.t, features: f, zone: r.zone, confidence: r.confidence, outcome: "pending", detail: detail))
         }
+        tapLog.track(level: engine.level, threshold: engine.onsetThreshold, t: s.t,
+                     inputBusy: capturing || snap.key * 1000 < config.settings.typingGateMs || snap.mouse < 0.3)
+        func peakMg(_ i: Int?) -> Double? { i.map { pow(10, fresh[$0].features[.strength]) } }
+        let labels = engine.model?.labels ?? []
+        let minConfidence = config.settings.detection.minConfidence
         func shadowIndex(_ t: Double) -> Int? { fresh.firstIndex { abs($0.t - t) < 1e-4 } }
 
         for event in engine.ingest(s, context: context) {
@@ -250,6 +260,9 @@ final class Daemon: @unchecked Sendable {
                     msg["strength"] = Self.r4(fresh[i].features[.strength])
                 }
                 diag.note(t, "rejected \(reason.rawValue)" + ((msg["zone"] as? String).map { " zone=\($0)" } ?? ""))
+                let i = shadowIndex(t)
+                tapLog.rejected(t: t, reason: reason, peakMg: peakMg(i), detail: i.flatMap { fresh[$0].detail }, labels: labels,
+                                minConfidence: minConfidence, sinceKey: snap.key, sinceMouse: snap.mouse, hasModel: engine.model != nil)
                 server.broadcast(msg, stream: "taps")
             case .tap(let tap):
                 lastTapAt = tap.t
@@ -259,6 +272,8 @@ final class Daemon: @unchecked Sendable {
                     lastAccepted?.zone = tap.zone
                 }
                 diag.note(tap.t, "tap zone=\(tap.zone) confidence=\(Self.r4(tap.confidence))")
+                let i = shadowIndex(tap.t)
+                tapLog.accepted(tap, peakMg: peakMg(i), detail: i.flatMap { fresh[$0].detail }, labels: labels, minConfidence: minConfidence)
                 let msg: [String: Any] = ["type": "tap", "t": Clock.protocolMs(tap.t), "zone": tap.zone, "confidence": tap.confidence,
                                           "x": tap.x, "y": tap.y, "strength": tap.strength, "source": "imu"]
                 // During a sound session the message may wait (at most 150 ms) for its tapType.
@@ -280,7 +295,10 @@ final class Daemon: @unchecked Sendable {
         }
         if !fresh.isEmpty {
             for c in fresh {
-                if c.outcome == "pending" { diag.note(c.t, "candidate zone=\(c.zone) (no decision: calibration or paused)") }
+                if c.outcome == "pending" {
+                    diag.note(c.t, "candidate zone=\(c.zone) (no decision: calibration or paused)")
+                    tapLog.undecided(t: c.t, peakMg: pow(10, c.features[.strength]), calibrating: capturing, hasModel: engine.model != nil)
+                }
                 if server.hasSubscribers("debug") {
                     server.broadcast(["type": "candidate", "t": Clock.protocolMs(c.t), "zone": engine.model == nil ? NSNull() : c.zone as Any,
                                       "confidence": Self.r4(c.confidence), "strength": Self.r4(c.features[.strength]),
@@ -324,6 +342,7 @@ final class Daemon: @unchecked Sendable {
         var g = g0
         if fillModifiers && g.modifiers.isEmpty { g.modifiers = InputMonitor.currentModifiers() }
         if paused {
+            tapLog.gesture(g, app: input.frontmostBundleID, "nothing ran: paused" + (pausedReason == "rate_limit" ? " by the rate limit" : ""))
             server.broadcast(["type": "rejected", "t": Clock.protocolMs(g.t), "reason": RejectReason.paused.rawValue], stream: "taps")
             return
         }
@@ -339,9 +358,17 @@ final class Daemon: @unchecked Sendable {
         msg["bound"] = resolved != nil && !calibrating
         server.broadcast(msg)
         // No actions while calibrating: the user is tapping zones (or tap types) on purpose.
-        guard !calibrating else { return }
+        guard !calibrating else { return tapLog.gesture(g, app: app, "nothing ran: calibrating") }
         // A disabled zone never fires (its taps are also left out of the model).
-        guard let binding = resolved else { return }
+        if zoneDisabled { return tapLog.gesture(g, app: app, "nothing ran: zone \(g.zone ?? g.zones.joined(separator: ",")) is disabled") }
+        guard let binding = resolved else {
+            if tapLog.enabled {
+                let here = Set(config.bindings.filter { $0.enabled && $0.zone != nil && $0.zone == g.zone }.map(\.gesture)).sorted()
+                tapLog.gesture(g, app: app, "nothing ran: no binding for this gesture"
+                               + (here.isEmpty ? "" : " (bound on this zone: \(here.joined(separator: ", ")))"))
+            }
+            return
+        }
         let label = binding.label ?? binding.id
         // A pinch_hold binding with a knob fires per step of travel (see onAir), not when the hold begins.
         if g.gesture == "pinch_hold", let spec = binding.knob {
@@ -357,6 +384,7 @@ final class Daemon: @unchecked Sendable {
         case .ok: break
         case .cooldown:
             Log.debug("binding \(binding.id) in cooldown or still running; skipped")
+            tapLog.gesture(g, app: app, "nothing ran: \"\(label)\" is in cooldown or still running")
             return
         case .tripped(let why):
             tripRateLimit(why)
@@ -385,6 +413,7 @@ final class Daemon: @unchecked Sendable {
                                          minConfidence: config.settings.minConfidence)
         }
         // Gesture actions are dropped if they would start more than 1 s late (stale).
+        tapLog.gesture(g, app: app, "runs \"\(label)\"")
         runAction(binding.action, bindingId: binding.id, label: label, t: g.t, maxAge: 1,
                   onResult: pendingID.map { id in { [weak self] ok in self?.learner.actionFinished(id: id, ok: ok) } })
     }
@@ -506,7 +535,7 @@ final class Daemon: @unchecked Sendable {
                 guard let self else { return }
                 if let bindingId { self.limiter.finished(bindingId: bindingId) }
                 onResult?(ok)
-                if let error { Log.info("action \(label) failed: \(error)") }
+                if let error { Log.info("action \(label) failed: \(error)") } else { self.tapLog.action(label, ok: true, error: nil) }
                 let client = replyID.flatMap { self.server.clients[$0] }
                 if replyID != nil && client == nil { return }   // requester is gone
                 self.sendAction(t: t, bindingId: bindingId, label: label, ok: ok, error: error, replyTo: client)
@@ -618,13 +647,13 @@ final class Daemon: @unchecked Sendable {
         calibration = nil
         flushRawCalibration()
         server.broadcast(["type": "calibration", "phase": "training"])
-        // Partial recalibration merges (VERIFY_01 bug 2): only the zones captured in this session are replaced;
-        // every other zone keeps its saved samples. New negatives are added to the old ones (newest 500 kept).
+        // Partial recalibration merges (VERIFY_01 bug 2, CalibrationMerge): only the labels captured in this session
+        // are replaced (negatives too, if the session captured any); every other zone still in the config keeps its
+        // saved samples.
         let recalibrated = Set(cal.samples.map(\.label)).subtracting([ZoneModel.noneLabel])
-        var merged = store.loadSamples().filter { !recalibrated.contains($0.label) } + cal.samples
-        let noneIdx = merged.indices.filter { merged[$0].label == ZoneModel.noneLabel }
-        if noneIdx.count > 500 { let drop = Set(noneIdx.prefix(noneIdx.count - 500)); merged = merged.indices.filter { !drop.contains($0) }.map { merged[$0] } }
-        let samples = merged
+        let samples = CalibrationMerge.merge(saved: store.loadSamples(), run: cal.samples,
+                                             knownZones: Set(config.zones.map(\.id)), label: \.label)
+        let carried = samples.count - cal.samples.count
         let disabled = disabledZones
         let gen = nextGeneration()
         calibrationTraining = true
@@ -663,7 +692,7 @@ final class Daemon: @unchecked Sendable {
                                        "recommendation": Self.recommendationJSON(rec),
                                        "peaks": Self.peaksJSON(model)])
                 self.server.broadcast(self.status())
-                Log.info("calibration done: recalibrated \(recalibrated.sorted()), overall accuracy \(report.overall), labels \(report.labels)")
+                Log.info("calibration done: recalibrated \(recalibrated.sorted()), overall accuracy \(report.overall), labels \(report.labels), \(carried) saved sample(s) kept from zones not redone")
                 // Zones switched on or off while it trained: retrain once more from the new samples.
                 if self.disabledZones != disabled { self.rebuildModel(reason: "enabled zones changed during calibration") }
             }
