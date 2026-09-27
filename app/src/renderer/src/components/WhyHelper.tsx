@@ -10,6 +10,7 @@ import { Button } from './ui/button'
 /** "Why didn't that work?": the last dropped tap, in one sentence, with the one action that fixes it. */
 export function WhyHelper(): React.JSX.Element {
   const [open, setOpen] = React.useState(false)
+  const [picking, setPicking] = React.useState(false)
   const [last, setLast] = React.useState<{ m: RejectedMsg; at: number } | null>(null)
   const config = useStore((s) => s.config)
   React.useEffect(() => client.on('rejected', (m) => setLast({ m, at: Date.now() })), [])
@@ -24,8 +25,8 @@ export function WhyHelper(): React.JSX.Element {
         toast('Typing pause shortened', { description: 'Taps right after typing are now accepted sooner.' })
         break
       case 'teach':
-        if (recent?.zone) client.send({ type: 'feedback_missed', zone: recent.zone })
-        break
+        setPicking(true)
+        return
       case 'resume':
         s.setPaused(false)
         break
@@ -55,10 +56,30 @@ export function WhyHelper(): React.JSX.Element {
             className="overflow-hidden"
           >
             <p className="pt-2 text-[13px] leading-relaxed text-ink">{why.sentence}</p>
-            {why.action && why.action.run !== 'none' && (
+            {why.action && why.action.run !== 'none' && !picking && (
               <Button variant="outline" size="sm" className="mt-2" onClick={act}>
                 {why.action.label}
               </Button>
+            )}
+            {picking && (
+              <div className="mt-2 flex flex-wrap gap-1.5" role="group" aria-label="Where did you tap?">
+                {(config?.zones ?? [])
+                  .filter((z) => z.enabled !== false)
+                  .map((z) => (
+                    <Button
+                      key={z.id}
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        client.send({ type: 'feedback_missed', zone: z.id })
+                        setPicking(false)
+                        setOpen(false)
+                      }}
+                    >
+                      {z.name}
+                    </Button>
+                  ))}
+              </div>
             )}
           </motion.div>
         )}

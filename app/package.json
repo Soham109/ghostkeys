@@ -16,7 +16,8 @@
     "icons": "node scripts/gen-icons.mjs",
     "screenshots": "pnpm build && node scripts/screenshots.mjs",
     "build:mac": "pnpm build && electron-builder --mac --dir --arm64",
-    "selftest:real": "pnpm build && node scripts/selftest-real.mjs"
+    "selftest:real": "pnpm build && node scripts/selftest-real.mjs",
+    "verify:app": "pnpm build && node scripts/verify/verify-app.mjs"
   },
   "pnpm": {
     "onlyBuiltDependencies": [

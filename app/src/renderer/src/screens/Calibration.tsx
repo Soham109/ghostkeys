@@ -5,7 +5,7 @@ import type { CalibrationMsg, Zone } from '@shared/protocol'
 import { SURFACE_LABEL } from '@shared/protocol'
 import { useStore } from '@/lib/store'
 import { client } from '@/lib/client'
-import { cn, pct } from '@/lib/utils'
+import { cn, nameList, pct } from '@/lib/utils'
 import { PageHeader } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Check, Segmented, ZoneIndex } from '@/components/ui/controls'
@@ -604,7 +604,7 @@ function Results({ zones }: { zones: Zone[] }): React.JSX.Element {
   const summary =
     weak.length === 0
       ? 'Every zone is ready.'
-      : `${words[ready] ?? ready} ${ready === 1 ? 'zone is' : 'zones are'} ready. ${weak.map(([id]) => name(id)).join(' and ')} ${weak.length === 1 ? 'needs' : 'need'} another pass.`
+      : `${words[ready] ?? ready} ${ready === 1 ? 'zone is' : 'zones are'} ready. ${nameList(weak.map(([id]) => name(id)))} ${weak.length === 1 ? 'needs' : 'need'} another pass.`
 
   return (
     <Frame

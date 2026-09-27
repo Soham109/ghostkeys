@@ -58,7 +58,19 @@ function CheckRow({ label, detail, ok, delay }: { label: string; detail?: string
 export function Onboarding(): React.JSX.Element {
   const step = useStore((s) => s.onboardingStep)
   const hello = useStore((s) => s.hello)
-  const finish = useStore((s) => s.finishOnboarding)
+  const finishRaw = useStore((s) => s.finishOnboarding)
+  // Leaving mid-calibration must stop it, or later taps keep being labelled.
+  const stopQuick = (): void => {
+    const q = useQuickCal.getState()
+    if (q.phase === 'capture' || q.phase === 'typing') {
+      client.send({ type: 'calibration_cancel' })
+      useQuickCal.setState({ phase: 'intro' })
+    }
+  }
+  const finish = (to?: Parameters<typeof finishRaw>[0]): void => {
+    stopQuick()
+    finishRaw(to)
+  }
   const family = hello?.device.family ?? 'macbook-pro-14'
   const granted = !!hello?.permissions.accessibility
   const [asked, setAsked] = React.useState(false)
@@ -216,7 +228,14 @@ export function Onboarding(): React.JSX.Element {
         </div>
       </div>
       <footer className="flex h-16 shrink-0 items-center gap-6 px-12 shadow-[0_-1px_0_var(--hairline)]">
-        <Button variant="text" className={step === 0 ? 'invisible' : undefined} onClick={() => setStep(step - 1)}>
+        <Button
+          variant="text"
+          className={step === 0 || (step === 3 && ['capture', 'typing', 'training'].includes(quick.phase)) ? 'invisible' : undefined}
+          onClick={() => {
+            stopQuick()
+            setStep(step - 1)
+          }}
+        >
           Back
         </Button>
         <span className="num text-[11px] text-ink-3">

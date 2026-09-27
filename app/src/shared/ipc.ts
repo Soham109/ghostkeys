@@ -37,6 +37,8 @@ export interface AppPrefs {
   showWindowOnLaunch: boolean
   /** Offline license key (see shared/license.ts). */
   licenseKey?: string | null
+  /** Show every detected gesture in the HUD and Recent gestures, bound or not (for testing). */
+  showAllGestures?: boolean
   /** A soft tick when a tap is felt. Off by default. */
   tapSound?: boolean
   /** Global shortcuts (Electron accelerators) for the feedback loop. */

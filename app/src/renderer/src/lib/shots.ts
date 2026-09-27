@@ -28,6 +28,7 @@ async function reset(theme: 'dark' | 'light' = 'dark'): Promise<void> {
     themeOverride: theme,
     debugHands: false,
     debugFrames: false,
+    unfamiliar: false,
     route: 'live'
   })
   usePractice.setState({ mode: 'calibrate' })
@@ -459,12 +460,21 @@ const SHOTS: Record<string, () => Promise<void>> = {
   training: async () => {
     usePractice.setState({ mode: 'training' })
     useStore.getState().navigate('calibration')
-    useTraining.setState({ phase: 'running', round: 0, prompts: ['right-grille', 'left-palm', 'top-strip', 'right-palm', 'left-grille'], index: 2, counts: {} })
+    useTraining.setState({
+      phase: 'running',
+      stage: 'singles',
+      posture: 'desk',
+      done: [],
+      showing: true,
+      prompts: ['right-grille', 'left-palm', 'top-strip', 'right-palm', 'left-grille'].map((zone, i) => ({ zone, strength: i % 2 ? 'firm' : 'soft' })),
+      index: 2,
+      counts: {}
+    })
     await sleep(700)
   },
   'training-intro': async () => {
     usePractice.setState({ mode: 'training' })
-    useTraining.setState({ phase: 'intro' })
+    useTraining.setState({ phase: 'intro', stage: 'posture', done: [] })
     useStore.getState().navigate('calibration')
     await sleep(600)
   },
@@ -492,6 +502,24 @@ const SHOTS: Record<string, () => Promise<void>> = {
     clickText('button', 'Why didn')
     await sleep(500)
   },
+  'live-unfamiliar': async () => {
+    useStore.getState().navigate('live')
+    useStore.setState({ unfamiliar: true })
+    await sleep(700)
+  },
+  'training-doubles': async () => {
+    usePractice.setState({ mode: 'training' })
+    useStore.getState().navigate('calibration')
+    useTraining.setState({ phase: 'running', stage: 'doubles', posture: 'desk', done: [], doubleZones: ['right-palm', 'right-grille'], doubleIndex: 0, doubleCount: 3, prompts: [], index: 0 })
+    await sleep(700)
+  },
+  'training-negatives': async () => {
+    usePractice.setState({ mode: 'training' })
+    useStore.getState().navigate('calibration')
+    useTraining.setState({ phase: 'running', stage: 'negatives', posture: 'desk', done: [], negIndex: 1, secondsLeft: 12 })
+    await sleep(1500)
+  },
+
   'demo-frames': async () => {
     useStore.setState({ debugFrames: true })
     await sleep(500)
@@ -542,6 +570,8 @@ const SHOTS: Record<string, () => Promise<void>> = {
 export function installShots(): void {
   skipDrawIn()
   window.__gk = {
+    // Scripted checks (scripts/verify) read and nudge these; screenshot mode only.
+    stores: { useStore, usePractice, useTapTest, useTraining, useQuickCal, useWizard, client },
     summary: () => {
       const s = useStore.getState()
       return {

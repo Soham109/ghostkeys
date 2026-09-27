@@ -104,6 +104,6 @@ export function defaultConfig(family: DeviceFamily): Config {
         label: 'Screenshot of an area'
       }
     ],
-    settings: { sensitivity: 0.5, typingGateMs: 450, doubleWindowMs: 350, minConfidence: 0.8, hud: true, haptics: false }
+    settings: { sensitivity: 0.5, typingGateMs: 450, doubleWindowMs: 350, minConfidence: 0.8, hud: true, haptics: false, learnFromUse: false }
   }
 }

@@ -79,6 +79,8 @@ function SliderRow({
 /** Rarely needed knobs, folded away. */
 function Advanced({ s, set }: { s: Settings; set: (p: Partial<Settings>) => void }): React.JSX.Element {
   const [open, setOpen] = React.useState(false)
+  const showAll = useStore((st) => st.info?.prefs.showAllGestures)
+  const setPrefs = useStore((st) => st.setPrefs)
   const follow = Math.min(s.followUpConfidence ?? 0.5, s.minConfidence)
   return (
     <div className="pt-3">
@@ -98,6 +100,16 @@ function Advanced({ s, set }: { s: Settings; set: (p: Partial<Settings>) => void
             format={(v) => `${Math.round(v * 100)} %`}
             onCommit={(followUpConfidence) => set({ followUpConfidence })}
           />
+          <Row
+            title="Learn from use"
+            desc="Taps that ran an action and weren\u2019t undone become training. Off until you have done a training session, so odd taps can\u2019t creep in."
+            htmlFor="learn"
+          >
+            <Switch id="learn" checked={s.learnFromUse ?? false} onCheckedChange={(learnFromUse) => set({ learnFromUse })} />
+          </Row>
+          <Row title="Show every detected gesture" desc="For testing: the HUD and Recent gestures also show gestures that aren\u2019t bound to anything." htmlFor="showall">
+            <Switch id="showall" checked={!!showAll} onCheckedChange={(showAllGestures) => void setPrefs({ showAllGestures })} />
+          </Row>
         </div>
       )}
     </div>

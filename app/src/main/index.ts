@@ -3,9 +3,11 @@ import { randomBytes } from 'node:crypto'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { DaemonSupervisor } from './daemon'
 import { DaemonBridge } from './bridge'
 import { runScreenshots } from './screenshots'
+import { isShown } from '@shared/match'
 import { runSelfTest } from './selftest'
 import { buildMenu, registerNativeIpc, type FeedbackHooks } from './native'
 import { loadLibrary } from './library'
@@ -17,8 +19,10 @@ import { licenseState, parseLicense } from '@shared/license'
 const PORT = Number(process.env.GK_PORT ?? DEFAULT_PORT)
 const MOCK = process.env.GK_MOCK === '1'
 const SELFTEST = process.env.SELFTEST === '1'
-/** Offscreen scripted runs: screenshots, or the self-test against a real daemon. */
-const SCREENSHOT = process.env.SCREENSHOT === '1' || SELFTEST
+/** Dev only: a scripted UI check (scripts/verify) that drives the offscreen window against a simulated daemon. */
+const VERIFY_DRIVER = !app.isPackaged ? process.env.GK_VERIFY_DRIVER : undefined
+/** Offscreen scripted runs: screenshots, the self-test against a real daemon, or a verify driver. */
+const SCREENSHOT = process.env.SCREENSHOT === '1' || SELFTEST || !!VERIFY_DRIVER
 const APP_ROOT = app.getAppPath()
 const RES_DIR = app.isPackaged ? process.resourcesPath : join(APP_ROOT, 'resources')
 
@@ -263,6 +267,8 @@ function onDaemonMessage(msg: DaemonMessage): void {
         ? msg.zones.map((z) => zoneName(z)).join(' then ')
         : (zoneName(msg.zone) ?? GESTURE_LABEL[msg.gesture])
     lastGesture = { title, at: Date.now() }
+    // Only gestures that do something reach the HUD, unless the user asked to see every detection.
+    if (!isShown(bridge.config, msg, !!prefs.showAllGestures)) return
     showHud(title, ZONELESS_GESTURES.includes(msg.gesture) ? null : GESTURE_LABEL[msg.gesture])
   } else if (msg.type === 'feedback') {
     const z = msg.zone ? (zoneName(msg.zone) ?? msg.zone) : 'Last tap'
@@ -433,6 +439,7 @@ const RELAYABLE = new Set<AppMessage['type']>([
   'calibration_start',
   'calibration_zone',
   'calibration_negatives',
+  'calibration_doubles',
   'calibration_finish',
   'calibration_cancel',
   'config_get',
@@ -572,6 +579,20 @@ if (!gotLock) {
       quitting = true
       supervisor.stop()
       setTimeout(() => app.exit(code), 1500)
+      return
+    }
+    if (VERIFY_DRIVER) {
+      hudWindow = createHudWindow()
+      let code = 1
+      try {
+        const driver = (await import(/* @vite-ignore */ pathToFileURL(VERIFY_DRIVER).href)) as { default: (ctx: unknown) => Promise<number> }
+        code = await driver.default({ main: mainWindow, hud: hudWindow, bridge, supervisor, sendApprovals, dialog, outDir: join(APP_ROOT, 'screenshots') })
+      } catch (e) {
+        console.error('[verify] driver failed:', e)
+      }
+      quitting = true
+      supervisor.stop()
+      setTimeout(() => app.exit(code), 800)
       return
     }
     if (SCREENSHOT) {

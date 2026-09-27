@@ -103,7 +103,7 @@ export function QuickCalibrate({ onDone }: { onDone: () => void }): React.JSX.El
               <motion.span key={i} className="size-2 rounded-full" animate={{ backgroundColor: i < count ? 'var(--ink)' : 'var(--hairline-strong)' }} transition={{ duration: 0.16 }} />
             ))}
           </div>
-          <span className="num text-[12px] text-ink-2">
+          <span className="num text-[12px] text-ink-2" aria-live="polite">
             {count} of {TARGET}
           </span>
           <span className="num text-[11px] text-ink-3">
@@ -151,6 +151,7 @@ export function FirstGesture({ onFinish }: { onFinish: (to?: 'live' | 'calibrati
   const [success, setSuccess] = React.useState<string | null>(null)
   const [waitedLong, setWaitedLong] = React.useState(false)
   const [lastReject, setLastReject] = React.useState<RejectedMsg | null>(null)
+  const [felt, setFelt] = React.useState<{ zone: string; gesture: string } | null>(null)
 
   // Make sure a harmless binding exists for the first try: double tap, play or pause.
   React.useEffect(() => {
@@ -167,6 +168,7 @@ export function FirstGesture({ onFinish }: { onFinish: (to?: 'live' | 'calibrati
     const offs = [
       client.on('gesture', (g) => {
         if (g.zone === zone.id && g.gesture === 'double') setSuccess('double')
+        else if (g.zone) setFelt({ zone: g.zone, gesture: g.gesture })
       }),
       client.on('rejected', (r) => setLastReject(r))
     ]
@@ -189,7 +191,13 @@ export function FirstGesture({ onFinish }: { onFinish: (to?: 'live' | 'calibrati
       </p>
       {!success && waitedLong && (
         <div className="mt-6 max-w-[46ch]">
-          <p className="text-[13px] leading-relaxed text-ink">{lastReject ? why.sentence : 'Nothing has registered yet. Try taps a little firmer, or practise in the Tap test.'}</p>
+          <p className="text-[13px] leading-relaxed text-ink">{lastReject
+              ? why.sentence
+              : felt
+                ? felt.zone !== zone?.id
+                  ? `Ghostkeys felt your taps, but heard them on the ${(config?.zones.find((z) => z.id === felt.zone)?.name ?? felt.zone).toLowerCase()}. Tap nearer the middle of the ${zname}, or practice in the Tap test.`
+                  : 'Ghostkeys felt a single tap. Make the two taps quicker, like double-clicking.'
+                : 'Nothing has registered yet. Try taps a little firmer, or practice in the Tap test.'}</p>
         </div>
       )}
       <div className="mt-8 flex items-center gap-6">

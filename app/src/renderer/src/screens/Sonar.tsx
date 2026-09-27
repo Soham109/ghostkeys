@@ -92,9 +92,6 @@ function Speaker({ s, side, x, y, hover, lit, reduce }: { s?: SonarSide; side: S
       <g transform={`translate(${side === 'left' ? x - 70 : x + 58} ${y - 210})`}>
         <line x1={6} x2={6} y1={0} y2={180} stroke="var(--line)" vectorEffect="non-scaling-stroke" />
         <motion.rect x={0} width={12} height={4} rx={2} fill="var(--ink)" animate={{ y: 180 - h * 180 - 2 }} transition={{ type: 'spring', stiffness: 260, damping: 30 }} />
-        <text x={6} y={-10} textAnchor="middle" fontSize={20} className="label-svg">
-          HAND
-        </text>
       </g>
       {/* Doppler sidebands around the pilot */}
       <g transform={`translate(${x - 36} ${y + 40})`}>
@@ -113,15 +110,12 @@ function Speaker({ s, side, x, y, hover, lit, reduce }: { s?: SonarSide; side: S
             transition={{ duration: 0.1 }}
           />
         ))}
-        <text x={36} y={84} textAnchor="middle" fontSize={20} className="label-svg">
-          {side === 'left' ? '19.5 KHZ' : '20.25 KHZ'}
-        </text>
       </g>
     </g>
   )
 }
 
-function Field(): React.JSX.Element {
+function Field({ off }: { off?: boolean }): React.JSX.Element {
   const family = useStore((s) => s.hello?.device.family ?? 'macbook-pro-14')
   const { frame, gesture, hover } = useSonarLive()
   const reduce = !!useReducedMotion()
@@ -151,7 +145,7 @@ function Field(): React.JSX.Element {
   return (
     <svg viewBox={`${b.x - 140} ${b.y - 260} ${b.w + 280} ${b.h + 380}`} className="laptop-map h-full w-full" preserveAspectRatio="xMidYMid meet" role="img" aria-label="What sonar senses above each speaker">
       <Chassis layout={layout} pxUnit={0.4} drawIn={false} />
-      {(['left', 'right'] as Side[]).map((side) => (
+      {!off && (['left', 'right'] as Side[]).map((side) => (
         <Speaker key={side} side={side} {...pos(side)} s={frame?.[side]} hover={hover[side]} lit={!!lit && (lit.side === side || (!lit.side && lit.name.includes(side)))} reduce={reduce} />
       ))}
       <AnimatePresence>
@@ -188,7 +182,7 @@ function SideReadout({ side }: { side: Side }): React.JSX.Element {
         </div>
         <span className="text-[13px] text-ink">{q.word}</span>
       </div>
-      <p className="num text-[11px] text-ink-3">{s ? `SNR ${Math.round(s.snrDb)} DB · MOVED ${Math.round(s.pathDeltaMm)} MM` : '—'}</p>
+
     </div>
   )
 }
@@ -219,7 +213,7 @@ const PROMPTS: { g: GestureKind | 'hover'; say: string; how: string }[] = [
 
 type TestResult = { ok: boolean; saw: string }
 
-function SonarTest(): React.JSX.Element {
+function SonarTest({ disabled }: { disabled?: boolean }): React.JSX.Element {
   const [i, setI] = React.useState(0)
   const [results, setResults] = React.useState<TestResult[]>([])
   const [waiting, setWaiting] = React.useState(false)
@@ -285,6 +279,7 @@ function SonarTest(): React.JSX.Element {
           </p>
           <p className="text-[20px] leading-tight font-medium">{p!.say}</p>
           <p className="max-w-[40ch] text-[13px] leading-relaxed text-ink-2">{p!.how}</p>
+          {disabled && <p className="text-[13px] text-ink">Start sonar first, then press Go.</p>}
           {results[i] && <p className={cn('text-[13px] leading-relaxed', results[i]!.ok ? 'text-ink' : 'text-ink-2')}>{results[i]!.ok ? 'Recognised.' : `Not recognised. ${results[i]!.saw}`}</p>}
           <div className="flex items-center gap-4">
             {results[i] ? (
@@ -292,7 +287,7 @@ function SonarTest(): React.JSX.Element {
                 Next
               </Button>
             ) : (
-              <Button variant="primary" disabled={waiting} onClick={() => setWaiting(true)}>
+              <Button variant="primary" disabled={waiting || disabled} onClick={() => setWaiting(true)}>
                 {waiting ? 'Watching…' : 'Go'}
               </Button>
             )}
@@ -327,7 +322,7 @@ export function SonarScreen(): React.JSX.Element {
     <>
       <PageHeader
         title="Sonar"
-        subtitle={active ? `listening · ${Math.round(session!.secondsLeft)}s left` : 'off'}
+        subtitle={active ? (session!.continuous || !session!.secondsLeft ? 'listening' : `listening · ${Math.round(session!.secondsLeft)}s left`) : 'off'}
         actions={
           <>
             <Segmented
@@ -361,8 +356,8 @@ export function SonarScreen(): React.JSX.Element {
             </div>
           ) : null}
           {mode === 'test' ? (
-            <SonarTest />
-          ) : (
+            <SonarTest disabled={!active} />
+          ) : !active ? null : (
             <>
               <SideReadout side="left" />
               <SideReadout side="right" />
@@ -377,7 +372,7 @@ export function SonarScreen(): React.JSX.Element {
         <div className="relative min-w-0 flex-1 px-6 pt-4 pb-6 shadow-[-1px_0_0_var(--hairline)]">
           <div className="pointer-events-none absolute inset-0" style={{ background: 'radial-gradient(55% 50% at 50% 45%, var(--light-behind), transparent 70%)' }} />
           <div className="relative h-full">
-            <Field />
+            <Field off={!active} />
           </div>
         </div>
       </div>

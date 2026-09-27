@@ -163,6 +163,9 @@ export const SYSTEM_OPS: SystemOp[] = [
   'show-desktop'
 ]
 
+export type Posture = 'desk' | 'lap' | 'stand'
+export type NegativePhase = 'typing' | 'trackpad' | 'palms' | 'drink'
+
 export type SessionKind = 'sound' | 'sonar' | 'air'
 export const SESSION_KINDS: SessionKind[] = ['sound', 'sonar', 'air']
 export const SESSION_START = { sound: 'sound_session_start', sonar: 'sonar_session_start', air: 'air_session_start' } as const
@@ -265,6 +268,10 @@ export interface Settings {
   minConfidence: number
   hud: boolean
   haptics: boolean
+  /** Refine the zone model from taps that fired an action and were not undone. */
+  learnFromUse?: boolean
+  /** Let much lighter taps trigger (after a calibration done with light taps). */
+  lightTouch?: boolean
   /** 0..minConfidence: a weaker tap may complete a double or triple whose other tap was confident. */
   followUpConfidence?: number
   sound?: SessionSettings
@@ -302,7 +309,7 @@ export interface StatusMsg {
   zones: string[]
   imuHz: number
   /** Live tap detector, in milli-g. */
-  detector?: { noiseFloorMg: number; thresholdMg: number; level: number }
+  detector?: { noiseFloorMg: number; thresholdMg: number; level: number; unfamiliar?: boolean }
 }
 export interface ImuMsg {
   type: 'imu'
@@ -401,6 +408,11 @@ export interface SonarDebugMsg {
   }
   input?: { device?: { name?: string }; highBandRolloffDb?: number; voiceProcessing?: boolean; micMode?: string }
 }
+/** The detector's taps don't look like the calibration (for example a new posture). */
+export interface DetectionStateMsg {
+  type: 'detection_state'
+  unfamiliar: boolean
+}
 export interface DiagnosticsMsg {
   type: 'diagnostics'
   path: string
@@ -426,6 +438,8 @@ export interface GestureMsg {
   x?: number
   y?: number
   source?: 'imu' | 'sound' | 'camera'
+  /** Whether an enabled binding matched (and so something ran). Older daemons omit it. */
+  bound?: boolean
 }
 export interface ActionMsg {
   type: 'action'
@@ -436,10 +450,14 @@ export interface ActionMsg {
   error: string | null
 }
 export type CalibrationMsg =
-  | { type: 'calibration'; phase: 'started'; zones: string[]; target: number }
+  | { type: 'calibration'; phase: 'started'; zones: string[]; target: number; posture?: Posture }
   | { type: 'calibration'; phase: 'training' }
   | { type: 'calibration'; phase: 'cancelled' }
-  | { type: 'calibration'; phase: 'capturing'; zone: string; count: number; target: number }
+  | { type: 'calibration'; phase: 'capturing'; zone: string; count: number; target: number; strength?: 'soft' | 'firm' | null; dropped?: string }
+  /** Double-tap capture: count is pairs so far; lastGapMs the gap inside the last pair. */
+  | { type: 'calibration'; phase: 'doubles'; zone: string; count: number; target: number; lastGapMs?: number; dropped?: string }
+  /** Enough pairs: settings.doubleWindowMs becomes the user's rhythm (a config message follows). */
+  | { type: 'calibration'; phase: 'doubles_done'; zone: string; gapsMs: number[]; doubleWindowMs?: number }
   | { type: 'calibration'; phase: 'negatives'; secondsLeft: number }
   | {
       type: 'calibration'
@@ -449,6 +467,8 @@ export type CalibrationMsg =
       confusion: number[][]
       labels: string[]
       recommendation?: Recommendation
+      /** Zones this session captured (only their samples were replaced). */
+      recalibrated?: string[]
       /** Tap peak quantiles per zone, in g (requested from the daemon; optional until it sends them). */
       peaks?: Record<string, { p10: number; p50: number; p90: number }>
     }
@@ -590,6 +610,7 @@ export type DaemonMessage =
   | FeedbackMsg
   | DiagnosticsMsg
   | SonarDebugMsg
+  | DetectionStateMsg
 
 export type DaemonMessageType = DaemonMessage['type']
 
@@ -600,8 +621,9 @@ export type AppMessage =
   | { type: 'unsubscribe'; streams: Stream[] }
   | { type: 'pause' }
   | { type: 'resume' }
-  | { type: 'calibration_start'; zones: string[]; target: number }
-  | { type: 'calibration_zone'; zone: string }
+  | { type: 'calibration_start'; zones: string[]; target: number; posture?: Posture }
+  | { type: 'calibration_zone'; zone: string; strength?: 'soft' | 'firm' }
+  | { type: 'calibration_doubles'; zone: string; count: number }
   | { type: 'calibration_negatives'; seconds: number }
   | { type: 'calibration_finish' }
   | { type: 'calibration_cancel' }
@@ -646,7 +668,8 @@ const DAEMON_TYPES: ReadonlySet<string> = new Set([
   'candidate',
   'feedback',
   'diagnostics',
-  'sonar_debug'
+  'sonar_debug',
+  'detection_state'
 ])
 
 /** Parses a text frame. Returns null for anything that is not a known daemon message. */

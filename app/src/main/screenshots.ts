@@ -64,7 +64,10 @@ export const SHOTS = [
   'training-intro',
   'sonar',
   'sonar-test',
-  'live-why'
+  'live-why',
+  'live-unfamiliar',
+  'training-doubles',
+  'training-negatives'
 ] as const
 
 /** Shots captured mid-animation: grab the frame right away. */

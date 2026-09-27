@@ -29,8 +29,8 @@ export function explain(r: RejectedMsg | null, settings: Settings | undefined, z
       return { sentence: 'Several bumps came at once, which looks like the laptop being knocked. Tap once, cleanly.' }
     case 'low_confidence':
       return {
-        sentence: `Ghostkeys felt a tap${where} but was only ${Math.round((r.confidence ?? 0) * 100)}% sure which zone it was. Teach it this tap so it knows next time.`,
-        action: r.zone ? { label: `Teach it: ${zoneName(r.zone).toLowerCase()}`, run: 'teach' } : { label: 'Accept less certain taps', run: 'lower-certainty' }
+        sentence: 'Ghostkeys felt a tap but couldn\u2019t tell which zone it was. Tell it where you tapped, and it learns for next time.',
+        action: { label: 'Where did you tap?', run: 'teach' }
       }
     case 'paused':
       return { sentence: 'Ghostkeys is paused, so nothing runs.', action: { label: 'Resume', run: 'resume' } }

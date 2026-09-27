@@ -32,7 +32,7 @@ const EXPLAIN: Record<Need, string> = {
   sound:
     'Sound mode listens with the microphone in short sessions, so macOS shows its orange dot while it listens. Nothing is recorded or saved. macOS may ask once for microphone access.',
   sonar:
-    'Sonar plays two inaudible tones (19.5 and 20.25 kHz) at a low level through the built-in speakers and listens for their echo. It stays on until you turn it off, so macOS keeps its orange microphone dot on the whole time. The tones stop by themselves on headphones or other speakers, while the Mac or its display sleeps, with the lid closed and while Ghostkeys is paused. Some pets and young people can hear them. macOS may ask once for microphone access.',
+    'Sonar plays two very high tones, too high for most people to hear, quietly through the built-in speakers, and listens for their echo off your hand. It stays on until you turn it off, so macOS keeps its orange microphone dot on the whole time. The tones stop by themselves on headphones or other speakers, while the Mac or its display sleeps, with the lid closed and while Ghostkeys is paused. Some pets and young people can hear them. macOS may ask once for microphone access.',
   camera:
     'The camera add-on watches your hand in short sessions, so macOS shows its green light. Frames are never saved or sent anywhere. macOS may ask once for camera access.'
 }

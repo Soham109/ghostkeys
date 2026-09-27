@@ -17,15 +17,28 @@ export function plainError(raw: string): string {
   if (m.includes('unknown zone')) return 'That zone no longer exists. Pick another one.'
   if (m.includes('paused')) return 'Ghostkeys is paused, so nothing ran. Resume it from the sidebar.'
   if (m.includes('timed out') || m.includes('timeout')) return 'That took too long and was stopped.'
+  if (m.includes('at most one every')) return 'That was sent too quickly after the last one. Wait a couple of seconds and try again.'
   if (m.includes('automation') || m.includes('not allowed to send apple events')) return 'macOS blocked Ghostkeys from controlling that app. Allow it in System Settings, Privacy and Security, Automation.'
   return 'Ghostkeys couldn\u2019t do that.'
+}
+
+/** The daemon's feedback reasons are written for logs; say them in plain words. */
+function plainFeedbackReason(reason: string | undefined): string {
+  const r = (reason ?? '').toLowerCase()
+  if (!r) return 'Try again right after tapping.'
+  if (r.includes('no tap-like onset')) return 'Ghostkeys didn’t feel anything in the few seconds before you asked. Tap again, a little firmer, then ask right away.'
+  if (r.includes('no candidate passed')) return 'The taps it felt didn’t look enough like that zone, so nothing was learned.'
+  if (r.includes('not calibrated yet')) return 'Calibrate first, then this can fine-tune it.'
+  if (r.includes('is not calibrated')) return 'That zone hasn’t been calibrated yet. Calibrate it first.'
+  if (r.includes('could not save')) return 'Ghostkeys couldn’t save what it learned. Nothing was changed.'
+  return `${reason![0]!.toUpperCase()}${reason!.slice(1)}.`
 }
 
 /** Results of "Missed a tap" and "That wasn't me", as toasts, wherever they were sent from. */
 export function wireFeedbackToasts(): void {
   client.on('error', (e) => {
     // Settings saves report their own errors; everything else gets one plain sentence.
-    if (/config/i.test(e.message)) return
+    if (/config/i.test(e.message) || /unknown message type/i.test(e.message)) return
     const text = plainError(e.message)
     toast(text, text === 'Ghostkeys couldn\u2019t do that.' ? { description: e.message } : undefined)
   })
@@ -44,7 +57,7 @@ export function wireFeedbackToasts(): void {
         toast(`Learned that tap on the ${name(m.zone).toLowerCase()}`, {
           description: `${n ? `It now has ${n} samples. ` : ''}${m.candidate ? `It had been dropped as ${m.candidate.droppedBecause.replace('_', ' ')}.` : ''}`.trim() || undefined
         })
-      } else toast('Couldn’t find that tap', { description: m.reason ? `${m.reason[0]!.toUpperCase()}${m.reason.slice(1)}.` : 'Try again right after tapping.' })
+      } else toast('Couldn’t find that tap', { description: plainFeedbackReason(m.reason) })
     } else {
       toast(m.retrained ? `Noted: ${name(m.zone).toLowerCase()} wasn’t you` : 'Nothing to correct', {
         description: m.retrained ? 'Ghostkeys will be less eager to fire on bumps like that one. What it did is not undone.' : m.reason

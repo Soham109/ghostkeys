@@ -112,7 +112,7 @@ const status = (): DaemonMessage => ({
   calibrated,
   zones: config.zones.map((z) => z.id),
   imuHz: 797,
-  detector: { noiseFloorMg: 1.4 + Math.random() * 0.3, thresholdMg: 17.5, level: 1.6 + tapEnergy * 40 }
+  detector: { noiseFloorMg: 1.4 + Math.random() * 0.3, thresholdMg: 17.5, level: 1.6 + tapEnergy * 40, unfamiliar }
 })
 
 // ---------------------------------------------------------------- sensor simulation
@@ -193,7 +193,6 @@ function emitTap(zone: Zone): void {
 function emitGesture(gesture: GestureKind, zone: string | null, zones: string[] | null, modifiers: Modifier[] = []): void {
   if (paused) return
   const app = Math.random() < 0.3 ? 'com.microsoft.Excel' : 'com.apple.Safari'
-  broadcast({ type: 'gesture', t: now(), gesture, zone, zones, modifiers, confidence: rand(0.84, 0.99), app })
   const candidates = config.bindings.filter(
     (b) =>
       b.enabled &&
@@ -203,6 +202,7 @@ function emitGesture(gesture: GestureKind, zone: string | null, zones: string[] 
       (b.app === '*' || b.app === app)
   )
   const binding = candidates.find((b) => b.app === app) ?? candidates.find((b) => b.app === '*')
+  broadcast({ type: 'gesture', t: now(), gesture, zone, zones, modifiers, confidence: rand(0.84, 0.99), app, bound: !!binding })
   if (binding) {
     const ok = isApproved(binding.action)
     setTimeout(
@@ -294,6 +294,31 @@ let calTimer: ReturnType<typeof setInterval> | null = null
 function stopCalTimer(): void {
   if (calTimer) clearInterval(calTimer)
   calTimer = null
+}
+
+function captureDoubles(zoneId: string, target: number): void {
+  stopCalTimer()
+  const zone = config.zones.find((z) => z.id === zoneId)
+  if (!zone) {
+    broadcast({ type: 'error', message: `Unknown zone ${zoneId}` })
+    return
+  }
+  let pairs = 0
+  const gaps: number[] = []
+  broadcast({ type: 'calibration', phase: 'doubles', zone: zoneId, count: 0, target })
+  calTimer = setInterval(
+    () => {
+      pairs += 1
+      const gap = Math.round(rand(190, 290))
+      gaps.push(gap)
+      broadcast({ type: 'calibration', phase: 'doubles', zone: zoneId, count: pairs, target, lastGapMs: gap })
+      if (pairs >= target) {
+        stopCalTimer()
+        broadcast({ type: 'calibration', phase: 'doubles_done', zone: zoneId, gapsMs: gaps, doubleWindowMs: 330 })
+      }
+    },
+    fast ? 120 : rand(900, 1200)
+  )
 }
 
 function captureZone(zoneId: string): void {
@@ -393,18 +418,19 @@ const sessions: Record<Kind, { left: number; timer: ReturnType<typeof setInterva
 }
 function sessionMsg(kind: Kind, reason?: string): DaemonMessage {
   const s = sessions[kind]
-  return { type: 'session', kind, active: !!s.timer, secondsLeft: s.left, simulated: true, ...(kind === 'sonar' ? { sonarField: !!s.timer } : {}), ...(reason ? { reason } : {}), ...(s.timer ? { trigger: 'request' } : {}) }
+  return { type: 'session', kind, active: !!s.timer, secondsLeft: s.left, simulated: true, ...(kind === 'sonar' ? { sonarField: !!s.timer, continuous: true } : {}), ...(reason ? { reason } : {}), ...(s.timer ? { trigger: 'request' } : {}) }
 }
 function startSession(kind: Kind, seconds?: number): void {
   const s = sessions[kind]
   if (s.timer) clearInterval(s.timer)
   if (kind === 'sonar' && sessions.sound.timer) stopSession('sound', 'requested')
   s.left = Math.max(1, Math.min(120, seconds ?? config.settings[kind === 'air' ? 'camera' : kind]?.sessionSeconds ?? 30))
+  if (kind === 'sonar') s.left = 0
   s.timer = setInterval(() => {
-    s.left -= 1
+    if (kind !== 'sonar') s.left -= 1 // sonar is continuous: no time limit
     if (kind === 'air') simulateAir()
     if (kind === 'sonar') simulateSonar()
-    if (s.left <= 0) stopSession(kind, 'timeout')
+    if (kind !== 'sonar' && s.left <= 0) stopSession(kind, 'timeout')
     else broadcast(sessionMsg(kind))
   }, 1000)
   broadcast(sessionMsg(kind))
@@ -513,6 +539,9 @@ function handle(ws: WebSocket, msg: AppMessage): void {
       return
     case 'calibration_zone':
       captureZone(msg.zone)
+      return
+    case 'calibration_doubles':
+      captureDoubles(msg.zone, msg.count)
       return
     case 'calibration_negatives':
       negatives(msg.seconds)
@@ -678,6 +707,8 @@ wss.on('error', (e) => {
   process.exit(1)
 })
 
+// Unfamiliar posture: on with GK_UNFAMILIAR=1; otherwise it never trips in the mock.
+const unfamiliar = process.env.GK_UNFAMILIAR === '1'
 // The detector level moves; send it now and then like the daemon's status updates.
 setInterval(() => broadcast(status()), 2000)
 

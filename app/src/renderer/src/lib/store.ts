@@ -65,6 +65,8 @@ interface State {
   /** Screenshot mode: show the hand drawing sheet. */
   debugHands: boolean
   debugFrames: boolean
+  /** From detection_state: taps don't look like the calibration. */
+  unfamiliar: boolean
   missedPickerOpen: boolean
 
   navigate: (r: Route) => void
@@ -118,6 +120,7 @@ export const useStore = create<State>()((set, get) => ({
   windowFocused: true,
   debugHands: false,
   debugFrames: false,
+  unfamiliar: false,
   missedPickerOpen: false,
 
   navigate: (route) => set({ route, paletteOpen: false }),
@@ -276,5 +279,6 @@ export function wireClient(): void {
   client.on('calibration', (calibration) => useStore.setState({ calibration }))
   client.on('session', (m) => useStore.setState((s) => ({ sessions: { ...s.sessions, [m.kind]: m } })))
   client.on('catalog', (m) => useStore.setState({ catalog: m.catalog }))
+  client.on('detection_state', (m) => useStore.setState({ unfamiliar: m.unfamiliar }))
   client.on('error', (e) => useStore.setState({ lastError: e.message }))
 }
