@@ -12,6 +12,18 @@ Every number here comes from the user's own data, replayed by the new benchmark 
 
 ---
 
+## Corrections (added after `VERIFY_07_DETECTION.md` and `DETECTION_ROUND2.md`)
+
+The numbers below are right; some of the credit and two costs were wrong. Where this list and the text disagree, this list wins.
+
+1. **Handling taps (2.2 to 0 per minute) were removed by the tail-guard fix, not the familiarity guard.** The tail fix alone takes them to 0, and turning the guard off leaves them at 0. Sections 1.3, 4.2 and the table in section 5 say the guard "now catches them"; it does not.
+2. **The saved-model win (0.165 to 0.014) comes from `ZoneModel.upgraded()`**, which tightens the reject distance when an old model loads. The guard adds nothing to it (section 1.1 and 4.4).
+3. **The guard's one measured win** is cross-session false accepts with retrained models, 0.055 to 0.033. It also cost 1.6 points each on `robust.sens0.2` and `robust.sens0.8` (half of the 3.3 points reported there).
+4. **Strict mode did switch on in normal use** (section 4.4 says 0%). 10.5% of real lap taps arrived while it was on, and 61% of calib2 taps when one typing spike got past the gates before each. Round 2 feeds the guard only confident taps: now 9.5% and 0%.
+5. **The upgrade cost the live model 3.4 points of in-session recall**, not "at most 0.2" (that holds for freshly trained models only). Round 2 adds per-zone reject distances on upgrade: the cost is now 1.8 points (0.953 as saved, 0.935 upgraded), with the saved-model false accepts unchanged at 0.014.
+
+---
+
 ## 1. The answer
 
 1. **The model only knows the session it was calibrated in, and it does not know that it doesn't.** Applied to another session's taps it picked the right zone 0 to 56% of the time, yet fired a confident wrong zone or accepted a typing spike for 6.8% of all candidates. With the model files the user actually has, that was 16.5%. The in-session score the app shows (0.90) hides this completely. Main cause: the live model's reject distance was set by one outlier, 31.2 against a normal spread of 10, so it rejected nothing. **Fixed tonight:** cross-session false accepts fell to 3.3% (1.4% with the user's saved models).

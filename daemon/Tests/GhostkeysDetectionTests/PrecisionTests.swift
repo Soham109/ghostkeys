@@ -199,5 +199,175 @@ import Testing
         var tight = saved
         tight.rejectDistance = 0.5
         #expect(tight.upgraded().rejectDistance == 0.5)
+        #expect(tight.upgraded().zoneRejectDistances?.allSatisfy { $0 <= 0.5 } ?? true)
+    }
+}
+
+/// Round 2 (docs/review/DETECTION_ROUND2.md): what feeds the familiarity guard, and per-zone reject distances for
+/// upgraded old models.
+@Suite struct Round2Tests {
+    func result(zone: String = "a", _ distance: Double, _ confidence: Double, outOfDistribution: Bool = false,
+                zoneConfidence: Double? = nil) -> ZoneModel.Result {
+        ZoneModel.Result(zone: zone, confidence: confidence, x: 0.5, y: 0.5, probabilities: [confidence, 1 - confidence],
+                         distance: distance, outOfDistribution: outOfDistribution, zoneConfidence: zoneConfidence)
+    }
+
+    var model: ZoneModel {
+        var m = ZoneModel(labels: ["a", "b", "none"])
+        m.typicalDistance = 2
+        return m
+    }
+
+    /// Junk the classifier rejects or doubts is not evidence that the user's taps changed: with the live model, one
+    /// typing spike past the gates before each tap used to make 61% of taps arrive in strict mode.
+    @Test func junkBetweenFamiliarTapsDoesNotMakeTheGuardStrict() {
+        var g = FamiliarityGuard()
+        var t = 0.0
+        for _ in 0..<10 {
+            // Two far spikes before every familiar tap: one k-NN called "none", one it only half believed.
+            t += 1; _ = g.admit(result(zone: ZoneModel.noneLabel, 9, 0.9), model: model, t: t)
+            t += 1; _ = g.admit(result(9, 0.55), model: model, t: t)
+            t += 1
+            let ok = g.admit(result(2, 0.85), model: model, t: t)
+            #expect(ok)
+            #expect(!g.isUnfamiliar)
+        }
+        // The old rule (every candidate is evidence) goes strict on the same stream.
+        var old = FamiliarityGuard()
+        old.evidence = .everyCandidate
+        t = 0
+        for _ in 0..<10 {
+            t += 1; _ = old.admit(result(zone: ZoneModel.noneLabel, 9, 0.9), model: model, t: t)
+            t += 1; _ = old.admit(result(9, 0.55), model: model, t: t)
+            t += 1; _ = old.admit(result(2, 0.85), model: model, t: t)
+        }
+        #expect(old.isUnfamiliar)
+    }
+
+    /// The cross-session symptom still switches strict mode on: taps the zone vote is sure about, sitting too far
+    /// from their zone, whether the reject distance turned them away or not.
+    @Test func confidentFarTapsStillMakeTheGuardStrict() {
+        var g = FamiliarityGuard()
+        for k in 0..<3 {
+            _ = g.admit(result(zone: ZoneModel.noneLabel, 9, 0.7, outOfDistribution: true, zoneConfidence: 0.95),
+                        model: model, t: Double(k))
+        }
+        #expect(g.isUnfamiliar)
+        // Far but confident taps no longer fire; clear-cut ones do.
+        let tooFar = g.admit(result(7, 0.95), model: model, t: 4)
+        #expect(!tooFar)
+        let clear = g.admit(result(5, 0.95), model: model, t: 5)
+        #expect(clear)
+
+        // Turned away by the reject distance with a doubtful zone vote: junk, not evidence.
+        var h = FamiliarityGuard()
+        for k in 0..<5 {
+            _ = h.admit(result(zone: ZoneModel.noneLabel, 9, 0.7, outOfDistribution: true, zoneConfidence: 0.4),
+                        model: model, t: Double(k))
+        }
+        #expect(!h.isUnfamiliar)
+    }
+
+    @Test func memoryStillExpiresWithoutNewEvidence() {
+        var g = FamiliarityGuard()
+        for k in 0..<5 { _ = g.admit(result(9, 0.95), model: model, t: Double(k)) }
+        #expect(g.isUnfamiliar)
+        // Only junk arrives after the memory has passed: the old evidence is forgotten.
+        _ = g.admit(result(zone: ZoneModel.noneLabel, 9, 0.9), model: model, t: 10 + g.memory)
+        #expect(!g.isUnfamiliar)
+    }
+
+    @Test func classifierReportsTheZoneVoteOfRejectedTaps() {
+        let m = PrecisionTests.trained()
+        var tight = m
+        tight.rejectDistance = 1e-3                     // everything is out of range
+        let cal = captureCalibration(zones: [.rightPalm], perZone: 4, seed: 99)
+        #expect(!cal.features.isEmpty)
+        for f in cal.features {
+            let normal = m.classifyDetailed(f)
+            #expect(normal.zoneConfidence == nil)
+            guard normal.zone != ZoneModel.noneLabel else { continue }
+            let r = tight.classifyDetailed(f)
+            #expect(r.zone == ZoneModel.noneLabel && r.outOfDistribution)
+            #expect(abs((r.zoneConfidence ?? -1) - normal.confidence) < 1e-9)
+        }
+    }
+
+    /// Engine level: keystroke-like spikes that get past the input gates (no key event reported, like a palm landing)
+    /// between real taps do not switch strict mode on, and every tap still fires.
+    @Test func spikesPastTheGatesDoNotMakeTheEngineStrict() {
+        let e = TapEngine(settings: DetectionSettings())
+        e.model = EngineGrammarTests.model
+        var b = StreamBuilder(seconds: 16, seed: 71)
+        var truth: [Double] = []
+        for k in 0..<10 {
+            let t0 = 1 + Double(k) * 1.4
+            b.addKeystroke(at: t0)
+            b.addKeystroke(at: t0 + 0.45)
+            truth.append(b.addTap(.rightPalm, at: t0 + 0.9))
+        }
+        let events = run(e, b.samples())
+        let live = e.model!
+        let spikes = events.candidates.filter { f in !truth.contains { abs($0 - f.t) < 0.02 } }
+        // Premise: the spikes sit far from the calibration.
+        let ratios = spikes.map { live.classifyDetailed($0).distance / live.typicalDistance! }.sorted()
+        #expect(spikes.count >= 10)
+        #expect(ratios.isEmpty ? false : ratios[ratios.count / 2] > e.familiarity.unfamiliarRatio, "\(ratios)")
+        #expect(!e.isUnfamiliar)
+        #expect(match(detected: events.taps.filter { $0.zone == "right-palm" }.map(\.t), truth: truth).hits == truth.count)
+    }
+
+    // MARK: Per-zone reject distance for upgraded old models
+
+    /// Synthetic feature vectors: five zones with spread 1 ("a", "b", "d", "e", "f") and one wide zone "c" (spread 2).
+    static func blobs(perZone: Int, seed: UInt64) -> [(TapFeatures, String)] {
+        var rng = Rng(seed)
+        let n = TapFeatures.count
+        var out: [(TapFeatures, String)] = []
+        for (zi, (name, sd)) in [("a", 1.0), ("b", 1.0), ("c", 2.0), ("d", 1.0), ("e", 1.0), ("f", 1.0)].enumerated() {
+            for _ in 0..<perZone {
+                let v = (0..<n).map { j in (j % 6 == zi ? 8.0 : 0.0) + sd * rng.gaussian() }
+                out.append((TapFeatures(values: v, t: 0), name))
+            }
+        }
+        return out
+    }
+
+    /// An old-style model (no ensemble, no typical distance, loose reject distance), as saved by earlier builds.
+    static func oldModel() -> ZoneModel {
+        let t = Trainer()
+        for (f, l) in blobs(perZone: 25, seed: 3) { t.add(f, label: l) }
+        var m = t.train().0
+        m.logistic = nil; m.platt = nil; m.typicalDistance = nil
+        m.rejectDistance = 1e6
+        return m
+    }
+
+    @Test func upgradeGivesAWideZoneRoomAndNeverTightensOrLoosensPastTheRules() throws {
+        let up = Self.oldModel().upgraded()
+        let limits = try #require(up.zoneRejectDistances)
+        let ia = up.labels.firstIndex(of: "a")!, ic = up.labels.firstIndex(of: "c")!
+        #expect(limits.allSatisfy { $0 >= up.rejectDistance && $0 <= 1e6 })
+        #expect(limits[ic] > 1.05 * up.rejectDistance, "\(limits) pooled \(up.rejectDistance)")
+        #expect(up.rejectDistance(forLabel: ia) == up.rejectDistance)
+        #expect(up.upgraded().zoneRejectDistances == limits)          // idempotent
+        #expect(try jsonRoundTrip(up).zoneRejectDistances == limits)  // saved and loaded
+
+        // Fresh taps of the wide zone: fewer turned away than with the pooled limit alone; the narrow zones unchanged.
+        var pooledOnly = up
+        pooledOnly.zoneRejectDistances = nil
+        let fresh = Self.blobs(perZone: 100, seed: 11)
+        func rejected(_ m: ZoneModel, _ zone: String) -> Int {
+            fresh.filter { $0.1 == zone }.filter { m.classifyDetailed($0.0).outOfDistribution }.count
+        }
+        #expect(rejected(up, "c") < rejected(pooledOnly, "c"), "\(rejected(up, "c")) vs \(rejected(pooledOnly, "c"))")
+        #expect(rejected(up, "a") == rejected(pooledOnly, "a"))
+    }
+
+    @Test func modelsWithoutPerZoneLimitsClassifyAsBefore() throws {
+        let m = PrecisionTests.trained()
+        #expect(m.zoneRejectDistances == nil)
+        #expect(m.upgraded().zoneRejectDistances == nil)              // new models are not upgraded
+        #expect(m.rejectDistance(forLabel: 0) == m.rejectDistance)
     }
 }

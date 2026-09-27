@@ -53,6 +53,12 @@ if let s1 = session1 {
 if let s1 = session1 { log("robustness..."); suiteRobustness(s1, settings: settings, report: report) }
 if let s1 = session1, let rest { log("spliced doubles..."); suiteSplice(s1, rest: rest, settings: settings, report: report) }
 log("rest + diagnostics..."); suiteRest(rest, diags: diags, sets: sets, settings: settings, report: report)
+#if HAS_FAMILIARITY
+// Round 2 checks (GuardSuites.swift): upgraded old models in-session, guard engagement, doubles in strict mode.
+log("upgraded old-style models..."); suiteUpgradedOld(sets, dataDir: dataDir, settings: settings, report: report)
+if let s1 = session1 { log("guard engagement..."); suiteGuardEngagement(s1, sets: sets, settings: settings, report: report) }
+if let s1 = session1, let rest { log("spliced doubles, guard strict..."); suiteSpliceStrict(s1, rest: rest, settings: settings, report: report) }
+#endif
 log(String(format: "done in %.1f s", Date().timeIntervalSince(clock)))
 
 // MARK: Output

@@ -14,8 +14,9 @@
 // Pulses that ring longer than 80 ms delay the decision until they end (the pulse width limit is 160 ms).
 //
 // Precision layers after the classifier (27 Sep 2026, docs/review/DETECTION_AUDIT.md):
-//   - FamiliarityGuard: when recent candidates sit far from the calibration (another posture or surface), only
+//   - FamiliarityGuard: when recent confident taps sit far from the calibration (another posture or surface), only
 //     clear-cut taps fire (confidence >= 0.9, within 3 typical distances). `isUnfamiliar` exposes the state.
+//     Junk the classifier already rejects or doubts does not count as evidence (round 2, DETECTION_ROUND2.md).
 //   - Look-ahead: a key press or pointer event within 300 ms after a multi-tap zone's tap cancels the pending
 //     double/triple (the hands were heading for the keyboard or trackpad). No latency cost: it was waiting anyway.
 
@@ -222,7 +223,8 @@ public final class TapEngine {
         guard let model else { return out }
 
         let r = model.classifyDetailed(features)
-        // Every classified candidate informs the familiarity guard, taps or not.
+        // Every classified candidate goes past the familiarity guard; it remembers only the ones that are evidence
+        // about the user's taps (a confident zone, or a confident zone turned away by the reject distance).
         let familiar = familiarity.admit(r, model: model, t: t)
         guard r.zone != ZoneModel.noneLabel, familiar else {
             out.append(.rejected(t: t, reason: .low_confidence))

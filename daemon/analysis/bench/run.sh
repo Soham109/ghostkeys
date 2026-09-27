@@ -13,6 +13,13 @@
 #   daemon/analysis/bench/run.sh --settings '{"minConfidence":0.9}'   other DetectionSettings (JSON)
 #   daemon/analysis/bench/run.sh --reps 5                cross-validation repetitions (default 10)
 #
+# Round 2 checks (Sources/GuardSuites.swift, docs/review/DETECTION_ROUND2.md), printed and saved like the rest:
+#   upg.*                  in-session recall (per zone for calib2, the live model) of models saved by older builds,
+#                          after ZoneModel.upgraded(); needs data/oldstyle-folds/ (see GuardSuites.swift)
+#   guard.s1.strictAtTap   share of real lap taps that arrive while the familiarity guard is strict
+#   guard.junkN.*          same for calibration taps with N typing spikes past the gates before each
+#   splice.strict.*        composed grille doubles that fire with the guard forced strict
+#
 # Data (gitignored, never modified): daemon/analysis/data/. `fetch-data.sh` copies the daemon's current
 # calibration and diagnostics there (read-only copies). The recordings used:
 #   calib1, calib_bak, calib2   three real calibrations (26 Sep 2026, 18:21, 19:05, 23:49), features only
@@ -36,7 +43,7 @@ while (( $# > 0 )); do
     --save) passthrough+=(--out ${2:A}); shift ;;
     --compare) passthrough+=(--compare ${2:A}); shift ;;
     --settings|--reps) passthrough+=($1 $2); shift ;;
-    -h|--help) sed -n '2,22p' $0 | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,29p' $0 | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) print -u2 "unknown option $1"; exit 2 ;;
   esac
   shift

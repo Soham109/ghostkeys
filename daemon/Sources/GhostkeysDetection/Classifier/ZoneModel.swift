@@ -86,6 +86,10 @@ public struct ZoneModel: Codable, Sendable {
     /// Median out-of-fold distance of the calibration taps to their zone mean: how far a typical tap of this
     /// user's calibration sits. Used by FamiliarityGuard. Optional: filled by `upgraded()` for older models.
     public var typicalDistance: Double? = nil
+    /// Per-label reject distance (same order as `labels`), used instead of `rejectDistance` for the winning zone.
+    /// Only models upgraded by `upgraded()` have it (a zone whose own calibration spread is wider than the pooled limit
+    /// gets a limit scaled to its spread); nil: `rejectDistance` for every zone.
+    public var zoneRejectDistances: [Double]? = nil
 
     public init(labels: [String]) { self.labels = labels }
 
@@ -126,6 +130,9 @@ public struct ZoneModel: Codable, Sendable {
         public var distance: Double
         /// True if the reject option (distance too large) produced the "none".
         public var outOfDistribution: Bool
+        /// When the reject option produced the "none": the confidence the winning zone would have had without it
+        /// (how sure the zone vote alone was). nil otherwise. Used by FamiliarityGuard to tell a far-off tap from junk.
+        public var zoneConfidence: Double? = nil
     }
 
     public func classifyDetailed(_ f: TapFeatures) -> Result {
@@ -197,9 +204,12 @@ public struct ZoneModel: Codable, Sendable {
         }
         // Reject option: far from every zone the user calibrated.
         let dTop = dist[top]
-        if dTop > rejectDistance {
-            return Result(zone: Self.noneLabel, confidence: Stats.clamp(1 - rejectDistance / dTop + 0.5, 0, 1),
-                          x: 0.5, y: 0.5, probabilities: p, distance: dTop, outOfDistribution: true)
+        let limit = rejectDistance(forLabel: top)
+        if dTop > limit {
+            let wouldBe = logistic != nil ? (platt?.apply(p[top]) ?? p[top]) : p[top]
+            return Result(zone: Self.noneLabel, confidence: Stats.clamp(1 - limit / dTop + 0.5, 0, 1),
+                          x: 0.5, y: 0.5, probabilities: p, distance: dTop, outOfDistribution: true,
+                          zoneConfidence: Stats.clamp(wouldBe, 0, 1))
         }
         // Calibrated models: the confidence is an estimate of P(correct zone), fitted out of fold.
         if logistic != nil {
@@ -212,14 +222,20 @@ public struct ZoneModel: Codable, Sendable {
         // Older models: soften confidence in the outer 20% of the accepted region so borderline
         // taps fall below minConfidence rather than firing actions.
         var conf = p[top]
-        if rejectDistance < 1e300 {
-            let edge = 0.8 * rejectDistance
-            if dTop > edge { conf *= 1 - 0.5 * (dTop - edge) / (rejectDistance - edge) }
+        if limit < 1e300 {
+            let edge = 0.8 * limit
+            if dTop > edge { conf *= 1 - 0.5 * (dTop - edge) / (limit - edge) }
         }
         let zone = labels[top]
         let (x, y) = position(zone: zone, features: f.values)
         return Result(zone: zone, confidence: Stats.clamp(conf, 0, 1), x: x, y: y, probabilities: p,
                       distance: dTop, outOfDistribution: false)
+    }
+
+    /// The reject distance that applies when the label at `index` wins (see `zoneRejectDistances`).
+    public func rejectDistance(forLabel index: Int) -> Double {
+        if let z = zoneRejectDistances, index >= 0, index < z.count, z[index].isFinite { return z[index] }
+        return rejectDistance
     }
 
     func masked(_ x: [Double]) -> [Double] {
@@ -515,20 +531,23 @@ public struct ZoneModel: Codable, Sendable {
 extension ZoneModel {
     /// Leave-one-out distances of the stored zone samples to their own zone mean (recomputed without the sample),
     /// in the model's whitened space. Zones with fewer than 3 samples are skipped.
-    func leaveOneOutSpread() -> [Double] {
+    func leaveOneOutSpread() -> [Double] { leaveOneOutSpreadByLabel().map(\.distance) }
+
+    /// Same, with the label index of each distance.
+    func leaveOneOutSpreadByLabel() -> [(label: Int, distance: Double)] {
         var sums: [Int: [Double]] = [:], counts: [Int: Int] = [:]
         for (i, s) in samples.enumerated() where sampleLabels[i] < classMeans.count && !classMeans[sampleLabels[i]].isEmpty {
             let c = sampleLabels[i]
             if var acc = sums[c] { for j in acc.indices { acc[j] += s[j] }; sums[c] = acc } else { sums[c] = s }
             counts[c, default: 0] += 1
         }
-        var out: [Double] = []
+        var out: [(label: Int, distance: Double)] = []
         for (i, s) in samples.enumerated() {
             let c = sampleLabels[i]
             guard let sum = sums[c], let n = counts[c], n >= 3 else { continue }
             var d = 0.0
             for j in s.indices { let m = (sum[j] - s[j]) / Double(n - 1); d += (s[j] - m) * (s[j] - m) }
-            out.append(d.squareRoot())
+            out.append((c, d.squareRoot()))
         }
         return out
     }
@@ -540,13 +559,36 @@ extension ZoneModel {
     /// The out-of-fold spread is not stored, so it is estimated from the stored whitened samples with
     /// leave-one-out zone means. On the three real calibrations that estimate runs low (median 0.94x, q95 0.72x to
     /// 0.80x the out-of-fold values, because the whitening was fitted with the sample in it), hence the factors.
+    ///
+    /// Per zone (round 2, docs/review/DETECTION_ROUND2.md): zones are not equally spread. On the live model's
+    /// calibration (calib2) the pooled limit cut into the normal taps of the wide zones (top-strip, right-edge,
+    /// right-palm), which cost 3.4 points of in-session recall. So each zone also gets a limit scaled to its own
+    /// spread: its median leave-one-out distance times the pooled shape (the same 1.3 x q95, taken over every tap's
+    /// distance divided by its own zone's median). A zone keeps the pooled limit if that is larger, so no zone is
+    /// tighter than before, and none is looser than the saved limit. Measured: calib2 in-session recall 0.919 ->
+    /// 0.935 (as saved 0.953), saved-model cross-session false accepts unchanged (0.014).
     public func upgraded() -> ZoneModel {
         guard typicalDistance == nil, isTrained else { return self }
-        let spread = leaveOneOutSpread()
+        let byLabel = leaveOneOutSpreadByLabel()
+        let spread = byLabel.map(\.distance)
         guard spread.count >= 5 else { return self }
         var m = self
         m.typicalDistance = Stats.quantile(spread, 0.5) / 0.94
-        m.rejectDistance = min(rejectDistance, 1.3 * Stats.quantile(spread, 0.95))
+        let pooled = min(rejectDistance, 1.3 * Stats.quantile(spread, 0.95))
+        m.rejectDistance = pooled
+        // Per-zone scale (median), pooled shape (95th percentile of distance / own zone's median).
+        var zoneMedian: [Int: Double] = [:]
+        for c in Set(byLabel.map(\.label)) {
+            zoneMedian[c] = Stats.quantile(byLabel.filter { $0.label == c }.map(\.distance), 0.5)
+        }
+        let normalized = byLabel.compactMap { e in zoneMedian[e.label].flatMap { $0 > 0 ? e.distance / $0 : nil } }
+        if normalized.count >= 5 {
+            let shape = 1.3 * Stats.quantile(normalized, 0.95)
+            m.zoneRejectDistances = labels.indices.map { c in
+                guard let med = zoneMedian[c], med > 0 else { return pooled }
+                return min(rejectDistance, max(pooled, med * shape))
+            }
+        }
         return m
     }
 }
