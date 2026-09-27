@@ -80,6 +80,8 @@ Swift 5.10 Command Line Tools, Node 22.11, pnpm, Python 3.12, **no Rust toolchai
   swift-testing is missing (`scripts/lib/shim_tests.py`). 243 tests pass over the 4 targets (Acoustics 62, Vision
   44, Integrations 54 + 1 disabled, Detection 83), including Soham's `AnchorTests` and `CalibrationMergeTests`.
   Checked that it fails (exit 1) when the old onset detector is put back.
+  Known flaky: `PerformanceTests.sonarFieldSixtySecondsUnderHalfASecond` (Acoustics) is a wall-clock limit
+  (0.5 s, debug build) and failed once at 0.55 s while the app and daemon were running; 3 reruns passed.
 
 ### 1. Diagnose live misses and wrong-zone taps with `--log-taps` (needs a human at the laptop)
 Not yet run with real taps. The ACCEPTED line, the "too soft" line and the real Spotify/Excel actions have only
@@ -102,6 +104,10 @@ on; `ConfigStore` ignores other feature versions; `CalibrationMerge` keeps saved
 
 ### 3. Swift tests on this machine: solved by the shim runner (see 0c)
 Official swift-testing runs still need Swift 6 Command Line Tools or Xcode 16+; not required any more.
+
+## Branch state (2026-09-27)
+All work is committed on branch `demo-fixes` (5 commits on top of `main` at e9cbf5e; not pushed, not merged):
+Soham's detection work (authored as Soham), the tail-guard fix, the shim test runner, `--log-taps`, these docs.
 
 ## Next Step
 
