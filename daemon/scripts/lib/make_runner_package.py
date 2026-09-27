@@ -10,13 +10,18 @@ For test target T this writes <out>/<T>/:
   Sources/<dep>/...          copies of each dependency's sources (target `exclude` entries dropped)
   Sources/<T>/...            copies of T's test files + a generated @main entry point
 
-Usage: make_runner_package.py <package-dir> <dump-package.json> <test-target> <out-dir>
+Usage: make_runner_package.py <package-dir> <dump-package.json> <test-target> <out-dir> [--shim]
+
+--shim: for toolchains without the Testing module (Swift 5.10 Command Line Tools). The test files are
+rewritten to use a small shim instead of swift-testing (see shim_tests.py) and nothing links Testing.
 Prints the generated package path. Exits 2 (with a message) if the target cannot be mirrored.
 """
 import json
 import os
 import shutil
 import sys
+
+import shim_tests
 
 FRAMEWORKS = "/Library/Developer/CommandLineTools/Library/Developer/Frameworks"
 ENTRY_FILE = "__GhostkeysTestRunnerMain.swift"
@@ -107,9 +112,11 @@ def copy_target(src, dst, exclude):
 
 
 def main():
-    if len(sys.argv) != 5:
+    args = [a for a in sys.argv[1:] if a != "--shim"]
+    shim = "--shim" in sys.argv[1:]
+    if len(args) != 4:
         fail(__doc__)
-    pkg, dump_path, test_name, out_root = sys.argv[1:]
+    pkg, dump_path, test_name, out_root = args
     with open(dump_path) as f:
         dump = json.load(f)
     targets = {t["name"]: t for t in dump["targets"]}
@@ -166,19 +173,30 @@ def main():
     copy_target(test_src, test_dst, test.get("exclude", []))
     if os.path.exists(os.path.join(test_dst, "main.swift")):
         fail(f"{test_name}: has a main.swift, which conflicts with the generated entry point")
-    with open(os.path.join(test_dst, ENTRY_FILE), "w") as f:
-        f.write(ENTRY_SOURCE)
     st = settings_swift(test.get("settings", []), test_name)
-    swift_flags = st["swift"] + [f'.unsafeFlags(["-F", {swift_str(FRAMEWORKS)}])']
-    linker_flags = st["linker"] + [
-        f'.unsafeFlags(["-F", {swift_str(FRAMEWORKS)}, "-framework", "Testing", "-Xlinker", "-rpath", "-Xlinker", {swift_str(FRAMEWORKS)}])'
-    ]
+    if shim:
+        try:
+            shim_tests.convert_target(test_dst)
+        except ValueError as e:
+            fail(f"{test_name}: cannot run without swift-testing: {e}")
+        # The target's own flags only point at the (missing) Testing framework.
+        swift_flags = [f for f in st["swift"] if FRAMEWORKS not in f]
+        linker_flags = [f for f in st["linker"] if FRAMEWORKS not in f]
+    else:
+        with open(os.path.join(test_dst, ENTRY_FILE), "w") as f:
+            f.write(ENTRY_SOURCE)
+        swift_flags = st["swift"] + [f'.unsafeFlags(["-F", {swift_str(FRAMEWORKS)}])']
+        linker_flags = st["linker"] + [
+            f'.unsafeFlags(["-F", {swift_str(FRAMEWORKS)}, "-framework", "Testing", "-Xlinker", "-rpath", "-Xlinker", {swift_str(FRAMEWORKS)}])'
+        ]
     args = [swift_str(test_name), "dependencies: [" + ", ".join(swift_str(d) for d in dep_names(test)) + "]"]
     res = resources_swift(test.get("resources", []))
     if res:
         args.append("resources: [" + ", ".join(res) + "]")
-    args.append("swiftSettings: [" + ", ".join(swift_flags) + "]")
-    args.append("linkerSettings: [" + ", ".join(linker_flags) + "]")
+    if swift_flags:
+        args.append("swiftSettings: [" + ", ".join(swift_flags) + "]")
+    if linker_flags:
+        args.append("linkerSettings: [" + ", ".join(linker_flags) + "]")
     decls.append("        .executableTarget(name: " + ",\n                ".join(args) + ")")
 
     platforms = []

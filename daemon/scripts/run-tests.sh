@@ -13,8 +13,12 @@
 #                                              extra arguments after -- go to swift-testing
 #   scripts/run-tests.sh --strict              also exit non-zero when a target is skipped
 #   scripts/run-tests.sh --release             build optimised (default: debug)
+#   scripts/run-tests.sh --shim                run without swift-testing (automatic when the toolchain lacks it)
 #
 # Exit status: 0 if every suite that ran passed; 1 if any failed (or, with --strict, was skipped).
+#
+# Swift 5.10 Command Line Tools have no swift-testing at all. Then (or with --shim) the tests are rewritten to a
+# small shim instead (lib/shim_tests.py): same test code, plain executable, summary marked "shim runner".
 
 set -u
 SCRIPT_DIR=${0:A:h}
@@ -24,12 +28,15 @@ OUT=$PKG/.build-tests
 filter=""
 strict=0
 config=debug
+shim=0
 runner_args=()
+FRAMEWORKS=/Library/Developer/CommandLineTools/Library/Developer/Frameworks
 while (( $# > 0 )); do
   case $1 in
     --strict) strict=1 ;;
     --release) config=release ;;
-    -h|--help) sed -n '2,17p' $0 | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --shim) shim=1 ;;
+    -h|--help) sed -n '2,22p' $0 | sed 's/^# \{0,1\}//'; exit 0 ;;
     --) shift; runner_args=("$@"); break ;;
     *) filter=$1 ;;
   esac
@@ -40,6 +47,12 @@ if [[ -t 1 ]]; then B=$'\e[1m'; R=$'\e[31m'; G=$'\e[32m'; Y=$'\e[33m'; N=$'\e[0m
 
 mkdir -p $OUT
 dump=$OUT/package.json
+if (( ! shim )) && [[ ! -d $FRAMEWORKS/Testing.framework ]]; then
+  shim=1
+  print "${Y}swift-testing is not installed with this toolchain; using the shim runner (lib/shim_tests.py).${N}"
+fi
+shim_flag=(); (( shim )) && shim_flag=(--shim)
+
 if ! swift package --package-path $PKG dump-package > $dump 2> $OUT/dump.log; then
   print -u2 "${R}Could not read Package.swift:${N}"; cat $OUT/dump.log >&2; exit 1
 fi
@@ -52,7 +65,7 @@ typeset -A result
 failed=0 skipped=0
 for t in $tests; do
   print "${B}== $t${N}"
-  if ! pkgdir=$(python3 $SCRIPT_DIR/lib/make_runner_package.py $PKG $dump $t $OUT 2> $OUT/$t.gen.log); then
+  if ! pkgdir=$(python3 $SCRIPT_DIR/lib/make_runner_package.py $PKG $dump $t $OUT $shim_flag 2> $OUT/$t.gen.log); then
     result[$t]="SKIPPED: runner package could not be generated ($(tail -1 $OUT/$t.gen.log))"
     print "${Y}${result[$t]}${N}"; (( skipped++ )); continue
   fi
