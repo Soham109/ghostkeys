@@ -1,0 +1,27 @@
+{
+  "name": "rate_limiter_and_approval_attack",
+  "started": "2026-09-27 00:50:52 -0500",
+  "findings": [],
+  "metrics": {
+    "test_action_flood_ok": 0,
+    "test_action_flood_refused": 38,
+    "global_limiter_tripped_paused": true,
+    "global_limiter_tripped_reason": "rate_limit",
+    "feedback_flood_refused": 9,
+    "approval_flood_accepted": 989,
+    "approval_flood_refused": 211,
+    "approval_flood_seconds": 1.1,
+    "final_alive": true
+  },
+  "notes": [
+    "survived 8 concurrent rate-limit offenders; fresh connect still works (config)",
+    "global ActionLimiter correctly auto-paused after 20 concurrent test_actions",
+    "resume after rate-limit trip worked correctly",
+    "tampered approvedHash correctly refused: not approved: the action changed since it was approved",
+    "ApprovalStore correctly capped at maxEntries=1000: accepted=989, refused=211",
+    "approved.json intact after 25-way concurrent approve/revoke race (1000 entries remain)"
+  ],
+  "samples": [],
+  "finished": "2026-09-27 00:50:57 -0500",
+  "status": "completed"
+}

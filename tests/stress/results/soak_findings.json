@@ -1,0 +1,101 @@
+{
+  "name": "soak",
+  "started": "2026-09-27 00:51:49 -0500",
+  "findings": [],
+  "metrics": {
+    "planned_seconds": 7200.0
+  },
+  "notes": [],
+  "samples": [
+    {
+      "t": 1790488309.5,
+      "elapsed_s": 0.1,
+      "cpu": 3.9,
+      "rss_kb": 28240.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488369.6,
+      "elapsed_s": 60.1,
+      "cpu": 2.2,
+      "rss_kb": 37344.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488429.7,
+      "elapsed_s": 120.2,
+      "cpu": 1.8,
+      "rss_kb": 39488.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488489.7,
+      "elapsed_s": 180.3,
+      "cpu": 3.6,
+      "rss_kb": 39504.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488549.8,
+      "elapsed_s": 240.3,
+      "cpu": 3.8,
+      "rss_kb": 42432.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488609.9,
+      "elapsed_s": 300.4,
+      "cpu": 2.0,
+      "rss_kb": 42496.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488669.9,
+      "elapsed_s": 360.5,
+      "cpu": 18.5,
+      "rss_kb": 42496.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488730.0,
+      "elapsed_s": 420.5,
+      "cpu": 2.0,
+      "rss_kb": 42496.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488790.0,
+      "elapsed_s": 480.6,
+      "cpu": 1.3,
+      "rss_kb": 42496.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    },
+    {
+      "t": 1790488850.1,
+      "elapsed_s": 540.6,
+      "cpu": 1.9,
+      "rss_kb": 42512.0,
+      "fds": 15,
+      "threads": 7,
+      "restarts": 0
+    }
+  ]
+}
