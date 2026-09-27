@@ -53,6 +53,11 @@ final class Daemon: @unchecked Sendable {
     /// installed meanwhile, so a slow older retrain can never overwrite a newer model (VERIFY_01 note).
     private var modelGeneration = 0
     private var installedGeneration = 0
+    /// Bumped when a calibration replaces samples.json. A retrain that started from older samples is not installed:
+    /// zone changes retrain again from the new samples, feedback says so, learn-from-use waits (VERIFY_15).
+    private var samplesEpoch = 0
+    /// Between calibration_finish and its done / failed message. A calibration is never discarded as stale.
+    private var calibrationTraining = false
     private var cmdZWasDown = false
     /// Test-only (--no-hardware-sessions): the next rebuildModel waits this long before installing.
     private var testRetrainDelay = 0.0
@@ -622,6 +627,7 @@ final class Daemon: @unchecked Sendable {
         let samples = merged
         let disabled = disabledZones
         let gen = nextGeneration()
+        calibrationTraining = true
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             // Disabled zones are left out of the model; their samples stay in samples.json for later.
             let trainer = Trainer()
@@ -630,7 +636,9 @@ final class Daemon: @unchecked Sendable {
             let rec = trainer.recommendedZones()
             self?.core.async {
                 guard let self else { return }
-                guard self.isCurrent(gen, what: "calibration") else { return }
+                // Not checked against newer retrains: those started from the samples this calibration replaces, so
+                // the calibration always installs (or reports failed) and they are redone or dropped (samplesEpoch).
+                self.calibrationTraining = false
                 do {
                     try self.store.saveModel(model, report: report)
                     try self.store.saveSamples(samples)
@@ -642,7 +650,8 @@ final class Daemon: @unchecked Sendable {
                                            "overall": report.overall, "labels": report.labels])
                     return
                 }
-                self.installedGeneration = gen
+                self.samplesEpoch += 1
+                self.installedGeneration = max(self.installedGeneration, gen)
                 // What use taught about the recalibrated zones no longer applies; other zones keep theirs.
                 self.learner.discard(labels: recalibrated, reason: "zones recalibrated")
                 self.engine.model = model
@@ -655,6 +664,8 @@ final class Daemon: @unchecked Sendable {
                                        "peaks": Self.peaksJSON(model)])
                 self.server.broadcast(self.status())
                 Log.info("calibration done: recalibrated \(recalibrated.sorted()), overall accuracy \(report.overall), labels \(report.labels)")
+                // Zones switched on or off while it trained: retrain once more from the new samples.
+                if self.disabledZones != disabled { self.rebuildModel(reason: "enabled zones changed during calibration") }
             }
         }
     }
@@ -709,6 +720,7 @@ final class Daemon: @unchecked Sendable {
             server.broadcast(status())
             sessions.syncSonar(trigger: "resume", userInitiated: true)
         case "calibration_start":
+            guard !calibrationTraining else { return sendError("the last calibration is still training; start again when it is done", to: c) }
             let zones = (m["zones"] as? [String]) ?? config.zones.map(\.id)
             guard let target = SafeNumbers.field(m["target"], in: 1...500, default: 20) else {
                 return sendError("calibration_start: target must be a finite number (1 to 500)", to: c)
@@ -1042,13 +1054,17 @@ final class Daemon: @unchecked Sendable {
         let disabled = disabledZones
         let confirmedSamples = config.settings.learnFromUse ? learner.asSamples : []
         let gen = nextGeneration()
+        let epoch = samplesEpoch
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let trainer = Trainer()
             for s in samples + confirmedSamples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
             let (model, report) = trainer.train()
             self?.core.async {
                 guard let self else { return }
-                if self.isCurrent(gen, what: "feedback") {
+                if epoch != self.samplesEpoch {
+                    reply["retrained"] = false
+                    reply["reason"] = "a new calibration finished first; send the feedback again if it still applies"
+                } else if self.isCurrent(gen, what: "feedback") {
                     do {
                         try self.store.saveModel(model, report: report)
                         try self.store.saveSamples(samples)
@@ -1096,6 +1112,7 @@ final class Daemon: @unchecked Sendable {
         let disabled = disabledZones
         let confirmedSamples = config.settings.learnFromUse ? learner.asSamples : []
         let gen = nextGeneration()
+        let epoch = samplesEpoch
         let delay = testRetrainDelay
         testRetrainDelay = 0
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -1106,6 +1123,10 @@ final class Daemon: @unchecked Sendable {
             self?.core.async {
                 guard let self else { return }
                 guard self.isCurrent(gen, what: reason) else { done?(nil); return }
+                guard epoch == self.samplesEpoch else {
+                    Log.info("a calibration replaced the samples while retraining (\(reason)); retraining from the new ones")
+                    return self.rebuildModel(reason: reason, then: done)
+                }
                 do { try self.store.saveModel(model, report: report) } catch {
                     Log.error("could not save model (\(reason)): \(error); keeping the previous model")
                     done?(nil); return
@@ -1146,6 +1167,8 @@ final class Daemon: @unchecked Sendable {
     /// `calibration_apply_merge {zones: [a, b], name}`: two zones the classifier confuses become one. Their samples
     /// are relabeled to the new zone, the model is retrained, and bindings on either zone now point at the merged one.
     private func applyMerge(zones: [String]?, name: String?, client c: WebSocketServer.Client) {
+        // The calibration in training would save its samples under the old zone ids over the relabeled ones.
+        guard !calibrationTraining else { return sendError("calibration_apply_merge: a calibration is still training; try again when it is done", to: c) }
         guard let zones, zones.count == 2, zones[0] != zones[1],
               let ia = config.zones.firstIndex(where: { $0.id == zones[0] }),
               let ib = config.zones.firstIndex(where: { $0.id == zones[1] }) else {
@@ -1252,7 +1275,7 @@ final class Daemon: @unchecked Sendable {
     /// (within 0.02), otherwise the confirmed set is discarded.
     private func adaptIfDue(ignoreIdle: Bool) {
         guard config.settings.learnFromUse, !adapting, learner.newSinceTrain >= UseLearner.retrainAfter,
-              calibration == nil, !sessions.tapCalibrating, let current = engine.model else { return }
+              calibration == nil, !calibrationTraining, !sessions.tapCalibrating, let current = engine.model else { return }
         guard ignoreIdle || Clock.now() - lastTapAt >= UseLearner.idleSeconds else { return }
         let calib = store.loadSamples()
         guard !calib.isEmpty else { return }
@@ -1261,6 +1284,7 @@ final class Daemon: @unchecked Sendable {
         let confirmed = learner.confirmed.filter { !disabled.contains($0.label) }
         let minConf = config.settings.minConfidence
         let gen = nextGeneration()
+        let epoch = samplesEpoch
         DispatchQueue.global(qos: .utility).async { [weak self] in
             let evalCalib = calib.filter { !disabled.contains($0.label) }
             // Ship guard, deterministic (VERIFY_01 bug 3):
@@ -1294,7 +1318,7 @@ final class Daemon: @unchecked Sendable {
                                           "accuracyBefore": Self.r4(calibCur), "accuracyAfter": Self.r4(calibNew),
                                           "heldOutBefore": Self.r4(heldCur), "heldOutAfter": Self.r4(heldNew)]
                 if keep, let (model, report) = final {
-                    guard self.isCurrent(gen, what: "learn-from-use") else { return }
+                    guard self.isCurrent(gen, what: "learn-from-use"), epoch == self.samplesEpoch else { return }
                     do { try self.store.saveModel(model, report: report) } catch {
                         Log.error("could not save the adapted model: \(error); keeping the previous model")
                         return

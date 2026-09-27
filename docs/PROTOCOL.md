@@ -342,8 +342,12 @@ decisions in memory only. Nothing is written to disk unless the app asks.
   `feedback_false` cancels the pending taps of the gesture of the tap it is about; `feedback_missed` cancels nothing.
   Feedback refused by its rate limit has no effect at all.
 - Retrains never overwrite newer ones: every retrain (calibration, feedback, zone changes, merges, learn from use)
-  takes a generation number, and a result finishing after a newer one was installed is discarded (logged). A new
-  calibration discards the confirmed set. Cmd+Z is noticed by polling the key state (Command + Z, ANSI layout),
+  takes a generation number, and a result finishing after a newer one was installed is discarded (logged). The one
+  exception is a calibration: it always ends with `done` (or `failed`), because the retrains that started while it
+  trained were built from the samples it replaces. Those are not installed: a zone change retrains again from the new
+  samples, feedback replies `retrained: false` (send it again), learn from use waits. While a calibration trains,
+  `calibration_start` and `calibration_apply_merge` are refused with an `error`. A new calibration discards the
+  confirmed taps of the zones it recalibrated. Cmd+Z is noticed by polling the key state (Command + Z, ANSI layout),
   which needs no extra permission.
 - Raw calibration windows: during calibration capture, 0.1 s before to 0.25 s after each captured tap (zones and
   negatives) is kept and written at the end of the session to `model/raw/<session>.gkrec` (lab format, one segment

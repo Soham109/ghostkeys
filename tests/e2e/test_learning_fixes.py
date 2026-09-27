@@ -232,3 +232,36 @@ async def test_high_confidence_taps_keep_one_in_three(connected, daemon):
     await taps(c, 15, gap=0.35, confidence=0.99)
     await asyncio.sleep(6.5)
     assert confirmed(daemon)["right-grille"] == 5
+
+
+# 8. A retrain that starts while a calibration trains must neither lose the calibration (it used to be dropped as
+#    "stale", with no done message and its samples never saved) nor install a model built from the samples the
+#    calibration replaced (docs/review/VERIFY_15_DAEMON.md).
+async def test_calibration_survives_a_retrain_started_while_it_trains(connected, daemon):
+    c = connected.client
+    await asyncio.sleep(1.5)
+    await calibrate(c, ["right-grille", "left-grille"], per=10)
+    cfg = (await c.request({"type": "config_get"}, "config"))["config"]
+    off = copy.deepcopy(cfg)
+    for z in off["zones"]:
+        if z["id"] == "top-strip":
+            z["enabled"] = False
+    await c.send({"type": "calibration_start", "zones": ["right-grille"], "target": 6})
+    await c.recv_matching(lambda m: m.get("type") == "calibration" and m.get("phase") == "started", timeout=5)
+    await c.send({"type": "calibration_zone", "zone": "right-grille"})
+    for _ in range(6):
+        await c.send({"type": "sim_spike", "live": True})
+        await asyncio.sleep(0.45)
+    await asyncio.sleep(0.5)
+    await c.send({"type": "sim_slow_retrain", "seconds": 3.0})   # the zone-change retrain below finishes last
+    await c.send({"type": "calibration_finish"})
+    await c.send({"type": "config_set", "config": off})            # starts that retrain while the calibration trains
+    done = await c.recv_matching(lambda m: m.get("type") == "calibration" and m.get("phase") in ("done", "failed"), timeout=30)
+    assert done["phase"] == "done" and done["recalibrated"] == ["right-grille"]
+    await asyncio.sleep(4.5)
+    assert samples(daemon)["right-grille"] == 6 and samples(daemon)["left-grille"] == 10
+    report = json.loads((daemon.config_dir / "model" / "calibration-report.json").read_text())
+    i = report["labels"].index("right-grille")
+    assert sum(report["confusion"][i]) == 6, "the installed model must be trained on the new right-grille samples"
+    st = await c.request({"type": "config_get"}, "config")
+    assert next(z for z in st["config"]["zones"] if z["id"] == "top-strip")["enabled"] is False
