@@ -23,7 +23,7 @@ Format:
   `PrecisionTests` now drive `tailLag` and pass), `CalibrationMerge` for partial recalibration (keeping his
   `recalibrated` bookkeeping and his retrain-if-zones-changed fix), `--log-taps`, the shim test runner, the docs.
   Where both sides only added (fields, flags), both kept.
-- **Left off `main`** (still on branch `demo-fixes`): the anchored feature window, strength augmentation on, and
+- **Left off `main`** (their commit c6419e4 is in `main`'s history, but its changes were not applied): the anchored feature window, strength augmentation on, and
   `TapFeatures.version` with its ignore-old-calibrations rule.
 - Why: Soham's real-data benchmark rejected both detection changes ("peak-aligned integrals" lost on 8 to 9
   metrics, doubles 0.737 -> 0.632; gain augmentation tripled typing false taps), while our evidence was one user's

@@ -187,8 +187,8 @@ App env: `GHOSTKEYSD_PATH`, `GHOSTKEYSD_ARGS` (e.g. `--dry-run`), `GK_PORT`, `GK
   already open it attaches to that "external" daemon instead of spawning. A stale binary or a leftover daemon
   silently runs old code: rebuild the one that wins, or kill the old process.
 - **Saved features are not versioned on `main`.** Changing what a feature means silently mismatches every saved
-  model and `samples.json`. Such a change must add versioning first (a ready version exists on branch
-  `demo-fixes`, commit c6419e4, which was kept off `main` on 27 Sep 2026; see DECISIONS.md).
+  model and `samples.json`. Such a change must add versioning first (a ready version exists in
+  commit c6419e4, which is in `main`'s history but whose changes were not applied on 27 Sep 2026; see DECISIONS.md).
 - A **disabled zone never fires**, and bindings on it do nothing, with no warning at the binding level
   (`--log-taps` prints "zone X is disabled").
 - A zone with only a `double` binding ignores single taps (the gesture is `tap`, which has no binding).

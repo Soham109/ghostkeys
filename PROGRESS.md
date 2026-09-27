@@ -96,7 +96,7 @@ Collect about 10 taps per zone, note which zone was really tapped, and count eac
 REJECTED low-confidence lines point to recalibrating those zones (more taps, at the strength actually used);
 "too soft" points to sensitivity; gate rejections point to the timing gates.
 
-### 2. Anchored feature window (Soham's 26 Sep ~21:18 work): on `demo-fixes` only, NOT on `main`
+### 2. Anchored feature window (Soham's 26 Sep ~21:18 work): in commit c6419e4 (in `main`'s history), changes NOT applied on `main`
 `FeatureExtractor` anchors integrals on 30% of the tap's peak; `TapFeatures.version = 2`; strength augmentation
 on; `ConfigStore` ignores other feature versions; `CalibrationMerge` keeps saved zones on partial recalibration;
 `DeviceInfo` maps Mac17,9; tests `AnchorTests`, `CalibrationMergeTests`. Evidence: `daemon/analysis/README.md`
@@ -110,7 +110,7 @@ Official swift-testing runs still need Swift 6 Command Line Tools or Xcode 16+; 
   learner, his own tail-guard fix, sonar work, app first-run and practice screens).
 - Our work was **merged into `main`** (merge commit, our side winning real conflicts) and pushed. Left off `main`:
   anchored feature window, strength augmentation, feature versioning (Soham's benchmark rejected the first two).
-  They remain on branch `demo-fixes` (c6419e4). Details: DECISIONS.md, 2026-09-27.
+  They stay in commit c6419e4, which is in `main`'s history (`git show c6419e4`). Details: DECISIONS.md, 2026-09-27.
 - Merged tree verified before pushing: daemon builds; 280 Swift tests pass via the shim runner (Detection 117,
   Acoustics 65 + 9 skipped without the real sonar recording, Vision 44, Integrations 54 + 1 disabled); app
   typecheck and lint pass.

@@ -97,7 +97,7 @@ On Mac17,9 every double tap came out as a single tap: 9 of 9 real doubles (5 rig
 
 ## Feature window anchored on the tap (26 Sep 2026, night)
 
-**Not on `main`** (kept on branch `demo-fixes`, commit c6419e4): the real-data benchmark above rejected peak-aligned
+**Not on `main`** (commit c6419e4 is in `main`'s history, but this change was not applied): the real-data benchmark above rejected peak-aligned
 integrals, and this change needs feature versioning. See DECISIONS.md, 27 Sep 2026.
 
 A second user (Mac17,9) calibrated firm and then tapped at half that strength or less: most taps came out
