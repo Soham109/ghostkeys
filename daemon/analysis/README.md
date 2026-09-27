@@ -30,6 +30,34 @@ python3 -m venv --system-site-packages .venv          # numpy, scipy, scikit-lea
 
 Copy the daemon's files before analysing them, and never modify the originals: `cp ~/Library/Application\ Support/Ghostkeys/daemon/model/*.json data/calib1/`.
 
+## Classifier upgrade (27 Sep 2026): ensemble + calibrated confidence
+
+The second real calibration (calib2) has 0.90 overall, but only 11 typing negatives, and 36% of them would be accepted as taps at 0.8 (before the typing gate).
+
+**How it was tested.**
+- `zonemodel_py.py` is a faithful Python port of the Swift classifier. It reproduces Swift's calib1 numbers to within 0.006.
+- `ml_eval.py`, `ml_candidates*.py`, `ml_boost.py` and `ml_session1.py` screen ideas on identical folds (10 x repeated stratified 5-fold).
+- The winner was then re-measured in Swift with `harness/ZZHarness.swift`.
+
+**Measured on the real data** (recall / wrong zone / typing negatives accepted, at 0.8):
+
+| Model | calib1 | calib2 | session1 |
+|---|---|---|---|
+| Current Swift model | 0.695/0.017/0.016 | 0.949/0.015/0.364 | 0.949/0.020/n.a. |
+| Shipped: 50/50 with logistic regression (C 0.3) + Platt | 0.683/0.013/0.003 | 0.929/0.010/0.009 | 0.920/0.003/n.a. (Python) |
+| Same plus boosted stumps | 0.681/0.028/0.006 | 0.913/0.009/0.009 | n.a. |
+| Platt calibration alone | 0.626/0.009/0.013 | 0.936/0.012/0.200 | n.a. |
+| Negative bank (other calibration's negatives), current model | no change | 0.952/0.016/0.345 | n.a. |
+
+- The lab recording through the real engine is unchanged: 5-fold 52/61, with slightly fewer extra taps. The rest recording and the diagnostics are unchanged: no false taps.
+- **Rejected or deferred:**
+  - Boosted stumps: worse.
+  - QDA: 10 to 20 samples per zone is too few.
+  - Per-zone isotonic calibration: 1 to 4 errors per zone is too few.
+  - Richer shape and spectral features: +3.5 recall points on session1 only. They can't be tested on the calibrations (only features are stored), they change the feature vector, and session1's zone blocks may confound them.
+  - Time-jitter and noise augmentation, and posture features: they need raw calibration windows (see the daemon spec in the report).
+  - Gain augmentation: rejected earlier (it tripled typing false taps).
+
 ## Regression after light-touch (26 Sep 2026, evening)
 
 The user, still on a firm-tap calibration, reported taps "all over the place and mostly not registering".

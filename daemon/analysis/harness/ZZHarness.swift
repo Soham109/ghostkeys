@@ -7,6 +7,8 @@ import Testing
     var s = zzLoadSamples(env["ZZ_SAMPLES"] ?? "/Users/sohamaggarwal/Desktop/Projects/ghostkeys/daemon/analysis/data/calib1/samples.json")
     let drop = Set((env["ZZ_DROP"] ?? "").split(separator: ",").map(String.init))
     s = s.filter { !drop.contains($0.label) }
+    let counts = Dictionary(grouping: s, by: \.label).mapValues(\.count)
+    s = s.filter { counts[$0.label]! >= 5 }
     let reps = Int(env["ZZ_REPS"] ?? "10")!
     print("ZZ rep\tlabel\tpred\tconf\tdist\treject\tood")
     for rep in 0..<reps {
@@ -19,7 +21,10 @@ import Testing
         }
         for f in 0..<5 {
             let tr = s.indices.filter { fold[$0] != f }
-            let m = ZoneModel.fit(features: tr.map { s[$0].features.values }, labels: tr.map { s[$0].label }, options: env["ZZ_AUG"] == "1" ? .init(augment: [1.4, 2.0]) : .init())
+            var o = ZoneModel.TrainingOptions()
+            if env["ZZ_BASE"] == "1" { o.ensemble = false }
+            if env["ZZ_NOCAL"] == "1" { o.calibrate = false }
+            let m = ZoneModel.fit(features: tr.map { s[$0].features.values }, labels: tr.map { s[$0].label }, options: o)
             for i in s.indices where fold[i] == f {
                 let r = m.classifyDetailed(s[i].features)
                 print("ZZ \(rep)\t\(s[i].label)\t\(r.zone)\t\(r.confidence)\t\(r.distance)\t\(m.rejectDistance)\t\(r.outOfDistribution)")

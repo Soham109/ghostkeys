@@ -16,6 +16,17 @@
 //   5. Reject option: if the Mahalanobis distance to the nearest zone mean is larger than a threshold
 //      learned from how spread out the calibration taps were, the answer is "none".
 //
+//   6. Ensemble (models trained since 27 Sep 2026): the probabilities above are averaged 50/50 with
+//      an L2-regularised multinomial logistic regression (C = 0.3, Logistic.swift), and the final
+//      confidence goes through Platt scaling fitted on 5-fold out-of-fold predictions, so
+//      minConfidence reads as "estimated chance the zone is right". Evaluated on the user's two real
+//      calibrations with 10 x repeated stratified 5-fold CV, at minConfidence 0.8
+//      (recall / wrong zone / typing negatives accepted):
+//        calib1 (8 zones, 31 negatives):  0.695/0.017/0.016  ->  0.683/0.013/0.003
+//        calib2 (7 zones, 11 negatives):  0.949/0.015/0.364  ->  0.929/0.010/0.009
+//      and unchanged on the lab recording (5-fold 52/61). Models saved without these fields
+//      classify exactly as before.
+//
 // The "none" class does not take part in the covariance or the Gaussian part: its samples are a
 // grab bag (every key on the keyboard, clicks) and would inflate the zone covariance.
 
@@ -63,6 +74,10 @@ public struct ZoneModel: Codable, Sendable {
     public static let onsetFloorRange: ClosedRange<Double> = 0.004...0.0175
     /// Feature indices the model ignores (set to 0 before whitening). Optional for old models.
     var ignoredFeatures: [Int]? = nil
+    /// Logistic-regression member of the ensemble, and the Platt scaling of the final confidence.
+    /// Both optional: models saved before they existed classify exactly as before.
+    var logistic: LogisticModel? = nil
+    var platt: PlattScaling? = nil
 
     public init(labels: [String]) { self.labels = labels }
 
@@ -158,6 +173,12 @@ public struct ZoneModel: Codable, Sendable {
         for c in 0..<nLabels {
             if c == noneIndex { p[c] = pNone } else { p[c] = 0.5 * pKnn[c] + 0.5 * (1 - pNone) * pGauss[c] }
         }
+        // Ensemble (models trained since 27 Sep 2026): average with a multinomial logistic
+        // regression over the same labels. See the header of this file for the evaluation.
+        if let lr = logistic, lr.weights.count == nLabels {
+            let pl = lr.probabilities(masked(f.values))
+            for c in 0..<nLabels { p[c] = 0.5 * p[c] + 0.5 * pl[c] }
+        }
         var top = 0
         for c in 0..<nLabels where p[c] > p[top] { top = c }
 
@@ -172,8 +193,16 @@ public struct ZoneModel: Codable, Sendable {
             return Result(zone: Self.noneLabel, confidence: Stats.clamp(1 - rejectDistance / dTop + 0.5, 0, 1),
                           x: 0.5, y: 0.5, probabilities: p, distance: dTop, outOfDistribution: true)
         }
-        // Soften confidence in the outer 20% of the accepted region so borderline taps fall below
-        // minConfidence rather than firing actions.
+        // Calibrated models: the confidence is an estimate of P(correct zone), fitted out of fold.
+        if logistic != nil {
+            let zone = labels[top]
+            let (x, y) = position(zone: zone, features: f.values)
+            let conf = platt?.apply(p[top]) ?? p[top]
+            return Result(zone: zone, confidence: Stats.clamp(conf, 0, 1), x: x, y: y, probabilities: p,
+                          distance: dTop, outOfDistribution: false)
+        }
+        // Older models: soften confidence in the outer 20% of the accepted region so borderline
+        // taps fall below minConfidence rather than firing actions.
         var conf = p[top]
         if rejectDistance < 1e300 {
             let edge = 0.8 * rejectDistance
@@ -236,6 +265,45 @@ public struct ZoneModel: Codable, Sendable {
         /// factors (see FeatureIndex.forceScaled), so the model accepts softer and harder taps than
         /// the ones calibrated.
         var augment: [Double] = []
+        /// Add the logistic-regression member (see the file header).
+        var ensemble = true
+        /// Fit Platt scaling of the confidence on inner out-of-fold predictions.
+        var calibrate = true
+        /// Starting point for the logistic regression (speeds up the inner fits).
+        var warmStart: LogisticModel? = nil
+    }
+
+    static func fitLogistic(_ m: ZoneModel, _ x: [[Double]], _ y: [String], warmStart: LogisticModel? = nil) -> LogisticModel? {
+        let index = Dictionary(uniqueKeysWithValues: m.labels.enumerated().map { ($1, $0) })
+        let yi = y.compactMap { index[$0] }
+        guard yi.count == x.count, m.labels.count >= 2 else { return nil }
+        return LogisticModel.fit(x.map { m.masked($0) }, yi, classes: m.labels.count, warmStart: warmStart)
+    }
+
+    /// Platt scaling from 5-fold out-of-fold predictions of the uncalibrated ensemble.
+    /// Every accepted (non-"none") prediction is a pair (raw confidence, was it the right zone);
+    /// typing negatives predicted as a zone count as wrong.
+    static func fitPlatt(_ x: [[Double]], _ y: [String], options: TrainingOptions, k: Int,
+                         warmStart: LogisticModel?) -> PlattScaling? {
+        var inner = options
+        inner.calibrate = false
+        inner.warmStart = warmStart
+        var fold = [Int](repeating: 0, count: x.count)
+        var rank: [String: Int] = [:]
+        for i in x.indices { fold[i] = rank[y[i], default: 0] % 5; rank[y[i], default: 0] += 1 }
+        var raw: [Double] = [], ok: [Bool] = []
+        for f in 0..<5 {
+            let tr = x.indices.filter { fold[$0] != f }
+            let te = x.indices.filter { fold[$0] == f }
+            guard !te.isEmpty, Set(tr.map { y[$0] }).count >= 2 else { continue }
+            let m = fit(features: tr.map { x[$0] }, labels: tr.map { y[$0] }, k: k, options: inner)
+            for i in te {
+                let r = m.classifyDetailed(TapFeatures(values: x[i], t: 0))
+                guard r.zone != noneLabel else { continue }
+                raw.append(r.confidence); ok.append(r.zone == y[i])
+            }
+        }
+        return PlattScaling.fit(raw: raw, correct: ok)
     }
 
     static func fit(features original: [[Double]], labels rawLabels: [String], k: Int = 5,
@@ -250,6 +318,12 @@ public struct ZoneModel: Codable, Sendable {
         }
         var model = fitCore(features: x, labels: y, groups: group, k: k)
         model.ignoredFeatures = options.ignored.isEmpty ? nil : options.ignored.sorted()
+        if options.ensemble {
+            model.logistic = fitLogistic(model, x, y, warmStart: options.warmStart)
+            if options.calibrate {
+                model.platt = fitPlatt(original, rawLabels, options: options, k: k, warmStart: model.logistic)
+            }
+        }
 
         // Tap strength distribution and the learned onset floor (from the real samples only).
         var quantiles: [String: [Double]] = [:]

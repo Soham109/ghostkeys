@@ -189,3 +189,57 @@ import Testing
         #expect(s.sensitivity == 0.4 && s.minConfidence == 0.85 && s.followUpConfidence == 0.5 && s.typingGateMs == 450)
     }
 }
+
+@Suite struct EnsembleTests {
+    @Test func logisticRegressionLearnsASimpleProblem() {
+        var rng = Rng(1)
+        var x: [[Double]] = [], y: [Int] = []
+        for i in 0..<120 {
+            let c = i % 3
+            x.append([Double(c) * 2 + rng.gaussian() * 0.5, rng.gaussian(), Double(c == 1 ? 1 : 0) + rng.gaussian() * 0.3])
+            y.append(c)
+        }
+        let m = LogisticModel.fit(x, y, classes: 3)
+        let acc = zip(x, y).filter { xi, yi in let p = m.probabilities(xi); return p.firstIndex(of: p.max()!) == yi }.count
+        #expect(Double(acc) / 120 > 0.9)
+        #expect(abs(m.probabilities(x[0]).reduce(0, +) - 1) < 1e-9)
+    }
+
+    @Test func plattScalingIsMonotoneAndFitsRates() {
+        // Raw 0.9 is right 95% of the time, raw 0.6 only 50%.
+        var raw: [Double] = [], ok: [Bool] = []
+        for i in 0..<100 { raw.append(0.9); ok.append(i % 20 != 0) }
+        for i in 0..<100 { raw.append(0.6); ok.append(i % 2 == 0) }
+        let p = PlattScaling.fit(raw: raw, correct: ok)!
+        #expect(p.apply(0.9) > p.apply(0.6))
+        #expect(abs(p.apply(0.9) - 0.95) < 0.05 && abs(p.apply(0.6) - 0.5) < 0.08)
+        #expect(PlattScaling.fit(raw: [0.9, 0.8], correct: [true, true]) == nil)
+    }
+
+    @Test func trainedModelsCarryTheEnsembleAndStayAccurate() {
+        let cal = captureCalibration(zones: ZoneSpec.six, perZone: 15, keystrokes: 30)
+        let t = Trainer()
+        for (f, l) in zip(cal.features, cal.labels) { t.add(f, label: l) }
+        let (m, report) = t.train()
+        #expect(m.logistic != nil)
+        // Platt scaling needs some held-out mistakes to calibrate against; these synthetic zones may
+        // produce none, in which case the raw ensemble confidence is used (platt == nil).
+        #expect(report.overall > 0.9)
+        let test = ClassifierTests.testSet(zones: ZoneSpec.six, perZone: 10, seed: 404)
+        let ok = test.filter { let r = m.classify($0.0); return r.zone == $0.1 && r.confidence >= 0.8 }.count
+        #expect(Double(ok) / Double(test.count) > 0.85, "\(ok)/\(test.count)")
+    }
+
+    @Test func modelsWithoutTheEnsembleDecodeAndClassifyAsBefore() throws {
+        let cal = captureCalibration(zones: [.leftPalm, .rightGrille, .topStrip], perZone: 12, keystrokes: 15)
+        var o = ZoneModel.TrainingOptions(); o.ensemble = false
+        let old = ZoneModel.fit(features: cal.features.map(\.values), labels: cal.labels, options: o)
+        #expect(old.logistic == nil)
+        let back = try jsonRoundTrip(old)   // no "logistic"/"platt" keys in the JSON, like pre-ensemble files
+        #expect(back.logistic == nil && back.platt == nil)
+        for f in cal.features.prefix(10) {
+            let a = old.classify(f), b = back.classify(f)
+            #expect(a.zone == b.zone && abs(a.confidence - b.confidence) < 1e-12)
+        }
+    }
+}

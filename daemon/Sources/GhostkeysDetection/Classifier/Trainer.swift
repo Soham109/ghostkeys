@@ -108,7 +108,10 @@ public final class Trainer {
             let trainIdx = features.indices.filter { fold[$0] != f }
             let testIdx = features.indices.filter { fold[$0] == f }
             guard !testIdx.isEmpty, !trainIdx.isEmpty else { continue }
-            let m = ZoneModel.fit(features: trainIdx.map { features[$0] }, labels: trainIdx.map { labels[$0] }, options: options)
+            // The report scores the predicted zone only, which Platt scaling never changes: skip it.
+            var foldOptions = options
+            foldOptions.calibrate = false
+            let m = ZoneModel.fit(features: trainIdx.map { features[$0] }, labels: trainIdx.map { labels[$0] }, options: foldOptions)
             for i in testIdx {
                 let predicted = m.classify(TapFeatures(values: features[i], t: 0)).zone
                 if let a = index[labels[i]], let b = index[predicted] { confusion[a][b] += 1 }
