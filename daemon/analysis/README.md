@@ -30,6 +30,16 @@ python3 -m venv --system-site-packages .venv          # numpy, scipy, scikit-lea
 
 Copy the daemon's files before analysing them, and never modify the originals: `cp ~/Library/Application\ Support/Ghostkeys/daemon/model/*.json data/calib1/`.
 
+## Real-data benchmark (27 Sep 2026, night): `bench/`
+
+`bench/run.sh` replays every real recording and calibration through the library, as the daemon uses it, and prints recall, wrong zone, false taps and latency. It is the gate for every detection change: `run.sh --compare bench/results/2026-09-27-after.json`. `bench/fetch-data.sh` copies new calibrations and diagnostics into `data/` (copies only). Suites, data and limits: `docs/review/DETECTION_AUDIT.md`, section 3.
+
+What it found and what was fixed (full table in the audit, section 2):
+- **Models do not transfer across sessions, and say so with high confidence.** Train on one calibration, test on another: 6.8% of candidates became confident wrong zones or accepted typing spikes (16.5% with the saved model files). The live model's reject distance was 31.2 against a normal spread of 10. Now 3.3% (1.4%), through a q99 reject distance, an upgrade of old models on load, and `FamiliarityGuard` (strict mode when recent candidates sit far from the calibration).
+- **The ringing-tail guard blocked the second tap of quick doubles** (it compared a rising tap with its own rising edge). Composed doubles from real lap taps: 0 of 19 fired, now 14 of 19.
+- **Look-ahead:** a key press or pointer event within 300 ms after a grille tap cancels its pending double.
+- Tried and rejected on this data: peak-aligned integrals, a pooled tap vs non-tap gate, Platt scaling on time-blocked folds, strength ranges, dropping feature groups, a quiet-before-tap rule (numbers in the audit, section 5).
+
 ## Classifier upgrade (27 Sep 2026): ensemble + calibrated confidence
 
 The second real calibration (calib2) has 0.90 overall, but only 11 typing negatives, and 36% of them would be accepted as taps at 0.8 (before the typing gate).

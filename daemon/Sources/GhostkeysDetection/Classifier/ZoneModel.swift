@@ -27,6 +27,11 @@
 //      and unchanged on the lab recording (5-fold 52/61). Models saved without these fields
 //      classify exactly as before.
 //
+//   7. Precision (27 Sep 2026): the reject distance is the 99th percentile of the out-of-fold spread (it used
+//      to be max(1.3 q95, 1.1 max), which one outlier could inflate 3x), and `typicalDistance` (the median)
+//      feeds FamiliarityGuard in the engine. Models saved earlier get both from `upgraded()` when loaded.
+//      Evaluated with daemon/analysis/bench; see docs/review/DETECTION_AUDIT.md.
+//
 // The "none" class does not take part in the covariance or the Gaussian part: its samples are a
 // grab bag (every key on the keyboard, clicks) and would inflate the zone covariance.
 
@@ -78,6 +83,9 @@ public struct ZoneModel: Codable, Sendable {
     /// Both optional: models saved before they existed classify exactly as before.
     var logistic: LogisticModel? = nil
     var platt: PlattScaling? = nil
+    /// Median out-of-fold distance of the calibration taps to their zone mean: how far a typical tap of this
+    /// user's calibration sits. Used by FamiliarityGuard. Optional: filled by `upgraded()` for older models.
+    public var typicalDistance: Double? = nil
 
     public init(labels: [String]) { self.labels = labels }
 
@@ -389,9 +397,15 @@ public struct ZoneModel: Codable, Sendable {
             }
         }
         if spread.count >= 5 {
-            // Generous margins: a missed tap is annoying, but the none class, the k-NN vote and
-            // minConfidence also stand between an odd spike and an action.
-            model.rejectDistance = max(1.3 * Stats.quantile(spread, 0.95), 1.1 * (spread.max() ?? 0))
+            // Precision first (27 Sep 2026): reject beyond the 99th percentile of the out-of-fold spread. The old
+            // rule, max(1.3 x q95, 1.1 x max), let one outlier set the limit: the user's live model had 31.2 against
+            // a q95 of 10.0, i.e. no rejection at all, and taps from another session (posture, surface, strength)
+            // were then accepted as confident wrong zones. Measured with analysis/bench: q95 alone halves those
+            // cross-session false accepts (0.068 -> 0.031) for 0.8 points of in-session recall; with the engine's
+            // FamiliarityGuard doing the cross-session work, q99 gets 0.033 at 0.2 points and keeps more doubles
+            // than q95 or 1.3 x q95 (2 of 19 composed doubles more).
+            model.rejectDistance = Stats.quantile(spread, 0.99)
+            model.typicalDistance = Stats.quantile(spread, 0.5)
         }
         let rawMeans = geo.rawMeans, counts = geo.counts
 
@@ -493,5 +507,46 @@ public struct ZoneModel: Codable, Sendable {
             for i in 0..<p { z[i] = (x[i] - mean[i]) / scale[i] }
             return LinearAlgebra.forwardSolve(cholesky, n: p, z)
         }
+    }
+}
+
+// MARK: Upgrading models saved by older builds
+
+extension ZoneModel {
+    /// Leave-one-out distances of the stored zone samples to their own zone mean (recomputed without the sample),
+    /// in the model's whitened space. Zones with fewer than 3 samples are skipped.
+    func leaveOneOutSpread() -> [Double] {
+        var sums: [Int: [Double]] = [:], counts: [Int: Int] = [:]
+        for (i, s) in samples.enumerated() where sampleLabels[i] < classMeans.count && !classMeans[sampleLabels[i]].isEmpty {
+            let c = sampleLabels[i]
+            if var acc = sums[c] { for j in acc.indices { acc[j] += s[j] }; sums[c] = acc } else { sums[c] = s }
+            counts[c, default: 0] += 1
+        }
+        var out: [Double] = []
+        for (i, s) in samples.enumerated() {
+            let c = sampleLabels[i]
+            guard let sum = sums[c], let n = counts[c], n >= 3 else { continue }
+            var d = 0.0
+            for j in s.indices { let m = (sum[j] - s[j]) / Double(n - 1); d += (s[j] - m) * (s[j] - m) }
+            out.append(d.squareRoot())
+        }
+        return out
+    }
+
+    /// The same model with the precision rules of newer builds, for models saved before them (no-op otherwise):
+    /// `typicalDistance` is filled and the reject distance is tightened to about the 95th percentile of the
+    /// calibration spread, never loosened.
+    ///
+    /// The out-of-fold spread is not stored, so it is estimated from the stored whitened samples with
+    /// leave-one-out zone means. On the three real calibrations that estimate runs low (median 0.94x, q95 0.72x to
+    /// 0.80x the out-of-fold values, because the whitening was fitted with the sample in it), hence the factors.
+    public func upgraded() -> ZoneModel {
+        guard typicalDistance == nil, isTrained else { return self }
+        let spread = leaveOneOutSpread()
+        guard spread.count >= 5 else { return self }
+        var m = self
+        m.typicalDistance = Stats.quantile(spread, 0.5) / 0.94
+        m.rejectDistance = min(rejectDistance, 1.3 * Stats.quantile(spread, 0.95))
+        return m
     }
 }

@@ -1,0 +1,365 @@
+{
+  "label" : "after",
+  "metrics" : [
+    {
+      "better" : "up",
+      "key" : "cv.calib1.recall",
+      "note" : "zone taps accepted with the right zone",
+      "value" : 0.6851239669421487
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib1.wrongZone",
+      "note" : "zone taps accepted as another zone",
+      "value" : 0.009917355371900827
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib1.negAccepted",
+      "note" : "typing\/click negatives accepted as a tap (before the typing gate)",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib1.grilleDouble",
+      "note" : "estimated grille double-tap success",
+      "value" : 0.5236505102040816
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib_bak.recall",
+      "note" : "zone taps accepted with the right zone",
+      "value" : 0.7352941176470589
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib_bak.wrongZone",
+      "note" : "zone taps accepted as another zone",
+      "value" : 0.025490196078431372
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib_bak.negAccepted",
+      "note" : "typing\/click negatives accepted as a tap (before the typing gate)",
+      "value" : 0.012244897959183673
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib_bak.grilleDouble",
+      "note" : "estimated grille double-tap success",
+      "value" : 0.26565
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib2.recall",
+      "note" : "zone taps accepted with the right zone",
+      "value" : 0.9276923076923077
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib2.wrongZone",
+      "note" : "zone taps accepted as another zone",
+      "value" : 0.007692307692307693
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib2.negAccepted",
+      "note" : "typing\/click negatives accepted as a tap (before the typing gate)",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib2.grilleDouble",
+      "note" : "estimated grille double-tap success",
+      "value" : 0.7981625000000001
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib_bak.wrongZone",
+      "note" : "",
+      "value" : 0.0196078431372549
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib_bak.negAccepted",
+      "note" : "",
+      "value" : 0.08163265306122448
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib1>calib_bak.recall",
+      "note" : "",
+      "value" : 0.22549019607843138
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib2.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib2.negAccepted",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib1>calib2.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib1.wrongZone",
+      "note" : "",
+      "value" : 0.019801980198019802
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib1.negAccepted",
+      "note" : "",
+      "value" : 0.03225806451612903
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib_bak>calib1.recall",
+      "note" : "",
+      "value" : 0.5544554455445545
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib2.wrongZone",
+      "note" : "",
+      "value" : 0.11666666666666667
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib2.negAccepted",
+      "note" : "",
+      "value" : 0.09090909090909091
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib_bak>calib2.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib1.wrongZone",
+      "note" : "",
+      "value" : 0.008264462809917356
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib1.negAccepted",
+      "note" : "",
+      "value" : 0.06451612903225806
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib2>calib1.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib_bak.wrongZone",
+      "note" : "",
+      "value" : 0.00980392156862745
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib_bak.negAccepted",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib2>calib_bak.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.all.falseAccept",
+      "note" : "wrong-zone taps + accepted negatives, per candidate, over all train\/test session pairs",
+      "value" : 0.03297997644287397
+    },
+    {
+      "better" : "info",
+      "key" : "cross.all.recall",
+      "note" : "right-zone accepts across sessions (a bonus, not the goal)",
+      "value" : 0.1184407796101949
+    },
+    {
+      "better" : "down",
+      "key" : "xsaved.all.falseAccept",
+      "note" : "same, with the model files the daemon saved (the live model is calib2's)",
+      "value" : 0.014134275618374558
+    },
+    {
+      "better" : "info",
+      "key" : "xsaved.all.recall",
+      "note" : "right-zone accepts across sessions (a bonus, not the goal)",
+      "value" : 0.09745127436281859
+    },
+    {
+      "better" : "up",
+      "key" : "s1.onsetRecall",
+      "note" : "labelled taps the onset detector finds",
+      "value" : 0.9016393442622951
+    },
+    {
+      "better" : "up",
+      "key" : "s1.recall",
+      "note" : "held-out lap taps accepted with the right zone",
+      "value" : 0.8721311475409836
+    },
+    {
+      "better" : "down",
+      "key" : "s1.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1.handlingTapsPerMin",
+      "note" : "taps fired while the laptop was being handled\/repositioned on the lap",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1.handlingGesturesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1.tapLatencyMsP50",
+      "note" : "onset to tap event",
+      "value" : 80.36041259765625
+    },
+    {
+      "better" : "down",
+      "key" : "s1.tapLatencyMsP90",
+      "note" : "",
+      "value" : 111.74201965332031
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.wrongZone",
+      "note" : "lap taps accepted as the wrong zone by other sessions' models",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "s1x.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.saved.wrongZone",
+      "note" : "lap taps accepted as the wrong zone by other sessions' models",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "s1x.saved.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.saved.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "robust.sens0.2.recall",
+      "note" : "lap taps recognised when the onset triggers elsewhere than in calibration",
+      "value" : 0.8360655737704918
+    },
+    {
+      "better" : "down",
+      "key" : "robust.sens0.2.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "robust.sens0.8.recall",
+      "note" : "lap taps recognised when the onset triggers elsewhere than in calibration",
+      "value" : 0.8688524590163934
+    },
+    {
+      "better" : "down",
+      "key" : "robust.sens0.8.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "robust.soft0.6x.recall",
+      "note" : "lap taps recognised when the onset triggers elsewhere than in calibration",
+      "value" : 0.8852459016393442
+    },
+    {
+      "better" : "down",
+      "key" : "robust.soft0.6x.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "splice.double.success",
+      "note" : "real grille taps composed into doubles (250 ms apart) that fire",
+      "value" : 0.7368421052631579
+    },
+    {
+      "better" : "down",
+      "key" : "splice.double.keyAfter150",
+      "note" : "same doubles followed by a key press 150 ms later that still fire",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "splice.double.mouseAfter100",
+      "note" : "same doubles followed by pointer activity 100 ms later that still fire",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "splice.strayGestures",
+      "note" : "gestures anywhere else in the composed streams",
+      "value" : 1
+    },
+    {
+      "better" : "down",
+      "key" : "rest.tapsPerMin",
+      "note" : "desk at rest; one real ~30 mg disturbance at 3.9 s",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "rest.gesturesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "diag.tapsPerMin",
+      "note" : "two 3 s 'missed right-grille' reports: one holds no tap, the other a tap buried in trackpad use",
+      "value" : 0
+    }
+  ]
+}

@@ -12,13 +12,31 @@
 //           -> gates -> .candidate -> classify -> .tap (+ .gesture "tap" for immediate zones)
 //   +doubleWindow after the last tap -> .gesture for zones in zonesNeedingMultiTap
 // Pulses that ring longer than 80 ms delay the decision until they end (the pulse width limit is 160 ms).
+//
+// Precision layers after the classifier (27 Sep 2026, docs/review/DETECTION_AUDIT.md):
+//   - FamiliarityGuard: when recent candidates sit far from the calibration (another posture or surface), only
+//     clear-cut taps fire (confidence >= 0.9, within 3 typical distances). `isUnfamiliar` exposes the state.
+//   - Look-ahead: a key press or pointer event within 300 ms after a multi-tap zone's tap cancels the pending
+//     double/triple (the hands were heading for the keyboard or trackpad). No latency cost: it was waiting anyway.
 
 import Foundation
 
 /// Streaming tap detector + classifier + gesture grammar. Feed every IMU sample in order.
 public final class TapEngine {
     public var settings: DetectionSettings
-    public var model: ZoneModel?
+    /// The zone model. Models saved by older builds are upgraded on assignment (`ZoneModel.upgraded()`: tighter
+    /// reject distance, typical distance for the familiarity guard).
+    public var model: ZoneModel? {
+        didSet {
+            if let m = model, m.typicalDistance == nil, m.isTrained { model = m.upgraded() }
+            if oldValue?.labels != model?.labels || oldValue?.typicalDistance != model?.typicalDistance { familiarity.reset() }
+        }
+    }
+
+    /// Strict mode when recent candidates stop looking like the calibration (see FamiliarityGuard.swift).
+    public var familiarity = FamiliarityGuard()
+    /// True while taps look unlike the calibration (another posture or surface): only clear-cut taps fire.
+    public var isUnfamiliar: Bool { familiarity.isUnfamiliar }
 
     /// Zones that have a binding needing more than one tap (double, triple, rhythm, sequence).
     /// Taps in other zones emit gesture "tap" immediately; taps in these zones wait for the
@@ -70,6 +88,8 @@ public final class TapEngine {
     /// Key events can be delivered a little after the vibration they caused.
     private let lateInputTolerance = 0.08
     private let trackpadGate = 0.15
+    /// How long after a multi-tap zone's tap a key press or pointer event still cancels its gesture.
+    private let lookAheadGate = 0.30
 
     private struct InFlight {
         var info: OnsetInfo
@@ -99,6 +119,7 @@ public final class TapEngine {
         gravity.reset()
         tilt.reset()
         grammar.reset()
+        familiarity.reset()
         keyTimes.removeAll(); keyUpTimes.removeAll(); mouseTimes.removeAll()
         inFlight.removeAll()
         activePulseIndex = nil
@@ -108,7 +129,14 @@ public final class TapEngine {
         var out: [DetectorEvent] = []
         let index = history.count
         history.append(s)
-        recordInput(context, t: s.t)
+        let (newKeys, newPointer) = recordInput(context, t: s.t)
+        // Look-ahead: a key press or pointer event shortly after a tap means the hands were on their way to the
+        // keyboard or trackpad, and the spike was most likely a palm landing or a hand brushing the chassis. A
+        // double/triple still waiting for its window to close is dropped (no latency cost: it was waiting anyway).
+        if let last = grammar.pendingLastTap {
+            let lookAhead = min(settings.doubleWindowMs / 1000, lookAheadGate)
+            if (newKeys + newPointer).contains(where: { $0 > last && $0 - last <= lookAhead }) { grammar.cancelPending() }
+        }
 
         onset.sensitivity = settings.sensitivity
         onset.lightTouch = settings.lightTouch
@@ -190,7 +218,9 @@ public final class TapEngine {
         guard let model else { return out }
 
         let r = model.classifyDetailed(features)
-        guard r.zone != ZoneModel.noneLabel else {
+        // Every classified candidate informs the familiarity guard, taps or not.
+        let familiar = familiarity.admit(r, model: model, t: t)
+        guard r.zone != ZoneModel.noneLabel, familiar else {
             out.append(.rejected(t: t, reason: .low_confidence))
             return out
         }
@@ -233,12 +263,15 @@ public final class TapEngine {
         return TapEvent(t: f.info.t, zone: r.zone, confidence: r.confidence, x: r.x, y: r.y, strength: strength, modifiers: f.modifiers)
     }
 
-    private func recordInput(_ c: InputContext, t: Double) {
+    /// Returns the key-down and pointer event times first seen at this sample.
+    @discardableResult
+    private func recordInput(_ c: InputContext, t: Double) -> (keys: [Double], pointer: [Double]) {
         // secondsSinceX is "time since the last event"; turning it into an absolute event time lets us
         // look for key presses that are reported slightly after the vibration they caused.
+        var keys: [Double] = [], pointer: [Double] = []
         if c.secondsSinceKey < 60 {
             let k = t - c.secondsSinceKey
-            if keyTimes.last.map({ abs(k - $0) > 0.005 }) ?? true { append(&keyTimes, k) }
+            if keyTimes.last.map({ abs(k - $0) > 0.005 }) ?? true { append(&keyTimes, k); keys.append(k) }
         }
         if c.secondsSinceKeyUp < 60 {
             let u = t - c.secondsSinceKeyUp
@@ -246,8 +279,9 @@ public final class TapEngine {
         }
         if c.secondsSinceMouse < 60 {
             let m = t - c.secondsSinceMouse
-            if mouseTimes.last.map({ abs(m - $0) > 0.005 }) ?? true { append(&mouseTimes, m) }
+            if mouseTimes.last.map({ abs(m - $0) > 0.005 }) ?? true { append(&mouseTimes, m); pointer.append(m) }
         }
+        return (keys, pointer)
     }
 
     private func append(_ a: inout [Double], _ v: Double) {
