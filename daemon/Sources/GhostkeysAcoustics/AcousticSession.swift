@@ -4,6 +4,7 @@
 // on the speaker. Tests drive the detectors with synthetic buffers instead. Keep sessions short; see README.md.
 // ============================================================================================================
 import AVFoundation
+import AudioToolbox
 import Foundation
 
 /// Microphone capture for sound mode: mono, 48 kHz, requested 256-frame buffers, plus a 200 ms ring buffer.
@@ -139,6 +140,15 @@ public final class AcousticSession: @unchecked Sendable {
         }
         let engine = AVAudioEngine()
         let input = engine.inputNode
+        // Always listen through the Mac's own microphone: with AirPods connected macOS makes their mic the default,
+        // and sonar's echoes from the built-in speakers never reach it.
+        var usedDevice: AudioObjectID? = nil
+        if var mic = AudioDeviceSummary.builtInInputDevice(), mic != AudioDeviceSummary.defaultDevice(kAudioHardwarePropertyDefaultInputDevice),
+           let unit = input.audioUnit {
+            let err = AudioUnitSetProperty(unit, kAudioOutputUnitProperty_CurrentDevice, kAudioUnitScope_Global, 0,
+                                           &mic, UInt32(MemoryLayout<AudioObjectID>.size))
+            if err == noErr { usedDevice = mic }
+        }
         // Intentionally no `input.setVoiceProcessingEnabled(true)` (see type comment).
         let hwFormat = input.outputFormat(forBus: 0)
         guard hwFormat.sampleRate > 0, hwFormat.channelCount > 0 else { throw SessionError.noInputDevice }
@@ -159,7 +169,7 @@ public final class AcousticSession: @unchecked Sendable {
             i.microphoneMode = Self.name(AVCaptureDevice.activeMicrophoneMode)
             i.preferredMicrophoneMode = Self.name(AVCaptureDevice.preferredMicrophoneMode)
         }
-        i.device = AudioDeviceSummary.defaultInput()
+        i.device = usedDevice.flatMap { AudioDeviceSummary.summary($0, input: true) } ?? AudioDeviceSummary.defaultInput()
         setUpProbes(rate: hwFormat.sampleRate, channels: Int(hwFormat.channelCount))
         statsLock.lock(); info = i; firstHostTime = nil; framesSinceFirst = 0; expectedNext = nil; statsLock.unlock()
         input.installTap(onBus: 0, bufferSize: Self.bufferFrames, format: hwFormat) { [weak self] buffer, time in
@@ -169,7 +179,11 @@ public final class AcousticSession: @unchecked Sendable {
         try engine.start()
         self.engine = engine
         isRunning = true
+        let startedAt = Date()
+        let pinnedMic = usedDevice != nil
         configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
+            // Pinning the built-in mic itself reports a configuration change right after start; that one is ours.
+            if pinnedMic, Date().timeIntervalSince(startedAt) < 1.5, engine.isRunning || (try? engine.start()) != nil { return }
             // Device or route changed (headphones plugged in, Bluetooth connected...): silence the pilot at once.
             // AVAudioEngine also stops itself here, so the microphone is dead until the owner reopens it.
             self?.stopPilotTone(immediately: true)

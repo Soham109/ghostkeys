@@ -30,6 +30,22 @@ public struct AudioDeviceSummary: Sendable, CustomStringConvertible {
     public static func defaultInput() -> AudioDeviceSummary? { summary(defaultDevice(kAudioHardwarePropertyDefaultInputDevice), input: true) }
     public static func defaultOutput() -> AudioDeviceSummary? { summary(defaultDevice(kAudioHardwarePropertyDefaultOutputDevice), input: false) }
 
+    /// The Mac's own microphone (built-in transport with input channels), whatever macOS has chosen as the default.
+    /// Sonar must listen where its tones are played; a Bluetooth headset mic hears nothing of the built-in speakers.
+    public static func builtInInputDevice() -> AudioObjectID? {
+        var address = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices, mScope: kAudioObjectPropertyScopeGlobal,
+                                                 mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(0)
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size) == noErr, size > 0 else { return nil }
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
+        guard AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &address, 0, nil, &size, &ids) == noErr else { return nil }
+        for id in ids {
+            guard let s = summary(id, input: true), s.inputChannels > 0, s.transport == "bltn" else { continue }
+            return id
+        }
+        return nil
+    }
+
     static func defaultDevice(_ selector: AudioObjectPropertySelector) -> AudioObjectID? {
         var device = AudioObjectID(0)
         var size = UInt32(MemoryLayout<AudioObjectID>.size)

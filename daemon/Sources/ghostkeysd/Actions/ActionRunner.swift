@@ -209,6 +209,12 @@ final class ActionRunner: @unchecked Sendable {
     }
 
     private func volume(step: Double) throws {
+        // Press the real volume keys so macOS shows its own volume indicator. One press is 1/16 of the range (6.25%).
+        if step != 0, (try? EventPoster.requireTrust()) != nil {
+            let presses = SafeNumbers.int(abs(step) / 6.25, in: 1...16) ?? 1
+            for _ in 0..<presses { try EventPoster.auxKey(step > 0 ? .soundUp : .soundDown) }
+            return
+        }
         guard let current = Self.readVolume() else { throw ActionError("could not read the output volume (digital output?)") }
         let next = max(0, min(100, current + (SafeNumbers.int(step, in: -100...100) ?? 0)))
         try osa("set volume output volume \(next)")
