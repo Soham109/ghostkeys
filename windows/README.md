@@ -2,7 +2,7 @@
 
 The Windows version of the Ghostkeys daemon. It speaks the same WebSocket protocol as the Swift daemon (`docs/PROTOCOL.md`), so the same Electron app drives it without knowing which one it talks to.
 
-Status: compiles for Windows (`x86_64-pc-windows-msvc` and `x86_64-pc-windows-gnu`), and everything that is not a Windows API call is tested on macOS (100 tests). It has **not yet run on Windows hardware**. The "Not validated yet" list at the end says what must be checked on a real machine.
+Status: compiles for Windows (`x86_64-pc-windows-msvc` and `x86_64-pc-windows-gnu`), and everything that is not a Windows API call is tested on macOS (102 tests). It has **not yet run on Windows hardware**. The "Not validated yet" list at the end says what must be checked on a real machine.
 
 ## What Windows laptops can sense
 
@@ -94,6 +94,10 @@ Everything in PROTOCOL.md is accepted, and a test reads PROTOCOL.md itself and r
 - Sound sessions follow the Mac: `sound_session_start` opens the mic for `seconds` (default `settings.sound.sessionSeconds`, 30; at most 120), a `session` message goes out on start, every 5 s, and on stop with a `reason`. Pausing ends the session. Windows adds one opt-in key, `settings.sound.alwaysOn: true`, which keeps the mic open for knocks without a session. It exists for clamshell laptops with no accelerometer, where the mic is the only knock sensor. Windows shows its microphone-in-use icon the whole time.
 - `air_session_start` and `calibration_taptype_start` answer with a failure (`session` with `reason: "error"`, `calibration` with `phase: "taptype_failed"`).
 - `request_permission` answers with `hello` (nothing to prompt for).
+- Zone-model features answer clearly instead of pretending: `calibration_apply_recommendation`, `calibration_apply_merge` and `diagnostics_export` reply with an `error`; `feedback_missed` / `feedback_false` reply with `feedback`, `retrained: false`, `reason: "not calibrated yet"` (same rate limit as the Mac: one every 2 s, 20 per minute).
+- Sonar is Mac only. Every client gets a `session` message with `kind: "sonar"`, `active: false` and `enabled` (the setting). `sonar_session_start` answers with a sonar `session` carrying `reason: "error"`; `sonar_session_stop` turns `settings.sonar.enabled` off (saved, config broadcast), as on the Mac.
+- `rejected` for a knock dropped by the typing gate or pause carries `zone: "anywhere"` and `confidence: 1`; motion and burst rejections carry neither. No rejection carries `strength` (the Windows detectors do not measure the peak in milli-g). The `debug` stream is accepted but no `candidate` messages are sent yet.
+- `settings.followUpConfidence` and `settings.lightTouch` are read and saved with the Mac's defaults (0.5, false) but change nothing on Windows: every knock has confidence 1 and the knock detector has its own floor. `settings.sound` / `camera` / `sonar` and any other keys are kept as written.
 
 ## Security
 

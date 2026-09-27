@@ -126,7 +126,8 @@ fn errors(out: &[Outgoing]) -> Vec<String> {
 fn hello_reports_hardware_honestly() {
     let mut r = rig("hello-none", false, false, false);
     let out = r.core.connect(1);
-    assert_eq!(out.len(), 5, "hello, status, config, sound and air session state");
+    assert_eq!(out.len(), 6, "hello, status, config, sound / air / sonar session state");
+    assert!(matches!(&out[5].msg, OutMsg::Session { kind, active: false, .. } if kind == "sonar"));
     assert!(matches!(&out[3].msg, OutMsg::Session { kind, active: false, .. } if kind == "sound"));
     let OutMsg::Hello { sensors, permissions, .. } = &out[0].msg else { panic!() };
     assert!(!sensors.imu && !sensors.gyro && !sensors.lid && !sensors.light);
@@ -168,6 +169,7 @@ fn typing_gate_and_pause_reject_knocks() {
     r.mocks.input.0.lock().unwrap().idle_seconds = 0.1;
     let out = r.accel(1.0, 1.5, &[1.2]);
     assert_eq!(rejections(&out), ["typing"]);
+    assert!(out.iter().any(|o| matches!(&o.msg, OutMsg::Rejected { zone: Some(z), confidence: Some(c), .. } if z == "anywhere" && *c == 1.0)));
 
     r.mocks.input.0.lock().unwrap().idle_seconds = 99.0;
     let out = r.send(1, json!({"type":"pause"}));
@@ -364,4 +366,42 @@ fn unknown_messages_get_errors() {
     let OutMsg::Catalog { catalog } = &r.send(1, json!({"type":"catalog_get"}))[0].msg else { panic!() };
     assert_eq!(catalog["apps"][0]["key"], "excel");
     assert!(matches!(&r.send(1, json!({"type":"request_permission","which":"accessibility"}))[0].msg, OutMsg::Hello { .. }));
+}
+
+#[test]
+fn mac_only_requests_get_clear_answers() {
+    let mut r = rig("maconly", true, false, true);
+    r.core.connect(1);
+    assert!(errors(&r.send(1, json!({"type":"calibration_apply_recommendation"})))[0].contains("not available on Windows"));
+    assert!(errors(&r.send(1, json!({"type":"calibration_apply_merge","zones":["a","b"],"name":"AB"})))[0].contains("not available on Windows"));
+    assert!(errors(&r.send(1, json!({"type":"diagnostics_export"})))[0].contains("not available on Windows"));
+    let out = r.send(1, json!({"type":"sonar_session_start"}));
+    assert!(matches!(&out[0].msg, OutMsg::Session { kind, active: false, error: Some(_), .. } if kind == "sonar"));
+    assert_eq!(out[0].target, Target::Client(1));
+
+    let out = r.send(1, json!({"type":"feedback_missed","zone":"anywhere"}));
+    let OutMsg::Feedback { kind, fields } = &out[0].msg else { panic!("{out:?}") };
+    assert_eq!(kind, "missed");
+    assert_eq!(fields["zone"], "anywhere");
+    assert_eq!(fields["retrained"], false);
+    assert_eq!(out[0].target, Target::Client(1));
+    assert!(errors(&r.send(1, json!({"type":"feedback_false"})))[0].contains("at most one every 2 s"));
+}
+
+#[test]
+fn sonar_stop_turns_the_setting_off() {
+    let mut r = rig("sonaroff", false, false, true);
+    r.core.connect(1);
+    let mut cfg = serde_json::to_value(r.core.config()).unwrap();
+    cfg["settings"]["sonar"] = json!({"enabled": true, "sessionSeconds": 30, "autoApps": []});
+    r.send(1, json!({"type":"config_set","config":cfg}));
+    assert!(r.core.config().settings.sonar_enabled());
+    let out = r.send(1, json!({"type":"sonar_session_stop"}));
+    assert!(out.iter().any(|o| matches!(o.msg, OutMsg::Config { .. })));
+    assert!(out.iter().any(|o| matches!(&o.msg, OutMsg::Session { kind, reason: Some(x), .. } if kind == "sonar" && x == "turned_off")));
+    assert!(!r.core.config().settings.sonar_enabled());
+    let saved: Value = serde_json::from_str(&fs::read_to_string(r.dir.join("config.json")).unwrap()).unwrap();
+    assert_eq!(saved["settings"]["sonar"]["enabled"], false);
+    assert_eq!(saved["settings"]["followUpConfidence"], 0.5);
+    assert_eq!(saved["settings"]["lightTouch"], false);
 }

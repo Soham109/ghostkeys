@@ -70,6 +70,10 @@ pub struct Settings {
     pub typing_gate_ms: f64,
     pub double_window_ms: f64,
     pub min_confidence: f64,
+    /// Kept for the Mac; every Windows knock has confidence 1, so it changes nothing here.
+    pub follow_up_confidence: f64,
+    /// Kept for the Mac; the Windows knock detector has its own floor.
+    pub light_touch: bool,
     pub hud: bool,
     pub haptics: bool,
     /// Every other key, kept verbatim. Windows reads `sound` (the Mac's sound-mode settings:
@@ -85,6 +89,8 @@ impl Default for Settings {
             typing_gate_ms: 450.0,
             double_window_ms: 350.0,
             min_confidence: 0.8,
+            follow_up_confidence: 0.5,
+            light_touch: false,
             hud: true,
             haptics: false,
             extra: Map::new(),
@@ -103,6 +109,11 @@ impl Settings {
     pub fn double_window_s(&self) -> f64 {
         self.double_window_ms.max(50.0) / 1000.0
     }
+    /// `settings.sonar.enabled`. Sonar is Mac only; Windows reports it as unsupported.
+    pub fn sonar_enabled(&self) -> bool {
+        self.extra.get("sonar").and_then(|s| s.get("enabled")).and_then(Value::as_bool).unwrap_or(false)
+    }
+
     /// `settings.sound.sessionSeconds` (Mac default 30).
     pub fn sound_session_seconds(&self) -> f64 {
         self.extra.get("sound").and_then(|s| s.get("sessionSeconds")).and_then(Value::as_f64).unwrap_or(30.0)
