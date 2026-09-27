@@ -30,6 +30,28 @@ python3 -m venv --system-site-packages .venv          # numpy, scipy, scikit-lea
 
 Copy the daemon's files before analysing them, and never modify the originals: `cp ~/Library/Application\ Support/Ghostkeys/daemon/model/*.json data/calib1/`.
 
+## Double taps never detected: tail guard compared a tap with its own ring-up (26 Sep 2026, late night)
+
+On Mac17,9 every double tap came out as a single tap: 9 of 9 real doubles (5 right palm, 4 left palm), so no
+`double` binding could fire.
+- **Cause:** for 300 ms after a pulse, the onset detector's ringing-tail guard required a new onset to exceed twice
+  the highest level of the preceding 25 ms. Real taps ring up over several samples, so by the time the second tap of
+  a double was large, the 25 ms before it held its own rising edge and it never reached 2x. The recordings show the
+  second tap 155 to 200 ms after the first, peaking at 38 to 54 mg (trigger 17.5 mg), with the first tap's tail at
+  7 to 9 mg just before it.
+- **Not a fix:** turning the guard off. Every single tap also has a rebound 80 to 95 ms later that crosses the
+  trigger, so every single tap would become a double.
+- **Fix:** the guard's reference window is lagged: twice the highest level of the 25 ms that ended 25 ms earlier
+  (`OnsetDetector.tailLag`). The rebound is still riding on the first tap's tail and fails; a real second tap comes
+  after the tail has decayed and passes.
+- **Replay of all 20 exported recordings of the evening, live model, all four zones waiting for multi-taps:**
+  right-palm doubles 0 -> 4 of 4 detected as `double`; left-palm doubles 0 -> 2 (plus 1 `sequence`, 1 single: the
+  second tap sometimes reads as right-palm); all 11 single-tap recordings unchanged (no phantom doubles).
+- **Tests:** new `OnsetTests.doubleTapThatRingsUpIsTwoOnsets` (fails on the old detector); all 83 Detection tests
+  pass (run through a converted plain-executable runner, since this machine's toolchain has no swift-testing).
+- **Open:** the second tap's features include the first tap's tail in their pre-window, which may be why a left-palm
+  second tap is sometimes classified as right-palm.
+
 ## Feature window anchored on the tap (26 Sep 2026, night)
 
 A second user (Mac17,9) calibrated firm and then tapped at half that strength or less: most taps came out

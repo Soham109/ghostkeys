@@ -24,9 +24,13 @@
 //      A width measured against the (noise-driven) trigger threshold
 //      instead made most palm taps "too long" in that recording, because lap noise sat near it.
 //   6. Refractory: 60 ms from onset and until the previous pulse has ended. For 300 ms after a pulse
-//      ends, a new onset must also be a fresh jump: above twice the highest level of the preceding
-//      25 ms. A decaying ring never jumps like that (each swing is lower than the last); a real
-//      second tap does. This stops the ringing tail of a hard tap from triggering a second onset.
+//      ends, a new onset must also be a fresh jump: above twice the highest level of the 25 ms that
+//      ended 25 ms earlier. A decaying ring never jumps like that (each swing is lower than the last);
+//      a real second tap does. This stops the ringing tail of a hard tap from triggering a second onset.
+//      The window is lagged because real taps ring up over a few samples: measured against the 25 ms
+//      just before it, the second tap of a double was compared with its own rising edge and never
+//      counted (26 Sep 2026, Mac17,9: 9 of 9 real double taps came out as single taps; the case's
+//      rebound 80 to 95 ms after each tap is still rejected, see daemon/analysis/README.md).
 //   7. Burst lockout: 4 onsets within 0.5 s mute detection for 0.4 s (rattling, drumming, typing).
 
 import Foundation
@@ -61,6 +65,7 @@ struct OnsetDetector {
     var tailGuardDuration = 0.300      // ringing tail guard, see header
     var tailJumpFactor = 2.0
     var tailLookback = 20              // samples, about 25 ms
+    var tailLag = 20                   // samples, about 25 ms: skipped so a tap's own ring-up is not its reference
     var restartFactor = 3.0            // a hit this many times the active pulse's peak restarts it
     var burstCount = 4
     var burstWindow = 0.5
@@ -187,9 +192,9 @@ struct OnsetDetector {
         // Levels of the preceding samples (for the tail guard), excluding this one.
         let previousLevel = lastLevel
         lastLevel = m
-        if recentLevels.count < tailLookback { recentLevels.append(previousLevel) } else {
+        if recentLevels.count < tailLookback + tailLag { recentLevels.append(previousLevel) } else {
             recentLevels[recentCursor] = previousLevel
-            recentCursor = (recentCursor + 1) % tailLookback
+            recentCursor = (recentCursor + 1) % (tailLookback + tailLag)
         }
 
         switch pulse {
@@ -197,7 +202,7 @@ struct OnsetDetector {
             // A fresh, much stronger hit inside a weak pulse (a gentle desk wobble just before a
             // real tap): restart the onset at the hit, otherwise the tap is swallowed by the wobble.
             if lightTouch, m > restartFactor * pulsePeak, t - pulseOnsetT >= 0.02, m > threshold,
-               m > tailJumpFactor * (recentLevels.max() ?? 0) {
+               m > tailJumpFactor * recentMax() {
                 return .restart(startPulse(m: m, t: t, index: index, thr: threshold, burst: false))
             }
             if m > pulsePeak { pulsePeak = m; pulsePeakT = t }
@@ -233,7 +238,7 @@ struct OnsetDetector {
         guard m > thr, t - lastOnsetT >= refractory else { return nil }
         // Ringing-tail guard (see header).
         if t < tailGuardUntil {
-            guard m > tailJumpFactor * (recentLevels.max() ?? 0) else { return nil }
+            guard m > tailJumpFactor * laggedMax() else { return nil }
         }
 
         // New onset.
@@ -260,6 +265,16 @@ struct OnsetDetector {
         }
         return OnsetInfo(index: index, t: t, threshold: thr, noise: noise, burst: burst)
     }
+
+    /// Levels of the preceding samples, oldest first.
+    private func previousLevels() -> [Double] {
+        recentLevels.count < tailLookback + tailLag ? recentLevels
+            : Array(recentLevels[recentCursor...]) + Array(recentLevels[..<recentCursor])
+    }
+    /// Highest level of the last `tailLookback` samples.
+    private func recentMax() -> Double { previousLevels().suffix(tailLookback).max() ?? 0 }
+    /// Highest level of the `tailLookback` samples before the last `tailLag` ones.
+    private func laggedMax() -> Double { previousLevels().dropLast(tailLag).suffix(tailLookback).max() ?? 0 }
 
     private mutating func rememberTail() {
         tailGuardUntil = pulseLastAbove + tailGuardDuration

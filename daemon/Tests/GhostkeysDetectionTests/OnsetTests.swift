@@ -187,6 +187,32 @@ import Testing
         #expect(match(detected: onsets, truth: truth).hits == 5)
     }
 
+    /// Real taps ring up (the first half cycle is smaller than the rebound). The second tap of a double
+    /// arrives while the first is still in its tail guard and must still count; a single tap must not.
+    @Test func doubleTapThatRingsUpIsTwoOnsets() {
+        func onsets(_ taps: [Double]) -> Int {
+            let fs = 797.0, f0 = 45.0, tau = 0.012
+            let engine = TapEngine(settings: DetectionSettings())
+            var rng = SplitMix64(seed: 5)
+            var n = 0
+            for i in 0..<Int(2.5 * fs) {
+                let t = Double(i) / fs
+                var z = -1.0
+                for t0 in taps where t >= t0 {
+                    let u = t - t0
+                    z += 0.06 * sin(2 * .pi * f0 * u) * (u / tau) * exp(1 - u / tau)
+                }
+                let r = { (Double(rng.next() % 2001) / 1000 - 1) * 0.0005 }
+                let s = IMUSample(t: t, a: SIMD3(r(), r(), z + r()), g: SIMD3(r(), r(), r()))
+                for e in engine.ingest(s, context: InputContext()) { if case .candidate = e { n += 1 } }
+            }
+            return n
+        }
+        #expect(onsets([1.0]) == 1)
+        #expect(onsets([1.0, 1.18]) == 2)
+        #expect(onsets([1.0, 1.25]) == 2)
+    }
+
     @Test func pausedRejectsEverything() {
         var b = StreamBuilder(seconds: 3, seed: 27)
         b.addTap(.leftPalm, at: 1.0, amp: 0.2)
