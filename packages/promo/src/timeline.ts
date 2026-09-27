@@ -73,8 +73,8 @@ const slide = (f0: number, n: number): Tap[] =>
 
 export const FILM_TAPS: Tap[] = [
   { f: 315, zone: "palmL", action: "Volume +6", gesture: "Tap" },
-  { f: 420, zone: "edgeR", action: "Snap right", gesture: "Knuckle" },
-  { f: 465, zone: "edgeR", action: "Snap right", gesture: "Knuckle", quiet: true },
+  { f: 419, zone: "grilleR", action: "Mute", gesture: "Knuckle" },
+  { f: 463, zone: "grilleR", action: "Mute", gesture: "Knuckle", quiet: true },
   { f: 528, zone: "grilleR", action: "Next track", gesture: "Double tap" },
   { f: 536, zone: "grilleR", action: "Next track", gesture: "Double tap", quiet: true },
   ...slide(577, 8),

@@ -93,11 +93,11 @@ export const filmHand = (f: number): Solved | null => {
     const j = placeLaptop(pose, TIP_ROT, { contact: "y-", at: [-9.6, h, 6.4] }, true, b);
     return { joints: j, hot: hotAt([J.I_TIP, J.I_DIP], pulse(f, 312)), opacity: k(f, [[270, 0], [282, 1], [368, 1], [386, 0]]) };
   }
-  // 04 knuckles knock the right edge
+  // 04 knuckles knock the right speaker grille
   if (f >= 390 && f < 510) {
     copyPose(POSES.knuckle, pose);
     const d = k(f, [[390, 9], [405, 2.4], [414, 2.4], [419, 0], [423, 0], [433, 2.4], [455, 2.4], [463, 0], [467, 0], [478, 2.6], [498, 8]]);
-    const j = placeLaptop(pose, { pitch: 0.05, yaw: Math.PI / 2, roll: -0.35 }, { contact: "x-", at: [15.2 + d, -0.45, 2.8] }, false, b);
+    const j = placeLaptop(pose, { pitch: 0.1, yaw: -0.9, roll: -0.3 }, { contact: "y-", at: [13.75, d, -4.4] }, false, b);
     return { joints: j, hot: hotAt([J.I_PIP, J.M_PIP, J.R_PIP], Math.max(pulse(f, 419), pulse(f, 463))), opacity: k(f, [[390, 0], [400, 1], [492, 1], [508, 0]]) };
   }
   // 05 double tap on the right grille, then a fingertip slides along it

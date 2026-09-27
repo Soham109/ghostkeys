@@ -16,7 +16,7 @@ const CAPS: Cap[] = [
   { from: S.open, to: S.matter, n: "01", name: "Signal", right: (f) => (f < 27 ? "Listening" : "Touch felt") },
   { from: S.matter, to: S.macro, n: "02", name: "Matter", right: () => "" },
   { from: S.macro, to: S.split, n: "03", name: "Palm rest", right: (f) => tapText(f, S.macro, S.split) },
-  { from: S.split, to: S.grille, n: "04", name: "Edge", right: (f) => tapText(f, S.split, S.grille) },
+  { from: S.split, to: S.grille, n: "04", name: "Knuckle", right: (f) => tapText(f, S.split, S.grille) },
   { from: S.grille, to: S.xray, n: "05", name: "Speaker grille", right: (f) => tapText(f, S.grille, S.xray) },
   { from: S.xray, to: S.calib, n: "06", name: "Motion sensor", right: () => "Accelerometer + gyroscope" },
   { from: S.calib, to: S.cover, n: "07", name: "Calibration", right: (f) => `Taps accepted  ${String(HITS.filter((h) => h.f <= f).length).padStart(2, "0")} / ${HITS.length}` },

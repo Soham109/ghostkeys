@@ -3,7 +3,7 @@ export const VO_LINES: Array<{ f: number; text: string }> = [
   { f: 45, text: "Your MacBook already feels every touch." },
   { f: 180, text: "Ghostkeys listens." },
   { f: 285, text: "Tap the palm rest." },
-  { f: 405, text: "Knock the edge." },
+  { f: 405, text: "Knock the grille." },
   { f: 525, text: "Every blank surface becomes a key." },
   { f: 650, text: "Eight hundred readings a second, from the motion sensor inside." },
   { f: 790, text: "A few minutes of calibration, and it learns your hands." },

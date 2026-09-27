@@ -104,10 +104,10 @@ export const filmState = (f: number): WorldState => {
     return { ...base, cam, hand, lightScale: 0.65 };
   }
 
-  // 04: split screen, left half: knuckles knock the right edge
+  // 04: split screen, left half: knuckles knock the right speaker grille
   if (f < S.grille) {
-    const eR = ZONES.edgeR.p;
-    const cam = shot(f, S.split, S.grille, { pos: [24, 8, 22], target: [15, 0.2, 2.6], fov: 34, focus: eR, bokeh: 4 }, { pos: [22.5, 6.5, 19], target: [15, 0.2, 2.6], fov: 32, focus: eR, bokeh: 4 }, Easing.linear);
+    const gR = ZONES.grilleR.p;
+    const cam = shot(f, S.split, S.grille, { pos: [27, 13, 10], target: [13.5, 2.2, -4.4], fov: 34, focus: gR, bokeh: 4 }, { pos: [25, 11.5, 7.5], target: [13.5, 2.2, -4.4], fov: 32, focus: gR, bokeh: 4 }, Easing.linear);
     return { ...base, cam, lightScale: 0.6, hand };
   }
 

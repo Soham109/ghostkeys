@@ -6,7 +6,7 @@ import { TapRing } from "../components/Ring";
 // live.png is 2480 x 1600. The laptop map sits roughly in x 470..1840, y 190..1430 of the original.
 const LIVE_W = 2480, LIVE_H = 1600;
 
-/** Split screen, right half: the app's live map, with the right edge answering each knock. */
+/** Split screen, right half: the app's live map, with zone 04 (right grille) answering each knock. */
 export const LivePanel: React.FC<{ x: number; w: number; h: number; taps: number[]; start: number }> = ({ x, w, h, taps, start }) => {
   const f = useCurrentFrame();
   const inP = interpolate(f, [start, start + 14], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: easeOut });
@@ -15,14 +15,14 @@ export const LivePanel: React.FC<{ x: number; w: number; h: number; taps: number
   const scale = (w / cropW) * interpolate(f, [start, start + 120], [1, 1.06], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
   const imgX = w / 2 - cx * scale;
   const imgY = h / 2 - cy * scale;
-  const edge = { x: 1720, y: 930 }; // right edge zone, original pixels
+  const edge = { x: 1637, y: 754 }; // zone 04, right grille, original pixels
   const ex = imgX + edge.x * scale, ey = imgY + edge.y * scale;
   const hot = taps.reduce((m, t) => (f >= t ? Math.max(m, Math.exp(-(f - t) / 8)) : m), 0);
   return (
     <div style={{ position: "absolute", left: x, top: 0, width: w, height: h, overflow: "hidden", background: "#0b0b0c", opacity: inP }}>
       <Img src={staticFile("app/live.png")} style={{ position: "absolute", left: imgX, top: imgY, width: LIVE_W * scale, height: LIVE_H * scale }} />
       <svg width={w} height={h} style={{ position: "absolute", inset: 0 }}>
-        <rect x={ex - 14 * scale} y={ey - 240 * scale} width={28 * scale} height={480 * scale} rx={12 * scale} fill="none" stroke={C.signal} strokeWidth={2} opacity={hot} />
+        <rect x={ex - 34 * scale} y={ey - 160 * scale} width={68 * scale} height={320 * scale} rx={10 * scale} fill="none" stroke={C.signal} strokeWidth={2} opacity={hot} />
         {taps.map((t) => (
           <TapRing key={t} frame={f} at={t} x={ex} y={ey} r={70} dur={18} />
         ))}
