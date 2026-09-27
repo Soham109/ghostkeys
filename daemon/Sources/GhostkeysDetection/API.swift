@@ -65,7 +65,11 @@ public struct DetectionSettings: Codable, Sendable {
 public struct TapFeatures: Codable, Sendable {
     public var values: [Double]
     public var t: Double
-    public init(values: [Double], t: Double) { self.values = values; self.t = t }
+    /// Direction of the low-passed gravity vector (unit length, device coordinates, as the accelerometer reads it at
+    /// rest) when the candidate happened: the posture of the machine. Set by `TapEngine` on every candidate (round 3,
+    /// docs/review/DETECTION_ROUND3.md). Optional: samples saved by older builds have none. Not a classifier feature.
+    public var gravity: SIMD3<Double>?
+    public init(values: [Double], t: Double, gravity: SIMD3<Double>? = nil) { self.values = values; self.t = t; self.gravity = gravity }
 }
 
 public enum RejectReason: String, Codable, Sendable { case typing, trackpad, motion, low_confidence, burst, paused }

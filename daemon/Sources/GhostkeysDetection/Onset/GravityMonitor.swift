@@ -48,6 +48,12 @@ struct GravityMonitor {
     private(set) var lastMotionT = -Double.infinity
     /// Current low-passed "up" vector in g.
     var gravity: SIMD3<Double> { SIMD3(gx, gy, gz) }
+    /// Unit direction of `gravity`; nil before the first sample or when the vector is too short to trust (free fall).
+    var direction: SIMD3<Double>? {
+        guard initialized else { return nil }
+        let n = (gx * gx + gy * gy + gz * gz).squareRoot()
+        return n > 0.2 ? SIMD3(gx / n, gy / n, gz / n) : nil
+    }
 
     /// Stop following the accelerometer until `t` (called at a tap onset).
     mutating func freeze(until t: Double) { frozenUntil = max(frozenUntil, t) }

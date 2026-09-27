@@ -20,6 +20,12 @@
 #   guard.junkN.*          same for calibration taps with N typing spikes past the gates before each
 #   splice.strict.*        composed grille doubles that fire with the guard forced strict
 #
+# Round 3 checks (Sources/PostureSuites.swift, docs/review/DETECTION_ROUND3.md):
+#   posture.known.* / posture.legacy.*   desk + lap models in a ZoneModelSet, picked by gravity: which model is live
+#                          at lap taps and on the desk, recall through the set, switches per minute
+#   xpost.*                cross-posture recall of a single model (a lap model on desk taps)
+# Research that is not a regression gate: round3/run.sh (gravity-aligned feature frame).
+#
 # Data (gitignored, never modified): daemon/analysis/data/. `fetch-data.sh` copies the daemon's current
 # calibration and diagnostics there (read-only copies). The recordings used:
 #   calib1, calib_bak, calib2   three real calibrations (26 Sep 2026, 18:21, 19:05, 23:49), features only
@@ -43,7 +49,7 @@ while (( $# > 0 )); do
     --save) passthrough+=(--out ${2:A}); shift ;;
     --compare) passthrough+=(--compare ${2:A}); shift ;;
     --settings|--reps) passthrough+=($1 $2); shift ;;
-    -h|--help) sed -n '2,29p' $0 | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,36p' $0 | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) print -u2 "unknown option $1"; exit 2 ;;
   esac
   shift
@@ -62,6 +68,7 @@ if [[ ! -f $B/bench || -n $(find $SRC $BENCH/Sources -name '*.swift' -newer $sta
   # Features the library may or may not have (so older copies still build): -D flags for the bench.
   defs=()
   grep -rq "struct FamiliarityGuard" $SRC && defs+=(-D HAS_FAMILIARITY)
+  grep -rq "struct ZoneModelSet" $SRC && defs+=(-D HAS_POSTURE)
   nice -n 10 swiftc -O ${defs[@]} -I $B -L $B -lGhostkeysDetection -o $B/bench $BENCH/Sources/*.swift
   touch $stamp
 fi

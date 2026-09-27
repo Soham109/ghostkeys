@@ -90,8 +90,21 @@ public struct ZoneModel: Codable, Sendable {
     /// Only models upgraded by `upgraded()` have it (a zone whose own calibration spread is wider than the pooled limit
     /// gets a limit scaled to its spread); nil: `rejectDistance` for every zone.
     public var zoneRejectDistances: [Double]? = nil
+    /// Posture of the calibration (round 3, docs/review/DETECTION_ROUND3.md): the mean direction (unit length) of the
+    /// low-passed gravity over the training samples that carry one (`TapFeatures.gravity`). `Trainer` fills it.
+    /// Optional: nil for models saved by older builds and for models trained from samples without gravity.
+    /// `ZoneModelSet` picks the model whose calibration gravity is nearest the machine's current gravity.
+    public var calibrationGravity: SIMD3<Double>? = nil
+    /// 90th percentile angle (degrees) between those samples' gravity and `calibrationGravity`: a few degrees for one
+    /// posture, more when the samples mix postures. nil when `calibrationGravity` is nil.
+    public var calibrationGravitySpread: Double? = nil
 
     public init(labels: [String]) { self.labels = labels }
+
+    /// Angle in degrees between this model's calibration gravity and `gravity` (nil if the model has none).
+    public func gravityAngle(to gravity: SIMD3<Double>) -> Double? {
+        calibrationGravity.flatMap { ZoneModelSet.angleDegrees($0, gravity) }
+    }
 
     var featureCount: Int { mean.count }
     var isTrained: Bool { !samples.isEmpty && featureCount > 0 }

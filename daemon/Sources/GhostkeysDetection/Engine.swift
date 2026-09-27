@@ -19,6 +19,10 @@
 //     Junk the classifier already rejects or doubts does not count as evidence (round 2, DETECTION_ROUND2.md).
 //   - Look-ahead: a key press or pointer event within 300 ms after a multi-tap zone's tap cancels the pending
 //     double/triple (the hands were heading for the keyboard or trackpad). No latency cost: it was waiting anyway.
+//
+// Posture (round 3, docs/review/DETECTION_ROUND3.md): every candidate carries the machine's gravity direction
+// (`TapFeatures.gravity`, so saved calibration samples keep their posture), `gravityDirection` exposes it, and an
+// optional `modelSet` (one ZoneModel per posture) makes the posture's model live, by gravity and by tap evidence.
 
 import Foundation
 
@@ -27,12 +31,53 @@ public final class TapEngine {
     public var settings: DetectionSettings
     /// The zone model. Models saved by older builds are upgraded on assignment (`ZoneModel.upgraded()`: tighter
     /// reject distance, typical distance for the familiarity guard).
+    /// With a `modelSet` installed, assigning (or mutating) it replaces the live posture's model in the set, and
+    /// assigning nil removes the set.
     public var model: ZoneModel? {
         didSet {
             if let m = model, m.typicalDistance == nil, m.isTrained { model = m.upgraded() }
             if oldValue?.labels != model?.labels || oldValue?.typicalDistance != model?.typicalDistance { familiarity.reset() }
+            if !installingFromSet, postureModels != nil {
+                if let m = model { postureModels!.setModel(m, for: postureModels!.activePosture) } else { postureModels = nil }
+            }
         }
     }
+
+    /// Sets the normalized zone centres (`ZoneModel.setZoneCenters`) of the live model and of every posture model.
+    public func setZoneCenters(_ centers: [String: [Double]]) {
+        postureModels?.setZoneCenters(centers)
+        installingFromSet = true
+        model?.setZoneCenters(centers)
+        installingFromSet = false
+    }
+
+    /// One model per posture (round 3, docs/review/DETECTION_ROUND3.md). When set, the engine follows the machine's
+    /// low-passed gravity and makes the nearest posture's model the live `model` (see ZoneModelSet.swift for the
+    /// hysteresis). Its models are upgraded once when installed. nil (the default): `model` is used as assigned.
+    public var modelSet: ZoneModelSet? {
+        get { postureModels }
+        set {
+            var s = newValue
+            s?.mapModels { $0.typicalDistance == nil && $0.isTrained ? $0.upgraded() : $0 }
+            if let g = gravity.direction { s?.update(gravity: g, t: lastSampleT, moving: gravity.isMoving) }
+            installingFromSet = true
+            model = s?.activeModel
+            installingFromSet = false
+            postureModels = s
+        }
+    }
+    /// The posture whose model is live (nil without a `modelSet`).
+    public var activePosture: String? { postureModels?.activePosture }
+    /// Angle in degrees between the machine's gravity and the live posture model's calibration gravity (nil without a
+    /// `modelSet`, before the first gravity reading, or when that model has no calibration gravity).
+    public var postureGravityAngle: Double? { postureModels?.gravityAngle }
+    /// Direction of the machine's low-passed gravity (unit length, device coordinates, as the accelerometer reads it at
+    /// rest; 200 ms low-pass, frozen for 150 ms after each tap onset). nil before the first sample. Every candidate's
+    /// `TapFeatures.gravity` is this value at its decision.
+    public var gravityDirection: SIMD3<Double>? { gravity.direction }
+    private var postureModels: ZoneModelSet?
+    private var installingFromSet = false
+    private var lastSampleT = 0.0
 
     /// Strict mode when recent candidates stop looking like the calibration (see FamiliarityGuard.swift).
     public var familiarity = FamiliarityGuard()
@@ -121,6 +166,7 @@ public final class TapEngine {
         tilt.reset()
         grammar.reset()
         familiarity.reset()
+        postureModels?.resetSelection()
         keyTimes.removeAll(); keyUpTimes.removeAll(); mouseTimes.removeAll()
         inFlight.removeAll()
         activePulseIndex = nil
@@ -130,6 +176,7 @@ public final class TapEngine {
         var out: [DetectorEvent] = []
         let index = history.count
         history.append(s)
+        lastSampleT = s.t
         recordInput(context, t: s.t)
         // Look-ahead: a key press or pointer event shortly after a tap means the hands were on their way to the
         // keyboard or trackpad, and the spike was most likely a palm landing or a hand brushing the chassis. A
@@ -151,9 +198,16 @@ public final class TapEngine {
         grammar.doubleWindow = settings.doubleWindowMs / 1000
 
         // Gravity, motion and tilt.
-        if gravity.process(ax: s.a.x, ay: s.a.y, az: s.a.z, t: s.t), tiltEnabled {
-            if let name = tilt.process(gravity: gravity.gravity, t: s.t), !context.paused {
+        if gravity.process(ax: s.a.x, ay: s.a.y, az: s.a.z, t: s.t) {
+            if tiltEnabled, let name = tilt.process(gravity: gravity.gravity, t: s.t), !context.paused {
                 out.append(.gesture(GestureEvent(t: s.t, gesture: name, zone: nil, zones: [], modifiers: context.modifiers, confidence: 1)))
+            }
+            // Posture models: follow gravity (decimated ticks, about 100 Hz).
+            if postureModels != nil, let g = gravity.direction,
+               postureModels!.update(gravity: g, t: s.t, moving: gravity.isMoving) {
+                installingFromSet = true
+                model = postureModels!.activeModel
+                installingFromSet = false
             }
         }
 
@@ -218,8 +272,15 @@ public final class TapEngine {
             return reject(.motion)
         }
 
-        let features = extractor.extract(history: history, onset: f.info.index, pulseWidth: f.width ?? 0, t: t)
+        var features = extractor.extract(history: history, onset: f.info.index, pulseWidth: f.width ?? 0, t: t)
+        features.gravity = gravity.direction
         var out: [DetectorEvent] = [.candidate(features)]
+        // Posture models: a run of taps that fit another posture's model far better switches to it (ZoneModelSet).
+        if postureModels != nil, postureModels!.observe(features, t: t) {
+            installingFromSet = true
+            model = postureModels!.activeModel
+            installingFromSet = false
+        }
         guard let model else { return out }
 
         let r = model.classifyDetailed(features)

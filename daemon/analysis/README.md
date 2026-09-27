@@ -40,6 +40,12 @@ What it found and what was fixed (full table in the audit, section 2):
 - **Look-ahead:** a key press or pointer event within 300 ms after a grille tap cancels its pending double.
 - Tried and rejected on this data: peak-aligned integrals, a pooled tap vs non-tap gate, Platt scaling on time-blocked folds, strength ranges, dropping feature groups, a quiet-before-tap rule (numbers in the audit, section 5).
 
+## Posture, round 3 (27 Sep 2026): `bench/round3/`, `bench/Sources/PostureSuites.swift`
+
+- `bench/round3/run.sh`: research, not a gate. Tests a gravity-aligned feature frame (every IMU sample rotated so the lap's gravity points where the desk's does) against the sensor frame on the lap recording and the calibrations, including leave one session out. Result: no gain, small losses; not adopted. Also measures how far lap taps sit from desk models, which features differ, and two other posture signals (tap distance, noise floor). Writes `bench/results/2026-09-27-round3-frame.json`.
+- The bench's `posture.*` and `xpost.*` rows check `ZoneModelSet` (one model per posture, picked by gravity plus tap evidence) on session1 and the desk rest recording. Results: `bench/results/2026-09-27-round3.json`.
+- Write-up and daemon wiring: `docs/review/DETECTION_ROUND3.md`.
+
 ## Classifier upgrade (27 Sep 2026): ensemble + calibrated confidence
 
 The second real calibration (calib2) has 0.90 overall, but only 11 typing negatives, and 36% of them would be accepted as taps at 0.8 (before the typing gate).

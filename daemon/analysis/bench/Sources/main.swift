@@ -59,6 +59,10 @@ log("upgraded old-style models..."); suiteUpgradedOld(sets, dataDir: dataDir, se
 if let s1 = session1 { log("guard engagement..."); suiteGuardEngagement(s1, sets: sets, settings: settings, report: report) }
 if let s1 = session1, let rest { log("spliced doubles, guard strict..."); suiteSpliceStrict(s1, rest: rest, settings: settings, report: report) }
 #endif
+#if HAS_POSTURE
+// Round 3 checks (PostureSuites.swift): one model per posture, picked by gravity; cross-posture recall.
+if let s1 = session1, let rest { log("posture models..."); suitePosture(s1, rest: rest, sets: sets, settings: settings, report: report) }
+#endif
 log(String(format: "done in %.1f s", Date().timeIntervalSince(clock)))
 
 // MARK: Output
