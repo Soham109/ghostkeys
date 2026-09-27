@@ -23,6 +23,30 @@ daemon/.build/debug/ghostkeysd --simulate-sensors --no-hardware-sessions --dry-r
 
 Read the handshake token from `<config dir>/token`, or pass your own with `GHOSTKEYS_TOKEN` (at least 32 characters).
 
+## Running the suite
+
+```sh
+cd tests/e2e
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # once
+GHOSTKEYS_E2E_SCRATCH=.build-release-qa GHOSTKEYS_E2E_PORT=47961 .venv/bin/python -m pytest -q
+```
+
+The harness starts every daemon with `--simulate-sensors --no-hardware-sessions --dry-run` and its own temp
+`--config-dir`, so it runs safely while the real app is running.
+
+| variable | default | meaning |
+| --- | --- | --- |
+| `GHOSTKEYS_E2E_PORT` | `47891` | port for the test daemons. 47823 (the app's) is refused. |
+| `GHOSTKEYS_E2E_SCRATCH` | `.build-e2e` | SwiftPM scratch dir under `daemon/` to build `ghostkeysd` into. |
+| `GHOSTKEYS_E2E_REAL_SENSORS` | unset | `1` uses the real motion sensor instead of simulated data (needs the app's daemon stopped). Only then do the sensor-restore checks run. |
+
+`sdk_scenario.mjs` is a separate end-to-end scenario that drives a simulated daemon through `@ghostkeys/sdk`
+(calibration, recommendation, merge, bindings, feedback, approvals, sessions, rate limiter, diagnostics). Build the
+daemon and `packages/sdk` first, then: `node tests/e2e/sdk_scenario.mjs --port 47962`.
+
+Live `sim_spike` taps still pass through the typing and trackpad gates, which read this Mac's real keyboard and mouse
+idle time. While someone uses the machine they can be rejected (`reason: trackpad`); the scenario retries.
+
 Without `--simulate-sensors` the daemon opens the real motion sensor and takes the machine-wide lock
 (`~/Library/Application Support/Ghostkeys/daemon/daemon.lock`); it exits with code 4 while another daemon (for
 example the app's) or a `ghostkeys-lab` session holds it. `--config-dir` does not change that: the sensors belong to

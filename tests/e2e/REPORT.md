@@ -1,8 +1,8 @@
 # ghostkeysd e2e test report
 
-Generated 2026-09-26 17:42:37 -0500, exit status 0.
+Generated 2026-09-27 00:17:11 -0500, exit status 0.
 
-Daemon binary: `/Users/sohamaggarwal/Desktop/Projects/ghostkeys/daemon/.build-e2e/debug/ghostkeysd`
+Daemon binary: `/Users/sohamaggarwal/Desktop/Projects/ghostkeys/daemon/.build-release-qa/debug/ghostkeysd`
 Run with `--dry-run` for every test in this suite; no action a test triggers actually executes.
 Every daemon instance gets its own `--config-dir` (a pytest `tmp_path`); this suite never touches the real `~/Library/Application Support/Ghostkeys/`.
 
@@ -10,38 +10,38 @@ Every daemon instance gets its own `--config-dir` (a pytest `tmp_path`); this su
 
 - Device: Mac17,8 / Apple M5 Pro / macbook-pro-16
 - Daemon version: 0.1.0
-- Sensors present at hello: {'lid': True, 'imu': True, 'gyro': True, 'light': True, 'sound': True, 'camera': True}
-- Accessibility permission granted: False
+- Sensors present at hello: {'lid': False, 'light': False, 'imu': True, 'sound': True, 'camera': True, 'gyro': True}
+- Accessibility permission granted: True
 
 ## Summary
 
-- Passed: 107
+- Passed: 105
 - Failed: 0
 - Errors: 0
-- Skipped: 2
+- Skipped: 4
 
 ## Skipped
 
-- `test_actions.py::test_action_app_quit_finder_refused_when_frontmost`: Skipped: Finder is not the frontmost app (frontmost is 'Terminal'); cannot exercise the Finder-quit guard without changing focus
-- `test_lifecycle.py::test_sigkill_then_restore_sensors_recovers`: Skipped: no accelerometer reported by hello; nothing for SPUDriverControl to have touched
+- `test_actions.py::test_action_app_quit_finder_refused_when_frontmost`: Skipped: Finder is not the frontmost app (frontmost is 'Electron'); cannot exercise the Finder-quit guard without changing focus
+- `test_lifecycle.py::test_sigkill_then_restore_sensors_recovers`: Skipped: needs the real motion sensor driver (GHOSTKEYS_E2E_REAL_SENSORS=1); --simulate-sensors never writes driver settings, so there is nothing to restore
+- `test_streams.py::test_subscribe_light_rate_near_10hz`: Skipped: no light sensor reported by hello; cannot measure a stream rate
+- `test_streams.py::test_subscribe_lid_on_change`: Skipped: no lid sensor reported by hello
 
 ## Measurements
 
 - **imu_stream_rate_hz**: 62.0
-- **lid_messages_observed**: 1
-- **light_stream_rate_hz**: 5.3
 - **post_suite_report_intervals**: |   "ReportInterval" = 0 | |   "HIDEventServiceProperties" = {"ReportInterval"=1000} | |   "ReportInterval" = 0 | |   "ReportInterval" = 0 | |   "ReportInterval" = 0 | |   "HIDEventServiceProperties" = {"ReportInterval"=1000} | |   "ReportInterval" = 0 | |   "ReportInterval" = 0 | |   "ReportInterval" = 197380 | |   "ReportInterval" = 0
-- **rapid_200_latency_max_ms**: 20.2
-- **rapid_200_latency_p50_ms**: 10.91
-- **rapid_200_latency_p95_ms**: 19.29
-- **soak_cpu_avg_pct**: 3.08
-- **soak_cpu_max_pct**: 8.3
+- **rapid_200_latency_max_ms**: 21.19
+- **rapid_200_latency_p50_ms**: 11.31
+- **rapid_200_latency_p95_ms**: 20.2
+- **soak_cpu_avg_pct**: 1.81
+- **soak_cpu_max_pct**: 7.6
 - **soak_duration_s**: 60.0
-- **soak_rss_first_kb**: 24224
-- **soak_rss_growth_kb**: 496
-- **soak_rss_last_kb**: 24720
+- **soak_rss_first_kb**: 25872
+- **soak_rss_growth_kb**: 288
+- **soak_rss_last_kb**: 26160
 - **soak_samples**: 30
-- **soak_streams_subscribed**: ['imu', 'lid', 'light', 'taps']
+- **soak_streams_subscribed**: ['imu', 'taps']
 
 ## Fixed since earlier runs (see FINDINGS.md for detail)
 

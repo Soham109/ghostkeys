@@ -32,10 +32,23 @@ from typing import Optional
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DAEMON_DIR = REPO_ROOT / "daemon"
-SCRATCH_PATH = DAEMON_DIR / ".build-e2e"
+# GHOSTKEYS_E2E_SCRATCH: SwiftPM scratch dir to build into (relative to daemon/ or absolute).
+SCRATCH_PATH = DAEMON_DIR / os.environ.get("GHOSTKEYS_E2E_SCRATCH", ".build-e2e")
 BINARY_PATH = SCRATCH_PATH / "debug" / "ghostkeysd"
 
-DEFAULT_PORT = 47823
+# The app's own daemon listens on 47823. The suite must never share that port: probing it
+# would connect to the user's live daemon, and every test would skip while it runs.
+APP_DAEMON_PORT = 47823
+DEFAULT_PORT = int(os.environ.get("GHOSTKEYS_E2E_PORT", "47891"))
+if DEFAULT_PORT == APP_DAEMON_PORT:
+    raise RuntimeError(f"GHOSTKEYS_E2E_PORT={APP_DAEMON_PORT} is the app's daemon port; pick a spare one")
+
+# By default every daemon runs with --simulate-sensors --no-hardware-sessions (see README.md): no
+# sensor, mic or camera is opened and the machine-wide sensor lock is not taken, so the suite can
+# run while the real app is running. GHOSTKEYS_E2E_REAL_SENSORS=1 uses the real motion sensor
+# instead (needs the app's daemon to be stopped).
+REAL_SENSORS = os.environ.get("GHOSTKEYS_E2E_REAL_SENSORS") == "1"
+SIMULATED_ARGS: list[str] = [] if REAL_SENSORS else ["--simulate-sensors", "--no-hardware-sessions"]
 
 
 class BuildError(RuntimeError):
@@ -170,6 +183,7 @@ class DaemonProcess:
             a.append("--dry-run")
         if self.verbose:
             a.append("--verbose")
+        a += SIMULATED_ARGS
         a += self.extra_args
         return a
 

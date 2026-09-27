@@ -21,7 +21,16 @@ const DEFAULT_CONFIG: Config = {
       label: "Volume up",
     },
   ],
-  settings: { sensitivity: 0.5, typingGateMs: 450, doubleWindowMs: 350, minConfidence: 0.8, hud: true, haptics: false },
+  settings: {
+    sensitivity: 0.5,
+    typingGateMs: 450,
+    doubleWindowMs: 350,
+    minConfidence: 0.8,
+    hud: true,
+    haptics: false,
+    sound: { enabled: false, sessionSeconds: 30, autoApps: [] },
+    camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false },
+  },
 };
 
 export interface FakeDaemonOptions {
@@ -82,8 +91,8 @@ export class FakeGhostkeysDaemon {
         type: "hello",
         version: "0.1.0-fake",
         device: { model: "Mac17,8", chip: "Apple M5 Pro", family: "macbook-pro-14" },
-        sensors: { imu: true, gyro: true, lid: true, light: true },
-        permissions: { accessibility: true },
+        sensors: { imu: true, gyro: true, lid: true, light: true, sound: false, camera: false },
+        permissions: { accessibility: true, microphone: "not_determined", camera: "not_determined" },
       });
       this.sendTo(socket, this.statusMessage());
       this.sendTo(socket, { type: "config", config: this.config });
@@ -105,9 +114,11 @@ export class FakeGhostkeysDaemon {
     return {
       type: "status",
       paused: this.paused,
+      pausedReason: this.paused ? "user" : null,
       calibrated: true,
       zones: this.config.zones.map((z) => z.id),
       imuHz: 797,
+      detector: { noiseFloorMg: 1.2, thresholdMg: 17.5, level: 3.1 },
     };
   }
 

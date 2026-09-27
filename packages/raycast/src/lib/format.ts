@@ -20,6 +20,23 @@ const GESTURE_LABELS: Record<GestureKind, string> = {
   cover_hold: "Cover & hold",
   tilt_left: "Tilt left",
   tilt_right: "Tilt right",
+  knock_knuckle: "Knuckle knock",
+  rub: "Rub",
+  rub_left: "Rub left",
+  rub_right: "Rub right",
+  wave_toward: "Wave toward",
+  wave_away: "Wave away",
+  wave_sweep: "Wave sweep",
+  air_tap: "Air tap",
+  pinch_hold: "Pinch & hold",
+  pinch_drag_left: "Pinch drag left",
+  pinch_drag_right: "Pinch drag right",
+  pinch_drag_up: "Pinch drag up",
+  pinch_drag_down: "Pinch drag down",
+  palm_swipe_left: "Palm swipe left",
+  palm_swipe_right: "Palm swipe right",
+  circle_cw: "Circle clockwise",
+  circle_ccw: "Circle counter-clockwise",
 };
 
 export function gestureLabel(gesture: string): string {
