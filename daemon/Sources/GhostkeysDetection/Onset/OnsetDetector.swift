@@ -121,6 +121,7 @@ struct OnsetDetector {
     // itself. The old fixed 17.5 mg floor made users tap very hard; it was set against 12 to 32 mg
     // desk wobbles, which are now left to the classifier (none class, reject distance, gates).
 
+    // Everything below applies only in light-touch mode.
     /// Floor learned at calibration (g), or nil.
     var learnedFloor: Double?
     /// Calibration capture: use the quiet floor regardless of activity.
@@ -144,14 +145,15 @@ struct OnsetDetector {
         return max(0.003, base * sensitivityScale)
     }
     var threshold: Double {
-        if legacyThreshold {   // the pre-adaptive rule, kept only to measure against
+        if !lightTouch {   // the fixed-floor rule (default; see DetectionSettings.lightTouch)
             let sv = Stats.clamp(sensitivity, 0, 1)
             return max((30 - 25 * sv) / 1000, (9 - 6 * sv) * noise)
         }
         return max(absoluteFloor, noiseMultiplier * noise)
     }
-    /// Evaluation only: use the old fixed-floor threshold (17.5 mg, 6x noise at sensitivity 0.5).
-    var legacyThreshold = false
+    /// Light-touch mode: adaptive floor (learned, quiet, capture) and onset restart. When false, the
+    /// fixed rule applies: floor 30 - 25 s mg (17.5 at 0.5) and (9 - 6 s) x noise.
+    var lightTouch = false
     var isWarmedUp: Bool { blockMedians.count >= minBlocksBeforeDetecting }
 
     mutating func reset() {
@@ -194,7 +196,7 @@ struct OnsetDetector {
         case .active:
             // A fresh, much stronger hit inside a weak pulse (a gentle desk wobble just before a
             // real tap): restart the onset at the hit, otherwise the tap is swallowed by the wobble.
-            if m > restartFactor * pulsePeak, t - pulseOnsetT >= 0.02, m > threshold,
+            if lightTouch, m > restartFactor * pulsePeak, t - pulseOnsetT >= 0.02, m > threshold,
                m > tailJumpFactor * (recentLevels.max() ?? 0) {
                 return .restart(startPulse(m: m, t: t, index: index, thr: threshold, burst: false))
             }

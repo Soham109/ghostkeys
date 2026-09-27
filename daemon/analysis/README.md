@@ -30,7 +30,23 @@ python3 -m venv --system-site-packages .venv          # numpy, scipy, scikit-lea
 
 Copy the daemon's files before analysing them, and never modify the originals: `cp ~/Library/Application\ Support/Ghostkeys/daemon/model/*.json data/calib1/`.
 
-## Gentle taps (26 Sep 2026): adaptive onset floor
+## Regression after light-touch (26 Sep 2026, evening)
+
+The user, still on a firm-tap calibration, reported taps "all over the place and mostly not registering".
+- I replayed the user's real data through three builds with the live model: `harness/ReplayGkrec.swift` as a small executable next to a copy of `GhostkeysDetection`.
+  - old: febb145;
+  - new: the light-touch build the user ran;
+  - fixed: light-touch off, and the weak-tap rule restricted.
+- **Real desk recording (12 s):** candidates old 3, new 8, fixed 3.
+  - Junk read as a grille at 0.5 to 0.8: old 0, new 2, fixed 0.
+  - Under the weak follow-up rule those weak grille readings could start or close double-tap groups: false doubles, or real doubles broken apart.
+- **The two "missed" diagnostics:**
+  - one holds no tap at all (the pointer was moving the whole time);
+  - in the other, the 30 mg spike is followed by trackpad movement 30 ms later. It is rejected as "trackpad" by all three builds, and the classifier reads it as left-grille.
+- **feedback_missed** added 3 bad samples: a "right-grille" sample that looks like left-grille, and two "none" samples that look like confident lid and top-strip taps. They lowered right-grille from 0.93 to 0.87. The cleaned copy is `data/samples.cleaned.json`.
+- **Now:** light-touch is behind `DetectionSettings.lightTouch` (off by default). A weak tap only joins its own zone's group after a strong tap, and never starts or breaks a group.
+
+## Gentle taps (26 Sep 2026): adaptive onset floor (now opt-in: DetectionSettings.lightTouch)
 
 The user had to tap very hard: the fixed 17.5 mg floor sat far above the 1 to 4 mg desk noise. The floor now adapts:
 - **Learned floor:** half the 10th-percentile peak of the user's gentlest calibrated zone, clamped to 4 to 17.5 mg.

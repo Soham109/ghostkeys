@@ -39,11 +39,17 @@ public struct DetectionSettings: Codable, Sendable {
     /// In zones that need multiple taps, a tap at this confidence (same zone) may complete a double or
     /// triple whose other tap passed minConfidence. Set equal to minConfidence to disable.
     public var followUpConfidence: Double = 0.5
+    /// Light-touch mode (off by default): an onset floor learned from calibration taps, a 6 mg floor
+    /// on a quiet desk, and onset restart. Lets 8 to 40 mg taps trigger, but on this user's desk it
+    /// also let in ~2.5x more junk spikes (40/min vs 15/min on the real rest recording), some read as
+    /// a grille at 0.5 to 0.8 confidence, and live accuracy regressed with a firm-tap calibration.
+    /// Only turn it on together with a calibration done with light taps.
+    public var lightTouch: Bool = false
     public init() {}
 
     // Tolerant decoding: a config written by an older or newer app may lack some keys (or carry
     // extra ones such as hud/haptics); missing keys keep their defaults.
-    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence }
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, lightTouch }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         sensitivity = try c.decodeIfPresent(Double.self, forKey: .sensitivity) ?? sensitivity
@@ -51,6 +57,7 @@ public struct DetectionSettings: Codable, Sendable {
         doubleWindowMs = try c.decodeIfPresent(Double.self, forKey: .doubleWindowMs) ?? doubleWindowMs
         minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence) ?? minConfidence
         followUpConfidence = try c.decodeIfPresent(Double.self, forKey: .followUpConfidence) ?? followUpConfidence
+        lightTouch = try c.decodeIfPresent(Bool.self, forKey: .lightTouch) ?? lightTouch
     }
 }
 

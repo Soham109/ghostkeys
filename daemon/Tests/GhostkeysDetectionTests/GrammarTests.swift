@@ -206,12 +206,23 @@ struct GrammarDriver {
         #expect(g.tick(now: 2, oldestInFlight: nil).map(\.gesture) == ["double"])
     }
 
-    @Test func weakThenStrongMakesADouble() {
+    @Test func weakTapNeverStartsAGroup() {
         var g = GestureGrammar()
         g.zonesNeedingMultiTap = ["z"]
         let (absorbed, _) = g.acceptWeak(tap("z", 1.0, 0.6))
         #expect(!absorbed)
         #expect(g.accept(tap("z", 1.2, 0.95)).isEmpty)
+        #expect(g.tick(now: 2, oldestInFlight: nil).map(\.gesture) == ["tap"])
+    }
+
+    /// Real desk junk read as another grille at 0.5 to 0.8 must not break a real double apart.
+    @Test func weakJunkFromAnotherZoneDoesNotBreakADouble() {
+        var g = GestureGrammar()
+        g.zonesNeedingMultiTap = ["right-grille", "left-grille"]
+        _ = g.accept(tap("right-grille", 1.0, 0.95))
+        let (absorbed, out) = g.acceptWeak(tap("left-grille", 1.1, 0.7))
+        #expect(!absorbed && out.isEmpty)
+        #expect(g.accept(tap("right-grille", 1.25, 0.9)).isEmpty)
         #expect(g.tick(now: 2, oldestInFlight: nil).map(\.gesture) == ["double"])
     }
 
@@ -241,9 +252,9 @@ struct GrammarDriver {
         var g = GestureGrammar()
         g.zonesNeedingMultiTap = ["a", "b", "c"]
         _ = g.accept(tap("a", 1.0, 0.95))
-        let (_, closed) = g.acceptWeak(tap("c", 1.1, 0.6))    // a stray weak tap closes a's group
-        #expect(closed.map(\.gesture) == ["tap"])
-        let out = g.accept(tap("b", 1.3, 0.95))                // a then b within 500 ms: still a sequence
+        let (_, closed) = g.acceptWeak(tap("c", 1.1, 0.6))    // a stray weak tap changes nothing
+        #expect(closed.isEmpty)
+        let out = g.accept(tap("b", 1.3, 0.95))                // a then b within 500 ms: a sequence
         #expect(out.map(\.gesture) == ["sequence"])
         #expect(out.first?.zones == ["a", "b"])
     }

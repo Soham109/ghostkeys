@@ -18,7 +18,8 @@
 // - Weak follow-up taps (multi-tap zones only): a tap classified in the zone with a confidence
 //   between followUpConfidence and minConfidence cannot fire anything by itself, but it may complete
 //   a group: a double or triple needs at least one tap that passed minConfidence, the others only
-//   need the same zone at followUpConfidence. On the first real calibration, requiring every tap of
+//   need the same zone at followUpConfidence, and must come after a strong tap of that zone (a weak
+//   tap never starts a group nor disturbs another zone's group). On the first real calibration, requiring every tap of
 //   a double to pass 0.8 meant grille doubles registered 45 to 56% of the time (0.67 to 0.75 per
 //   tap, squared); with weak follow-ups the estimate is 75 to 81%, while typing spikes reached 0.5
 //   as a grille in only 2 to 4% of cases (and a false double also needs a strong junk tap first).
@@ -111,34 +112,25 @@ struct GestureGrammar {
         return out
     }
 
-    /// A weak tap (see header). Returns whether it joined a group that already has a strong tap
-    /// (so it counts as accepted), and any gestures that resulted.
+    /// A weak tap (see header). It can only join an open group of its own zone that already holds a
+    /// strong tap; it never starts a group and never closes or breaks another zone's group. (An
+    /// earlier version let weak taps start groups and close other groups: on the real desk
+    /// recording, junk spikes read as a grille at 0.5 to 0.8 then broke real double-taps apart.)
+    /// Returns whether it was absorbed, and the resulting gestures (a triple).
     mutating func acceptWeak(_ tap: TapEvent) -> (absorbed: Bool, gestures: [GestureEvent]) {
         let z = tap.zone, t = tap.t
-        guard zonesNeedingMultiTap.contains(z) else { return (false, []) }
-        var out: [GestureEvent] = []
-        if var p = pending, p.zone == z, let last = p.times.last {
-            if t - last < minGap { return (false, []) }            // bounce
-            if t - last <= doubleWindow {
-                p.times.append(t)
-                p.confidences.append(tap.confidence)
-                if p.times.count >= 3 {
-                    pending = nil
-                    lastSingle = nil
-                    if p.strong > 0 {
-                        out.append(gesture("triple", zone: z, zones: [z], t: t, confidence: p.confidences.min()!, modifiers: p.modifiers))
-                    }
-                    return (p.strong > 0, out)
-                }
-                pending = p
-                lastLone = nil
-                return (p.strong > 0, out)
-            }
+        guard zonesNeedingMultiTap.contains(z), var p = pending, p.zone == z, p.strong > 0,
+              let last = p.times.last, t - last >= minGap, t - last <= doubleWindow else { return (false, []) }
+        p.times.append(t)
+        p.confidences.append(tap.confidence)
+        lastLone = nil
+        if p.times.count >= 3 {
+            pending = nil
+            lastSingle = nil
+            return (true, [gesture("triple", zone: z, zones: [z], t: t, confidence: p.confidences.min()!, modifiers: p.modifiers)])
         }
-        // Start a weak-only group; it waits for a strong tap to complete it.
-        out += close()
-        pending = Group(zone: z, times: [t], confidences: [tap.confidence], modifiers: tap.modifiers, strong: 0)
-        return (false, out)
+        pending = p
+        return (true, [])
     }
 
     /// Closes the open group once its window has passed. `oldestInFlight` is the onset time of the

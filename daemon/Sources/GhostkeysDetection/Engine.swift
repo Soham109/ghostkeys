@@ -47,14 +47,15 @@ public final class TapEngine {
     public var noiseFloor: Double { onset.noise }
     /// Current trigger threshold (g).
     public var onsetThreshold: Double { onset.threshold }
-    /// True while the quiet-desk floor is in effect (calm for 300 ms, no key or trackpad for 1 s).
-    public var isQuiet: Bool { onset.quiet }
+    /// True while the quiet-desk floor is in effect (light-touch mode only: calm for 300 ms, no key
+    /// or trackpad for 1 s).
+    public var isQuiet: Bool { settings.lightTouch && onset.quiet }
     /// Current high-passed accel magnitude (g), for visualizers.
     public var level: Double { onset.level }
 
     // Components.
     private var history: SampleHistory
-    var onset = OnsetDetector()   // internal: evaluation harnesses flip legacyThreshold
+    private var onset = OnsetDetector()
     private var gravity = GravityMonitor()
     private var tilt = TiltDetector()
     private var grammar = GestureGrammar()
@@ -110,6 +111,7 @@ public final class TapEngine {
         recordInput(context, t: s.t)
 
         onset.sensitivity = settings.sensitivity
+        onset.lightTouch = settings.lightTouch
         onset.learnedFloor = model?.onsetFloor
         onset.captureMode = bypassInputGates
         onset.inputIdle = context.secondsSinceKey > 1 && context.secondsSinceMouse > 1

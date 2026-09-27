@@ -197,13 +197,21 @@ import Testing
     }
 
     @Test func sensitivityMovesTheThreshold() {
+        // Default (fixed floor): 12 mg taps need sensitivity 1.
         var strict = DetectionSettings(); strict.sensitivity = 0
         var loose = DetectionSettings(); loose.sensitivity = 1
         var b = StreamBuilder(seconds: 3, seed: 28)
-        b.addTap(.leftPalm, at: 1.0, amp: 0.006)
-        b.addTap(.leftPalm, at: 2.0, amp: 0.006)
+        b.addTap(.leftPalm, at: 1.0, amp: 0.012)
+        b.addTap(.leftPalm, at: 2.0, amp: 0.012)
         #expect(run(TapEngine(settings: strict), b.samples()).candidates.isEmpty)
         #expect(run(TapEngine(settings: loose), b.samples()).candidates.count == 2)
+        // Light-touch mode: 6 mg taps, same override.
+        strict.lightTouch = true; loose.lightTouch = true
+        var c = StreamBuilder(seconds: 3, seed: 28)
+        c.addTap(.leftPalm, at: 1.0, amp: 0.006)
+        c.addTap(.leftPalm, at: 2.0, amp: 0.006)
+        #expect(run(TapEngine(settings: strict), c.samples()).candidates.isEmpty)
+        #expect(run(TapEngine(settings: loose), c.samples()).candidates.count == 2)
     }
 
     @Test func calibrationBypassCapturesKeystrokes() {
@@ -241,17 +249,21 @@ import Testing
         for k in 0..<4 { truth.append(b.addTap(.leftGrille, at: 0.6 + Double(k) * 0.65, amp: 0.007)) }
         let syn = b.samples()
         let mixed = zip(rest, syn).map { r, s in IMUSample(t: r.t, a: r.a + (s.a - StreamBuilder.restGravity), g: r.g) }
-        let e = TapEngine(settings: DetectionSettings())
+        var lt = DetectionSettings(); lt.lightTouch = true
+        let e = TapEngine(settings: lt)
         let ev = run(e, mixed)
         #expect(match(detected: ev.candidates.map(\.t), truth: truth).hits == 4)
+        // Default settings (fixed 17.5 mg floor) do not hear them.
+        #expect(run(TapEngine(settings: DetectionSettings()), mixed).candidates.isEmpty)
         #expect(e.onsetThreshold < 0.008)
     }
 
     @Test func floorRisesWithInputActivityAndNoise() {
         // Same quiet signal, but a key was pressed 0.5 s ago: quiet mode is off, the floor goes back up.
         let rest = Array(restRecording().prefix(Int(3 * fs)))
-        let quiet = TapEngine(settings: DetectionSettings())
-        let busy = TapEngine(settings: DetectionSettings())
+        var lt = DetectionSettings(); lt.lightTouch = true
+        let quiet = TapEngine(settings: lt)
+        let busy = TapEngine(settings: lt)
         for s in rest {
             _ = quiet.ingest(s, context: InputContext())
             _ = busy.ingest(s, context: InputContext(secondsSinceKey: 0.5))
@@ -259,7 +271,7 @@ import Testing
         #expect(quiet.isQuiet && !busy.isQuiet)
         #expect(busy.onsetThreshold > 2 * quiet.onsetThreshold)
         // Noisy (lap-like) signal: k x noise takes over.
-        let noisy = TapEngine(settings: DetectionSettings())
+        let noisy = TapEngine(settings: lt)
         for s in StreamBuilder(seconds: 3, seed: 2, noiseMg: 12).samples() { _ = noisy.ingest(s, context: InputContext()) }
         #expect(!noisy.isQuiet)
         #expect(noisy.onsetThreshold > 0.02)
@@ -274,8 +286,9 @@ import Testing
         #expect(Set(q.keys) == ["left-palm", "left-grille"])
         let gentlest = q.values.map { $0[0] }.min()!
         #expect(m.onsetFloor == Stats.clamp(0.5 * gentlest, 0.004, 0.0175))
-        // The engine uses it (not quiet: a key was just pressed, so the learned floor applies).
-        let e = TapEngine(settings: DetectionSettings())
+        // The engine uses it in light-touch mode (not quiet: a key was just pressed).
+        var lt = DetectionSettings(); lt.lightTouch = true
+        let e = TapEngine(settings: lt)
         e.model = m
         for s in StreamBuilder(seconds: 1, seed: 3).samples() { _ = e.ingest(s, context: InputContext(secondsSinceKey: 0.2)) }
         #expect(abs(e.onsetThreshold - max(m.onsetFloor!, 5 * e.noiseFloor)) < 1e-9)
@@ -285,6 +298,7 @@ import Testing
         var m = ZoneModel(labels: ["a"])
         m.onsetFloor = 0.008
         var d = OnsetDetector()
+        d.lightTouch = true
         d.learnedFloor = m.onsetFloor
         d.inputIdle = false
         d.sensitivity = 0.5; let mid = d.absoluteFloor
