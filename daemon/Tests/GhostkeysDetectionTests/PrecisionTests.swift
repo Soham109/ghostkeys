@@ -74,6 +74,56 @@ import Testing
         #expect(later.gestures.map(\.g.gesture) == ["double"])
     }
 
+    /// A tap whose pulse rings past 80 ms (22% of the real lap taps) is decided only when the pulse ends. A key
+    /// pressed after the typing gate's 80 ms tolerance but before that decision was seen neither by the typing gate
+    /// (it looks up to onset + 80 ms) nor by the look-ahead (it only looked at events first seen while a group was
+    /// already pending), so the double fired although a key went down 95 ms after its second tap
+    /// (docs/review/VERIFY_07_DETECTION.md, finding 4).
+    @Test func keyDuringALateDecisionStillCancelsTheDouble() {
+        // Slow lap-like taps (see addSlowTap) with a 70 ms ring decay, in two directions: zone "a" and zone "b".
+        func slowTap(_ b: inout StreamBuilder, at t0: Double, amp: Double, dir: SIMD3<Double>) {
+            let i0 = Int((t0 * fs).rounded(.up))
+            for k in 0..<Int(0.3 * fs) where i0 + k < b.n {
+                let tau = Double(k) / fs
+                let v = tau < 0.025 ? 0.5 * (1 - cos(Double.pi * tau / 0.025))
+                                    : cos(2 * Double.pi * 30 * (tau - 0.025)) * exp(-(tau - 0.025) / 0.07)
+                b.a[i0 + k] += dir * (amp * v)
+            }
+        }
+        let dirs: [String: SIMD3<Double>] = ["a": [0.3, 0.1, 1], "b": [-0.6, 0.4, 0.7]]
+        let trainer = Trainer()
+        for (z, d) in dirs {
+            var b = StreamBuilder(seconds: 12, seed: z == "a" ? 5 : 6)
+            let truth = (0..<15).map { 1 + Double($0) * 0.7 }
+            for (k, t0) in truth.enumerated() { slowTap(&b, at: t0, amp: 0.1 * (1 + 0.1 * Double(k % 4)), dir: d) }
+            for f in run(TapEngine(settings: DetectionSettings()), b.samples()).candidates
+            where truth.contains(where: { abs($0 - f.t) < 0.03 }) { trainer.add(f, label: z) }
+        }
+        let e = TapEngine(settings: DetectionSettings())
+        e.model = trainer.train().0
+        e.zonesNeedingMultiTap = ["a"]
+        var b = StreamBuilder(seconds: 3, seed: 9)
+        slowTap(&b, at: 1.0, amp: 0.11, dir: dirs["a"]!)
+        slowTap(&b, at: 1.3, amp: 0.11, dir: dirs["a"]!)
+        let samples = b.samples()
+
+        let plain = run(e, samples)
+        #expect(plain.taps.map(\.zone) == ["a", "a"])
+        #expect(plain.gestures.map(\.g.gesture) == ["double"], "\(plain.gestures.map(\.g.gesture))")
+        // Premise: the second tap is decided more than 95 ms after its onset.
+        let second = try? #require(plain.taps.last)
+        let decided = plain.first { if case .tap(let t) = $0.event { return t.t > 1.2 }; return false }?.at ?? 0
+        let onset2 = second?.t ?? 0
+        #expect(decided - onset2 > 0.1, "decided \(Int((decided - onset2) * 1000)) ms after the onset")
+
+        e.reset()
+        let typed = run(e, samples, input: InputScript(keys: [onset2 + 0.095]))
+        #expect(typed.gestures.isEmpty, "\(typed.gestures.map(\.g.gesture))")
+        e.reset()
+        let pointer = run(e, samples, input: InputScript(mouse: [onset2 + 0.095]))
+        #expect(pointer.gestures.isEmpty, "\(pointer.gestures.map(\.g.gesture))")
+    }
+
     // MARK: Familiarity guard
 
     func result(_ distance: Double, _ confidence: Double) -> ZoneModel.Result {

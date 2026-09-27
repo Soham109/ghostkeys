@@ -129,13 +129,17 @@ public final class TapEngine {
         var out: [DetectorEvent] = []
         let index = history.count
         history.append(s)
-        let (newKeys, newPointer) = recordInput(context, t: s.t)
+        recordInput(context, t: s.t)
         // Look-ahead: a key press or pointer event shortly after a tap means the hands were on their way to the
         // keyboard or trackpad, and the spike was most likely a palm landing or a hand brushing the chassis. A
         // double/triple still waiting for its window to close is dropped (no latency cost: it was waiting anyway).
+        // Every remembered event is checked, not only the ones first seen at this sample: a tap whose pulse rings past
+        // 80 ms is decided late, and a key that went down between onset + 80 ms (the typing gate's reach) and that
+        // decision was seen before the group existed (docs/review/VERIFY_07_DETECTION.md, finding 4).
         if let last = grammar.pendingLastTap {
             let lookAhead = min(settings.doubleWindowMs / 1000, lookAheadGate)
-            if (newKeys + newPointer).contains(where: { $0 > last && $0 - last <= lookAhead }) { grammar.cancelPending() }
+            let after = { (e: Double) in e > last && e - last <= lookAhead }
+            if keyTimes.contains(where: after) || mouseTimes.contains(where: after) { grammar.cancelPending() }
         }
 
         onset.sensitivity = settings.sensitivity
