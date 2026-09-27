@@ -160,6 +160,49 @@ export const useStore = create<State>()((set, get) => ({
   }
 }))
 
+/** Loose match: every field of `want` has the same value in `got` (key order and extra fields do not matter). */
+function sameValues(want: unknown, got: unknown): boolean {
+  if (Array.isArray(want)) return Array.isArray(got) && want.length === got.length && want.every((w, i) => sameValues(w, got[i]))
+  if (want && typeof want === 'object') {
+    if (!got || typeof got !== 'object') return false
+    return Object.entries(want).every(([k, v]) => sameValues(v, (got as Record<string, unknown>)[k]))
+  }
+  return want === got
+}
+
+/**
+ * Saves settings and waits for the daemon to confirm them (its config reply carries the new values). Resolves to
+ * null on success, or an error message to show the user. Use this before anything that depends on the new
+ * setting, instead of sending the next message after a guessed delay.
+ */
+export function saveSettingsConfirmed(patch: Partial<Config['settings']>, timeoutMs = 4000): Promise<string | null> {
+  return new Promise((resolve) => {
+    const s = useStore.getState()
+    if (!s.config || client.state !== 'open') {
+      resolve('Ghostkeys is not connected to its background service.')
+      return
+    }
+    let done = false
+    const finish = (err: string | null): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      offConfig()
+      offError()
+      if (err) client.send({ type: 'config_get' }) // put the switches back to what the daemon really has
+      resolve(err)
+    }
+    const offConfig = client.on('config', (m) => {
+      if (Object.entries(patch).every(([k, v]) => sameValues(v, (m.config.settings as unknown as Record<string, unknown>)[k]))) finish(null)
+    })
+    const offError = client.on('error', (e) => {
+      if (/config/i.test(e.message)) finish(e.message)
+    })
+    const timer = setTimeout(() => finish('The Ghostkeys service did not confirm the change.'), timeoutMs)
+    s.saveSettings(patch)
+  })
+}
+
 export const isDirty = (s: Pick<State, 'config' | 'draft'>): boolean =>
   !!s.config && !!s.draft && JSON.stringify({ ...s.config, settings: null }) !== JSON.stringify({ ...s.draft, settings: null })
 

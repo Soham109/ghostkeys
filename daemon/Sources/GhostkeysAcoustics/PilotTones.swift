@@ -60,8 +60,10 @@ public enum PilotToneError: Error, Equatable {
 /// The hard limits, shared by every tone generator. Not overridable:
 /// - level: never above -30 dBFS per channel, and the channels' amplitudes together never above -30 dBFS either;
 /// - 20 ms fade in and out;
-/// - a session stops by itself after 60 s of rendered audio unless renewed;
-/// - 10 s cooldown after a session before the next may start;
+/// - a session stops by itself after 60 s of rendered audio unless renewed (a watchdog: an owner that wants the tone
+///   to keep going calls `renew()`, which re-runs the route check, well inside that window);
+/// - 10 s cooldown after a refusal or a safety stop (route refused, route changed at renew, watchdog) before the next
+///   start; a plain `stop()` (the user turned sonar off) and renewals never start a cooldown;
 /// - built-in speaker only (headphones, external or unknown output: refused).
 public enum SpeakerSafety {
     /// -30 dBFS.
@@ -103,7 +105,11 @@ final class ToneSafetyCore: @unchecked Sendable {
 
     func start() throws {
         let route = routeCheck()
-        guard route.allowsPilotTone else { throw PilotToneError.routeNotAllowed(route) }
+        guard route.allowsPilotTone else {
+            stoppedAt = clock()          // a refusal starts the cooldown
+            if state == .playing { targetGain = 0; state = .fadingOut }
+            throw PilotToneError.routeNotAllowed(route)
+        }
         if state == .playing { renew(); return }
         let left = cooldownRemaining
         guard left <= 0 else { throw PilotToneError.coolingDown(secondsLeft: left) }
@@ -117,20 +123,27 @@ final class ToneSafetyCore: @unchecked Sendable {
     @discardableResult
     func renew() -> Bool {
         guard state == .playing else { return false }
-        guard routeCheck().allowsPilotTone else { stop(); return false }
+        guard routeCheck().allowsPilotTone else {
+            // Safety stop: fade out now and start the cooldown.
+            targetGain = 0
+            state = .fadingOut
+            stoppedAt = clock()
+            return false
+        }
         renewedAtSample = sessionSamples
         return true
     }
 
+    /// Plain stop (fade out). No cooldown: this is the owner turning the tone off, not a safety event.
     func stop() {
         guard state == .playing else { return }
         targetGain = 0
         state = .fadingOut
-        stoppedAt = clock()
     }
 
+    /// Hard cut (the device is changing under us). Counts as a safety stop: the cooldown starts.
     func stopImmediately() {
-        if state == .playing { stoppedAt = clock() }
+        if state != .idle { stoppedAt = clock() }
         targetGain = 0
         gain = 0
         state = .idle
@@ -191,7 +204,7 @@ public final class PilotToneGenerator: @unchecked Sendable {
     public func start() throws { try core.start() }
     /// Extends the running session by another 60 s from now. Re-checks the route; stops if it is no longer allowed.
     @discardableResult public func renew() -> Bool { core.renew() }
-    /// Fades out (20 ms) and starts the cooldown.
+    /// Fades out (20 ms). No cooldown (only refusals and safety stops start one).
     public func stop() { core.stop() }
     /// Stops at once without a fade (the device is going away, for example a route change).
     public func stopImmediately() { core.stopImmediately() }

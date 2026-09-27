@@ -126,23 +126,32 @@ export const cameraSettingsSchema = z.object({
   deskMode: z.boolean()
 })
 
-export const settingsSchema = z.object({
-  sensitivity: z.number(),
-  typingGateMs: z.number(),
-  doubleWindowMs: z.number(),
-  minConfidence: z.number(),
-  hud: z.boolean(),
-  haptics: z.boolean(),
-  sound: soundSettingsSchema,
-  camera: cameraSettingsSchema
-})
+// Settings the daemon may add later must survive a getConfig() -> setConfig() round trip, so unknown keys are kept
+// (a stripped key is decoded by the daemon as its default, which silently turned settings.sonar off).
+export const settingsSchema = z
+  .object({
+    sensitivity: z.number(),
+    typingGateMs: z.number(),
+    doubleWindowMs: z.number(),
+    minConfidence: z.number(),
+    followUpConfidence: z.number().optional(),
+    lightTouch: z.boolean().optional(),
+    hud: z.boolean(),
+    haptics: z.boolean(),
+    sound: soundSettingsSchema,
+    camera: cameraSettingsSchema,
+    sonar: soundSettingsSchema.optional()
+  })
+  .passthrough()
 
-export const configSchema = z.object({
-  version: z.number(),
-  zones: z.array(zoneSchema),
-  bindings: z.array(bindingSchema),
-  settings: settingsSchema
-})
+export const configSchema = z
+  .object({
+    version: z.number(),
+    zones: z.array(zoneSchema),
+    bindings: z.array(bindingSchema),
+    settings: settingsSchema
+  })
+  .passthrough()
 
 // ---------------------------------------------------------------------------
 // Daemon -> app
@@ -320,9 +329,15 @@ export const catalogMsgSchema = z.object({
 
 export const sessionMsgSchema = z.object({
   type: z.literal('session'),
-  kind: z.enum(['sound', 'air']),
+  kind: z.enum(['sound', 'sonar', 'air']),
   active: z.boolean(),
   secondsLeft: z.number(),
+  sonarField: z.boolean().optional(),
+  continuous: z.boolean().optional(),
+  enabled: z.boolean().optional(),
+  waiting: z.string().optional(),
+  tonesOff: z.string().optional(),
+  coveredBy: z.string().optional(),
   simulated: z.boolean().optional(),
   reason: z.string().optional(),
   trigger: z.string().optional(),
@@ -334,7 +349,8 @@ export const sessionMsgSchema = z.object({
 export const airMsgSchema = z.object({
   type: z.literal('air'),
   t: z.number(),
-  gesture: z.enum(CONTINUOUS_AIR_GESTURES as unknown as [string, ...string[]]),
+  // Camera gestures, plus the continuous sonar values (source "sonar").
+  gesture: z.enum([...CONTINUOUS_AIR_GESTURES, 'hover_level', 'finger_slide'] as unknown as [string, ...string[]]),
   phase: z.enum(['began', 'changed', 'ended']),
   hand: handSchema.optional(),
   x: z.number().optional(),
@@ -342,7 +358,14 @@ export const airMsgSchema = z.object({
   dx: z.number().optional(),
   dy: z.number().optional(),
   scale: z.number().optional(),
-  confidence: z.number().optional()
+  confidence: z.number().optional(),
+  side: z.enum(['left', 'right']).optional(),
+  value: z.number().optional(),
+  displacementMm: z.number().optional(),
+  dxMm: z.number().optional(),
+  dyMm: z.number().optional(),
+  cancelled: z.boolean().optional(),
+  source: z.string().optional()
 })
 
 export const daemonMessageSchema = z.union([

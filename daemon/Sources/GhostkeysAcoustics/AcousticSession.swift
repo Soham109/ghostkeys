@@ -41,6 +41,10 @@ public final class AcousticSession: @unchecked Sendable {
     private var pilotNode: AVAudioSourceNode?
     private var stopPilot: ((Bool) -> Void)?
     private var configObserver: NSObjectProtocol?
+    /// Called (on an arbitrary thread) after the audio hardware configuration changed: output route, device, sample
+    /// rate or channel count. The tones are already cut and AVAudioEngine has stopped itself (the microphone delivers
+    /// nothing more); the owner should `stop()` and open a new session.
+    public var onConfigurationChange: (() -> Void)?
     private let targetFormat = AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: AcousticSession.sampleRate,
                                              channels: 1, interleaved: false)!
 
@@ -81,7 +85,9 @@ public final class AcousticSession: @unchecked Sendable {
         isRunning = true
         configObserver = NotificationCenter.default.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: nil) { [weak self] _ in
             // Device or route changed (headphones plugged in, Bluetooth connected...): silence the pilot at once.
+            // AVAudioEngine also stops itself here, so the microphone is dead until the owner reopens it.
             self?.stopPilotTone(immediately: true)
+            self?.onConfigurationChange?()
         }
     }
 
@@ -140,9 +146,14 @@ public final class AcousticSession: @unchecked Sendable {
             render(UnsafeMutableAudioBufferListPointer(audioBufferList), Int(frameCount))
             return noErr
         }
+        // Rewire with the engine stopped: connecting the output side of a running input-only engine can make it
+        // reconfigure its I/O mid-flight (which posts a configuration change and silences everything).
+        let wasRunning = engine.isRunning
+        if wasRunning { engine.pause() }
         engine.attach(node)
         engine.connect(node, to: engine.mainMixerNode, format: format)
-        if !engine.isRunning { try engine.start() }
+        engine.prepare()
+        try engine.start()
         pilotNode = node
     }
 

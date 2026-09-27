@@ -35,6 +35,19 @@ final class SessionCoordinator {
     private var micKind: SessionTimer.Kind = .sound
     private var airError: String?
 
+    // Sonar: not a timed session but a mode. While settings.sonar.enabled is true the mic session runs in sonar mode
+    // until the user turns it off, except while paused, asleep (system or display) or with the lid closed; it comes
+    // back by itself when those end. A 1 s maintenance timer re-checks everything and keeps the tones renewed.
+    private var sonarTimer: DispatchSourceTimer?
+    private var sonarTicks = 0
+    private var sonarRetryAt = 0.0
+    private var sonarLastError: String?
+    private var sonarBlocker: String?
+    private var systemAsleep = false
+    private var displayAsleep = false
+    private var lidClosed = false
+    private var sonarRunning: Bool { sound.running && micKind == .sonar }
+
     // Recent IMU taps: knuckle gestures take the zone of the tap they came from; desk touches need IMU contact.
     private var recentTaps: [(t: Double, zone: String)] = []
     private let tapTimesLock = NSLock()
@@ -58,7 +71,10 @@ final class SessionCoordinator {
         soundTimer = SessionTimer(kind: .sound, queue: queue)
         airTimer = SessionTimer(kind: .air, queue: queue)
 
-        soundTimer.onExpire = { [weak self] in self?.stopMic(reason: "timeout") }
+        soundTimer.onExpire = { [weak self] in
+            guard let self, self.micKind == .sound else { return }     // sonar has no time limit
+            self.stopSound(reason: "timeout")
+        }
         airTimer.onExpire = { [weak self] in self?.stopAir(reason: "timeout") }
         soundTimer.onTick = { [weak self] left in
             guard let self else { return }
@@ -74,6 +90,7 @@ final class SessionCoordinator {
             if left % 5 == 0 { self.report(.air) }
         }
         sound.onGesture = { [weak self] g in self?.soundGesture(g) }
+        sound.onFailure = { [weak self] err in self?.micFailed(err) }
         sound.onTapType = { [weak self] onset, type in self?.tapTypeArrived(onset: onset, type: type) }
         sound.onCalibrationSample = { [weak self] label, ok in self?.tapCalibrationSample(label: label, captured: ok) }
         sound.onAir = { [weak self] m in
@@ -100,9 +117,17 @@ final class SessionCoordinator {
         guard !host.isPaused else { return fail(.sound, "paused", client) }
         let cfg = host.currentConfig
         let seconds = clampSeconds(requested ?? cfg.settings.sound.sessionSeconds)
-        if sound.running {                        // extend (a sonar session already does everything sound does)
+        if sonarRunning {
+            // Sonar is on and already does everything sound mode does; there is nothing to start or time.
+            Log.info("sound session not needed: sonar is on and covers sound gestures")
+            var m = message(.sound, reason: "sonar_on")
+            m["coveredBy"] = "sonar"
+            if let client { host.send(m, to: client) }
+            return report(.sonar)
+        }
+        if sound.running {                        // extend
             soundTimer.begin(seconds: seconds, reason: soundTimer.reason ?? "request")
-            return report(micKind)
+            return report(.sound)
         }
         micKind = .sound
         let wantSonar = cfg.hasBinding(for: Config.waveGestures)
@@ -115,44 +140,146 @@ final class SessionCoordinator {
         report(.sound)
     }
 
-    /// Stops the mic session whichever kind it is.
+    /// Stops the mic session whichever kind it is (pause, errors). Sonar comes back by itself when the reason ends.
     func stopMic(reason: String) {
-        if micKind == .sonar { stopSonar(reason: reason) } else { stopSound(reason: reason) }
+        if sonarRunning { stopSonarMode(reason: reason) } else { stopSound(reason: reason) }
     }
 
-    // MARK: Sonar (SonarField: stereo pilots on the built-in speakers)
+    // MARK: Sonar (SonarField: stereo pilots on the built-in speakers), continuous while enabled
 
-    func startSonar(seconds requested: Double?, client: WebSocketServer.Client?) {
+    /// `sonar_session_start`: sonar is a setting now; this only (re)starts it at once when the setting is on.
+    func startSonar(seconds _: Double?, client: WebSocketServer.Client?) {
         guard let host else { return }
-        guard !host.isPaused else { return fail(.sonar, "paused", client) }
-        let cfg = host.currentConfig
-        // The tones never play unless the user turned sonar on in settings, even when the app asks.
-        guard cfg.settings.sonar.enabled else { return fail(.sonar, "sonar is off (settings.sonar.enabled)", client) }
-        let seconds = clampSeconds(requested ?? cfg.settings.sonar.sessionSeconds)
-        if sound.running && micKind == .sonar {
-            soundTimer.begin(seconds: seconds, reason: soundTimer.reason ?? "request")
-            return report(.sonar)
+        guard host.currentConfig.settings.sonar.enabled else {
+            Log.info("sonar refused: settings.sonar.enabled is false")
+            return fail(.sonar, "sonar is off (settings.sonar.enabled)", client)
         }
+        sonarRetryAt = 0
+        syncSonar(trigger: "request", userInitiated: client != nil)
+        if sonarRunning { return report(.sonar) }
+        let why = sonarBlocker.map { "sonar is waiting: \($0)" } ?? sonarLastError ?? "sonar could not start"
+        fail(.sonar, why, client)
+    }
+
+    /// The config changed (config_set, sonar_session_stop): start or stop sonar to match. `client` is the app that
+    /// changed it (a user action, so the microphone permission prompt may show).
+    func settingsChanged(client: WebSocketServer.Client?) {
+        sonarRetryAt = 0
+        syncSonar(trigger: "settings", userInitiated: client != nil, client: client)
+    }
+
+    func setSystemAsleep(_ asleep: Bool) {
+        guard systemAsleep != asleep else { return }
+        systemAsleep = asleep
+        Log.info(asleep ? "system going to sleep" : "system woke")
+        syncSonar(trigger: asleep ? "sleep" : "wake")
+    }
+
+    func setDisplayAsleep(_ asleep: Bool) {
+        guard displayAsleep != asleep else { return }
+        displayAsleep = asleep
+        syncSonar(trigger: asleep ? "display_sleep" : "display_wake")
+    }
+
+    /// Brings the mic session in line with the sonar setting and the conditions it needs. Called on every change
+    /// and once a second while sonar is enabled.
+    func syncSonar(trigger: String, userInitiated: Bool = false, client: WebSocketServer.Client? = nil) {
+        guard let host else { return }
+        let enabled = host.currentConfig.settings.sonar.enabled
+        guard enabled else {
+            if sonarRunning {
+                Log.info("sonar off (\(trigger == "settings" ? "turned off in settings" : trigger)): tones stopped, microphone closed")
+                stopSonarMode(reason: "turned_off")
+            }
+            stopSonarTimer()
+            sonarLastError = nil
+            sonarBlocker = nil
+            return
+        }
+        ensureSonarTimer()
+        let blocker: String? = host.isPaused ? "paused" : systemAsleep ? "asleep" : displayAsleep ? "display_asleep"
+            : lidClosed ? "lid_closed" : nil
+        if let blocker {
+            let previous = sonarBlocker
+            sonarBlocker = blocker
+            if sonarRunning {
+                Log.info("sonar held (\(blocker)): tones stopped, microphone closed; resumes by itself")
+                stopSonarMode(reason: blocker)
+            } else if previous != blocker {
+                Log.info("sonar waiting: \(blocker)")
+                report(.sonar, reason: blocker)
+            }
+            return
+        }
+        let wasBlocked = sonarBlocker
+        sonarBlocker = nil
+        if sonarRunning {
+            if let line = sound.maintainSonarTones() { Log.info(line); report(.sonar) }
+            sonarTicks += 1
+            if sonarTicks % 5 == 0 { report(.sonar) }
+            return
+        }
+        guard userInitiated || Clock.now() >= sonarRetryAt else { return }
         if sound.running { stopSound(reason: "switched_to_sonar") }     // restart the mic session in sonar mode
-        if let err = sound.start(wantSonar: false, userInitiated: client != nil, sonarField: true) {
-            return fail(.sonar, err, client)
+        if let err = sound.start(wantSonar: false, userInitiated: userInitiated, sonarField: true) {
+            sonarRetryAt = Clock.now() + 10
+            if err != sonarLastError || client != nil {
+                Log.info("sonar refused: \(err)\(userInitiated ? "" : "; retrying every 10 s")")
+                sonarLastError = err
+                fail(.sonar, err, client)
+            }
+            return
         }
+        sonarLastError = nil
         micKind = .sonar
-        soundTimer.begin(seconds: seconds, reason: client != nil ? "request" : "auto")
+        sonarTicks = 0
+        Log.info("sonar on (\(wasBlocked.map { "resumed after \($0)" } ?? trigger))\(sound.simulate ? " [simulated]" : ""): microphone open, "
+                 + (sound.sonarFieldOn ? "tones playing" : "tones off: \(sound.toneProblem ?? "unknown")"))
         report(.sonar)
     }
 
-    func stopSonar(reason: String) {
-        guard micKind == .sonar, soundTimer.active || sound.running else { return }
+    private func stopSonarMode(reason: String) {
+        guard sonarRunning else { return }
         stopSound(reason: reason, kind: .sonar)
         micKind = .sound
+    }
+
+    /// Kept for callers that end the mic session in sonar mode (pause); sonar itself stays enabled.
+    func stopSonar(reason: String) { stopSonarMode(reason: reason) }
+
+    private func ensureSonarTimer() {
+        guard sonarTimer == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: queue)
+        t.schedule(deadline: .now() + 1, repeating: 1)
+        t.setEventHandler { [weak self] in self?.syncSonar(trigger: "tick") }
+        t.resume()
+        sonarTimer = t
+    }
+
+    private func stopSonarTimer() {
+        sonarTimer?.cancel()
+        sonarTimer = nil
+    }
+
+    private func micFailed(_ err: String) {
+        if sonarRunning {
+            Log.info("sonar stopped: \(err); retrying in 10 s")
+            stopSonarMode(reason: "error")
+            sonarRetryAt = Clock.now() + 10
+            sonarLastError = err
+            fail(.sonar, err, nil)
+        } else {
+            stopSound(reason: "error")
+            fail(.sound, err, nil)
+        }
     }
 
     /// Typing and IMU motion: hold SonarField detection off (no-op unless a sonar session runs).
     func suppressSonar(until: Double) { sound.suppressSonar(until: until) }
 
     func stopSound(reason: String, kind: SessionTimer.Kind? = nil) {
-        if kind == nil && micKind == .sonar { return stopSonar(reason: reason) }
+        // sound_session_stop never ends sonar: sonar is a setting (turn it off there, or with sonar_session_stop).
+        if kind == nil && micKind == .sonar { return }
         guard soundTimer.active || sound.running else { return }
         if tapCal != nil { cancelTapCalibration(reason: "sound session ended (\(reason))") }
         sound.stop()
@@ -203,6 +330,10 @@ final class SessionCoordinator {
     }
 
     func stopAll(reason: String) {
+        if reason == "paused", host?.currentConfig.settings.sonar.enabled == true {
+            if sonarRunning { Log.info("sonar held (paused): tones stopped, microphone closed; resumes when Ghostkeys resumes") }
+            sonarBlocker = "paused"
+        }
         stopMic(reason: reason)
         stopAir(reason: reason)
     }
@@ -216,17 +347,14 @@ final class SessionCoordinator {
         guard let host, !host.isPaused else { return }
         let cfg = host.currentConfig
         // Leaving a pinned app ends the automatic session it started.
-        if soundTimer.isAuto || soundTimer.reason == "auto" { stopMic(reason: "app_changed") }
+        if micKind == .sound, soundTimer.isAuto || soundTimer.reason == "auto" { stopSound(reason: "app_changed") }
         if airTimer.isAuto || airTimer.reason == "auto" { stopAir(reason: "app_changed") }
         guard let id = bundleID else { return }
         if cfg.settings.sound.enabled, cfg.settings.sound.autoApps.contains(id),
-           cfg.hasBinding(for: Config.soundGestures, app: id), !sound.running {
+           cfg.hasBinding(for: Config.soundGestures, app: id), !sound.running, !cfg.settings.sonar.enabled {
             startSound(seconds: nil, client: nil)
         }
-        if cfg.settings.sonar.enabled, cfg.settings.sonar.autoApps.contains(id),
-           cfg.hasBinding(for: Config.sonarGestures, app: id), !(sound.running && micKind == .sonar) {
-            startSonar(seconds: nil, client: nil)
-        }
+        // Sonar has no pinned apps: it runs whenever it is enabled.
         if cfg.settings.camera.enabled, cfg.settings.camera.autoApps.contains(id),
            cfg.hasBinding(for: Config.cameraGestures, app: id), !air.running {
             startAir(seconds: nil, camera: "front", client: nil)
@@ -237,6 +365,12 @@ final class SessionCoordinator {
         // Lid (nearly) closed: the camera cannot see anything useful and should not stay on.
         // (Simulated sessions have no camera, so the rule does not apply to them.)
         if angle < 20 && !air.simulate { stopAir(reason: "lid_closed") }
+        // Sonar holds while the lid is (nearly) closed and resumes when it opens (hysteresis: closed < 20, open > 30).
+        let closed = angle < 20 ? true : angle > 30 ? false : lidClosed
+        if closed != lidClosed {
+            lidClosed = closed
+            syncSonar(trigger: closed ? "lid_closed" : "lid_opened")
+        }
     }
 
     // MARK: IMU taps
@@ -426,13 +560,21 @@ final class SessionCoordinator {
         let isMic = kind != .air
         let timer = isMic ? soundTimer : airTimer
         let simulated = isMic ? sound.simulate : air.simulate
-        // The mic timer belongs to whichever kind (sound or sonar) is running.
-        let active = timer.active && (!isMic || micKind == kind)
+        // The mic session belongs to whichever kind (sound or sonar) is running. Sonar has no timer: it is on while
+        // the setting is on (secondsLeft 0, continuous true).
+        let active = kind == .sonar ? sonarRunning : timer.active && (kind == .air || micKind == kind)
         var m: [String: Any] = ["type": "session", "kind": kind.rawValue, "active": active,
-                                "secondsLeft": active ? timer.secondsLeft : 0]
+                                "secondsLeft": active && kind != .sonar ? timer.secondsLeft : 0]
+        if kind == .sonar {
+            m["continuous"] = true
+            m["enabled"] = host?.currentConfig.settings.sonar.enabled ?? false
+            if let b = sonarBlocker { m["waiting"] = b }
+            if active, let p = sound.toneProblem { m["tonesOff"] = p }
+        }
         if simulated { m["simulated"] = true }
         if let reason { m["reason"] = reason }
-        if active { m["trigger"] = timer.reason ?? "request" }
+        if active && kind != .sonar { m["trigger"] = timer.reason ?? "request" }
+        if active && kind == .sonar { m["trigger"] = "setting" }
         if isMic && active {
             m["sonar"] = sound.sonarOn; m["tapTypes"] = sound.tapTypesOn; m["sonarField"] = sound.sonarFieldOn
         }
@@ -444,7 +586,7 @@ final class SessionCoordinator {
     }
 
     private func fail(_ kind: SessionTimer.Kind, _ error: String, _ client: WebSocketServer.Client?) {
-        Log.info("\(kind.rawValue) session not started: \(error)")
+        if kind != .sonar { Log.info("\(kind.rawValue) session not started: \(error)") }   // sonar logs its own reasons
         var m = message(kind, reason: "error")
         m["error"] = error
         if let client { host?.send(m, to: client) } else { host?.broadcast(m, stream: nil) }

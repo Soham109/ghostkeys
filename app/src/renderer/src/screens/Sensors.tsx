@@ -7,6 +7,7 @@ import { client } from '@/lib/client'
 import { PageHeader } from '@/components/Page'
 import { Segmented, ZoneIndex } from '@/components/ui/controls'
 import { Button } from '@/components/ui/button'
+import { sonarProblem, turnOffSonar } from '@/components/SessionNeed'
 
 const WINDOW_S = 8
 const CAP = 60 * 12
@@ -319,12 +320,15 @@ function SonarPanel(): React.JSX.Element {
           <p className="flex items-baseline gap-1">
             <span className="numeral text-[28px]">{level === null ? '\u2014' : Math.round(level * 100)}</span>
           </p>
-          <p className="tag-mono mt-1 text-ink-3">{label ?? (active ? (session?.sonarField === false ? 'Tones off' : 'Listening') : 'Off')}</p>
+          <p className="tag-mono mt-1 text-ink-3">
+            {label ?? (active ? (session?.sonarField === false ? 'Tones off' : 'Listening') : enabled ? (session?.waiting ? 'Waiting' : 'Starting') : 'Off')}
+          </p>
         </div>
       </div>
       <div className="mt-auto">
-        <Button variant="text" size="sm" disabled={!enabled && !active} onClick={() => client.send({ type: active ? 'sonar_session_stop' : 'sonar_session_start' })}>
-          {active ? `Stop, ${Math.round(session!.secondsLeft)}s left` : enabled ? 'Start sonar' : 'Off in Settings'}
+        {enabled && sonarProblem(session) && <p className="mb-1 text-[12px] leading-4 text-ink-3">{sonarProblem(session)}</p>}
+        <Button variant="text" size="sm" onClick={() => (enabled ? void turnOffSonar() : useStore.getState().navigate('settings'))}>
+          {enabled ? 'Turn off sonar' : 'Off in Settings'}
         </Button>
       </div>
     </Panel>

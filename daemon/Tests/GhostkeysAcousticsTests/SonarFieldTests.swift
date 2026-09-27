@@ -258,6 +258,60 @@ import Testing
         #expect(g.state == .playing)
     }
 
+    /// Sonar stays on for as long as the user wants: the daemon renews every second. Ten minutes of renewed
+    /// playback never exceeds the cap (per channel or as a mono downmix) and never stops by itself.
+    @Test func continuousRenewalKeepsTheCap() throws {
+        let clock = FakeClock()
+        let g = Self.make(left: 1, right: 1, clock: clock)
+        try g.start()
+        var peakL: Float = 0, peakR: Float = 0, peakSum: Float = 0
+        for _ in 0..<600 {
+            let (l, r) = g.render(count: 48_000)
+            peakL = max(peakL, l.map { abs($0) }.max()!)
+            peakR = max(peakR, r.map { abs($0) }.max()!)
+            peakSum = max(peakSum, zip(l, r).map { abs($0 + $1) }.max()!)
+            clock.now += 1
+            #expect(g.renew())
+        }
+        #expect(g.state == .playing && !g.autoStopped)
+        #expect(peakL <= SpeakerSafety.maxAmplitude + 1e-6 && peakR <= SpeakerSafety.maxAmplitude + 1e-6)
+        #expect(peakSum <= SpeakerSafety.maxAmplitude + 1e-6, "mono downmix peak \(peakSum)")
+        // Renewals never start a cooldown: stop and start again at once.
+        g.stop()
+        _ = g.render(count: 4_800)
+        try g.start()
+        #expect(g.state == .playing)
+    }
+
+    /// Headphones (or Bluetooth, or anything but the built-in speakers) appear mid-session: the next renewal stops the
+    /// tones within the 20 ms fade, the channels go silent, and a restart waits out the 10 s cooldown.
+    @Test func routeChangeStopsTheTones() throws {
+        let clock = FakeClock()
+        final class Route: @unchecked Sendable { var now = OutputRoute.builtInSpeaker }
+        let route = Route()
+        let g = StereoPilotGenerator(routeCheck: { route.now }, clock: { clock.now })
+        try g.start()
+        _ = g.render(count: 48_000)
+        for changed: OutputRoute in [.headphones, .external(transport: "blue")] {
+            route.now = changed
+            #expect(!g.renew())
+            let fade = g.render(count: 960 + 480)     // 20 ms fade, then silence
+            #expect(fade.left[960...].allSatisfy { $0 == 0 } && fade.right[960...].allSatisfy { $0 == 0 })
+            #expect(g.state == .idle)
+            #expect(throws: PilotToneError.self) { try g.start() }
+            route.now = .builtInSpeaker
+            clock.now += 11
+            try g.start()
+            _ = g.render(count: 4_800)
+            #expect(g.state == .playing)
+        }
+        // A hard cut (audio configuration change) is silent from the very next sample.
+        g.stopImmediately()
+        let after = g.render(count: 256)
+        #expect(after.left.allSatisfy { $0 == 0 } && after.right.allSatisfy { $0 == 0 })
+        #expect(throws: PilotToneError.self) { try g.start() }
+    }
+
     @Test func refusesAnythingButTheBuiltInSpeaker() {
         for route: OutputRoute in [.headphones, .unknown, .external(transport: "usb ")] {
             let g = Self.make(route: route)

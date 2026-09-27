@@ -384,9 +384,9 @@ const SHOTS: Record<string, () => Promise<void>> = {
     await sleep(400)
   },
   'sensors-sonar': async () => {
+    // Sonar is a switch: turning it on starts it.
     useStore.getState().saveSettings({ sonar: { enabled: true, sessionSeconds: 30, autoApps: [] } })
     await sleep(200)
-    client.send({ type: 'sonar_session_start', seconds: 20 })
     useStore.getState().navigate('sensors')
     await sleep(2700)
   },

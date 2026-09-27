@@ -107,8 +107,8 @@ Optional sound mode (GhostkeysAcoustics, mic sessions only):
 | `rub` / `rub_left` / `rub_right` | fingertip rub or swipe on a palm rest or grille; left/right only when direction confidence >= 0.7 |
 | `wave_toward` / `wave_away` / `wave_sweep` | hand movement above the keyboard, via an inaudible 20 kHz pilot tone (built-in speakers only) |
 
-Optional stereo sonar (GhostkeysAcoustics SonarField, `sonar` sessions only: two inaudible tones, 19.5 kHz left and
-20.25 kHz right, -30 dBFS combined, built-in speakers only). Discrete gestures carry `side` ("left" | "right") and
+Optional stereo sonar (GhostkeysAcoustics SonarField, while `settings.sonar.enabled` is on: two inaudible tones,
+19.5 kHz left and 20.25 kHz right, -30 dBFS combined, built-in speakers only). Discrete gestures carry `side` ("left" | "right") and
 `distanceMm` where meaningful, and `source: "sonar"`:
 
 | gesture | zone | meaning |
@@ -162,11 +162,17 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
   // phase: began | changed | ended. Discrete camera gestures arrive as "gesture" messages with zone "air" plus hand/x/y.
 { "type": "session", "kind": "sound", "active": true, "secondsLeft": 30, "trigger": "request", "sonar": false, "tapTypes": true }
   // kind: "sound" | "sonar" | "air". Sent on start, stop, every 5 s while active, and to each new client on connect.
-  // "sonar" is the microphone session with SonarField on (stereo tones); it also does everything "sound" does. There
-  // is one microphone session at a time: sonar_session_start restarts a running sound session in sonar mode, and a
-  // sound_session_start during a sonar session just extends it. sonarField: the stereo tones are actually playing.
-  // trigger (active only): "request" (app asked) | "auto" (pinned app in settings). reason (on stop): "timeout" |
-  // "requested" | "paused" | "app_changed" | "no_hand" | "lid_closed" | "error" (then "error": "...").
+  // "sonar" is not a timed session: it is the microphone session with SonarField on (stereo tones), and it runs for
+  // as long as settings.sonar.enabled is true (continuous: true, secondsLeft 0, trigger "setting"). It also does
+  // everything "sound" does. There is one microphone session at a time: turning sonar on restarts a running sound
+  // session in sonar mode; a sound_session_start while sonar is on starts nothing and replies kind "sound", active
+  // false, reason "sonar_on", coveredBy "sonar"; a sound_session_stop leaves sonar running.
+  // sonar also carries: enabled (the setting); waiting ("paused" | "asleep" | "display_asleep" | "lid_closed": enabled
+  // but held, mic closed, tones off; it resumes by itself); sonarField (the tones are playing); tonesOff (active, but
+  // why the tones are off, for example "output is headphones": they come back by themselves on the built-in
+  // speakers). sonar stop reasons: "turned_off" | "paused" | "asleep" | "display_asleep" | "lid_closed" | "error".
+  // trigger (active only): "request" (app asked) | "auto" (pinned app in settings) | "setting" (sonar). reason (on
+  // stop): "timeout" | "requested" | "paused" | "app_changed" | "no_hand" | "lid_closed" | "error" (then "error": "...").
   // sound only: sonar (pilot tone playing), tapTypes (tap-type model loaded). simulated: true under --no-hardware-sessions.
 { "type": "rejected", "t": 1234.5, "reason": "typing", "zone": "right-grille", "confidence": 0.62, "strength": 1.4 }
   // "taps" stream. reason: typing | trackpad | motion | low_confidence | burst | paused. zone / confidence: the
@@ -247,8 +253,9 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "sound_session_stop" }
 { "type": "air_session_start", "camera": "front", "seconds": 30 }  // camera: "front" | "desk_view" (desk_view needs settings.camera.deskMode)
 { "type": "air_session_stop" }
-{ "type": "sonar_session_start", "seconds": 30 }             // needs settings.sonar.enabled; mic (orange dot) + two inaudible tones, max 120 s
-{ "type": "sonar_session_stop" }
+{ "type": "sonar_session_start" }                            // optional: sonar starts by itself when settings.sonar.enabled turns on;
+                                                             // this retries at once, or replies a session error saying why not (off, waiting, mic denied)
+{ "type": "sonar_session_stop" }                             // turns settings.sonar.enabled off (saved, config broadcast)
 { "type": "calibration_taptype_start", "types": ["fingertip", "knuckle", "nail"], "target": 15 }
   // needs an active sound session (extended to 120 s); taps are labeled in the order of `types`, target 3...50
 { "type": "calibration_taptype_cancel" }
@@ -318,8 +325,14 @@ decisions in memory only. Nothing is written to disk unless the app asks.
   Steps go through the same limits as `knob` steps (dropped, never auto-pausing). Example: hover above a speaker to
   change the volume smoothly: `"action": { "kind": "volume", "step": 2 }, "slider": { "mode": "absolute", "stepMm": 20,
   "inverse": { "kind": "volume", "step": -2 } }`.
-- `settings.sonar`: like `settings.sound`, but the tones never play unless `enabled` is true, even when the app sends
-  `sonar_session_start`. Pets and some people can hear 19 to 20 kHz; keep sessions short and say so in the UI.
+- `settings.sonar`: an on/off switch. The tones never play unless `enabled` is true. While it is true, sonar runs
+  continuously (microphone open, so the orange dot stays on) until it is turned off: there is no time limit, and
+  `sessionSeconds` and `autoApps` are ignored. The daemon starts it when the setting turns on (config_set) and at
+  launch, renews the tones every second (each renewal re-checks that the output is the built-in speakers), and stops
+  the tones at once, resuming by itself when the condition ends, on: output switched to headphones, Bluetooth or any
+  external or unknown device (tones off, mic stays open, retried every 10 s); system or display sleep, lid closed,
+  Ghostkeys paused (mic closed too); daemon exit. A refused start waits a 10 s cooldown; renewals never do.
+  Pets and some people can hear 19 to 20 kHz; say so in the UI.
 - `lightTouch` (default false): lets much lighter taps (8 to 40 mg) trigger, with an onset floor learned from
   calibration. It also lets in more junk spikes, so only turn it on after a calibration done with light taps.
 - `followUpConfidence` (0 to `minConfidence`): in a zone with a double / triple binding, a tap at this confidence may

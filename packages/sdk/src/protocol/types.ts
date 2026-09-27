@@ -357,10 +357,18 @@ export interface Settings {
   typingGateMs: number
   doubleWindowMs: number
   minConfidence: number
+  /** A tap at this confidence may complete a double or triple in the same zone. */
+  followUpConfidence?: number
+  lightTouch?: boolean
   hud: boolean
   haptics: boolean
   sound: SoundSettings
   camera: CameraSettings
+  /**
+   * Stereo sonar. The tones never play unless enabled; while enabled it runs continuously until turned off
+   * (sessionSeconds and autoApps are ignored).
+   */
+  sonar?: SoundSettings
 }
 
 export interface Config {
@@ -560,7 +568,8 @@ export interface CatalogMsg {
 /** Optional sound (mic) or camera session state. Broadcast on every change, and to a client whose request failed. */
 export interface SessionMsg {
   type: 'session'
-  kind: 'sound' | 'air'
+  /** "sonar" has no timer: it is active while settings.sonar.enabled is true (continuous, secondsLeft 0). */
+  kind: 'sound' | 'sonar' | 'air'
   active: boolean
   secondsLeft: number
   simulated?: boolean
@@ -570,6 +579,16 @@ export interface SessionMsg {
   sonar?: boolean
   tapTypes?: boolean
   error?: string
+  /** sonar: the stereo tones are playing */
+  sonarField?: boolean
+  continuous?: boolean
+  enabled?: boolean
+  /** sonar: enabled but held ("paused", "asleep", "display_asleep", "lid_closed"); resumes by itself */
+  waiting?: string
+  /** sonar: why the tones are off while the microphone is open */
+  tonesOff?: string
+  /** sound: not started because sonar is on and covers it */
+  coveredBy?: string
 }
 
 /**
@@ -579,7 +598,8 @@ export interface SessionMsg {
 export interface AirMsg {
   type: 'air'
   t: number
-  gesture: ContinuousAirGesture
+  /** Camera gestures, or the continuous sonar values hover_level / finger_slide (source "sonar"). */
+  gesture: ContinuousAirGesture | 'hover_level' | 'finger_slide'
   phase: 'began' | 'changed' | 'ended'
   hand?: 'left' | 'right'
   x?: number
@@ -588,6 +608,14 @@ export interface AirMsg {
   dy?: number
   scale?: number
   confidence?: number
+  /** sonar only */
+  side?: 'left' | 'right'
+  value?: number
+  displacementMm?: number
+  dxMm?: number
+  dyMm?: number
+  cancelled?: boolean
+  source?: string
 }
 
 export type DaemonMessage =

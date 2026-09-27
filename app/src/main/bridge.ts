@@ -130,7 +130,8 @@ export class DaemonBridge extends EventEmitter {
     if (this.hello) out.push(this.hello)
     if (this.status) out.push(this.status)
     if (this.config) out.push({ type: 'config', config: this.config })
-    for (const m of Object.values(this.sessions)) if (m) out.push(m)
+    // An old error is not news to a renderer that (re)loads: drop it so it is not shown again as a toast.
+    for (const m of Object.values(this.sessions)) if (m) out.push(m.error ? { ...m, error: undefined, reason: undefined } : m)
     return out
   }
 

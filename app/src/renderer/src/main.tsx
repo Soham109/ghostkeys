@@ -8,11 +8,13 @@ import { useStore, wireClient, type Route, ROUTES } from './lib/store'
 import { installShots } from './lib/shots'
 import { wireTapSound } from './lib/sound'
 import { wireFeedbackToasts } from './components/Feedback'
+import { wireSessionToasts } from './components/SessionNeed'
 
 async function boot(): Promise<void> {
   wireClient()
   wireTapSound()
   wireFeedbackToasts()
+  wireSessionToasts()
   const info = await window.gk.info()
   useStore.setState({ info, daemon: info.daemon, license: info.license })
   window.gk.onDaemonState((daemon) => {

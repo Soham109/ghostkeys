@@ -339,7 +339,9 @@ function refreshTray(): void {
         : 'Listening for taps'
   const sessions = SESSION_KINDS.filter((k) => bridge.sessions[k]?.active)
   const sessionLabel = (k: SessionKind): string =>
-    `${SESSION_NAME[k]} on, ${Math.max(0, Math.round(bridge.sessions[k]?.secondsLeft ?? 0))} s left`
+    bridge.sessions[k]?.continuous
+      ? `${SESSION_NAME[k]} on`
+      : `${SESSION_NAME[k]} on, ${Math.max(0, Math.round(bridge.sessions[k]?.secondsLeft ?? 0))} s left`
   const sig = JSON.stringify([statusLabel, sessions.map(sessionLabel), bridge.paused])
   if (sig === traySig) return
   traySig = sig
@@ -351,7 +353,8 @@ function refreshTray(): void {
       { label: statusLabel, enabled: false },
       ...sessions.flatMap((k): Electron.MenuItemConstructorOptions[] => [
         { label: sessionLabel(k), enabled: false },
-        { label: `Turn off the ${SESSION_NAME[k].toLowerCase()}`, click: () => bridge.send({ type: SESSION_STOP[k] }) }
+        // Sonar: sonar_session_stop turns the setting off in the daemon.
+        { label: k === 'sonar' ? 'Turn off sonar' : `Turn off the ${SESSION_NAME[k].toLowerCase()}`, click: () => bridge.send({ type: SESSION_STOP[k] }) }
       ]),
       { type: 'separator' },
       {

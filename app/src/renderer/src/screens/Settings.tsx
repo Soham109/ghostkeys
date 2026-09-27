@@ -13,6 +13,7 @@ import { Input, ProTag, Segmented, Slider, Switch } from '@/components/ui/contro
 import { Menu, MenuContent, MenuItem, MenuTrigger, Popover, PopoverContent, PopoverTrigger } from '@/components/ui/overlays'
 import { AppIcon } from '@/components/AppIcon'
 import { previewTapSound } from '@/lib/sound'
+import { sonarProblem, turnOffSonar, turnOn } from '@/components/SessionNeed'
 
 function Row({ title, desc, children, htmlFor, pro }: { title: string; desc?: React.ReactNode; children: React.ReactNode; htmlFor?: string; pro?: boolean }): React.JSX.Element {
   return (
@@ -171,8 +172,8 @@ function SessionButton({ kind }: { kind: SessionKind }): React.JSX.Element {
   )
 }
 
-/** Start or stop a sonar session, and show (never run) the bench test command. */
-function SonarButtons({ enabled }: { enabled: boolean }): React.JSX.Element {
+/** Show (never run) the bench test command. */
+function SonarBench(): React.JSX.Element {
   const [open, setOpen] = React.useState(false)
   const cmd = 'cd ghostkeys/daemon && swift run ghostkeys-lab sonar-bench'
   return (
@@ -197,9 +198,6 @@ function SonarButtons({ enabled }: { enabled: boolean }): React.JSX.Element {
           </div>
         </PopoverContent>
       </Popover>
-      <span className={enabled ? '' : 'pointer-events-none opacity-40'}>
-        <SessionButton kind="sonar" />
-      </span>
     </div>
   )
 }
@@ -282,6 +280,8 @@ export function SettingsScreen(): React.JSX.Element {
   const sound = { ...DEFAULT_SESSION, ...s?.sound }
   const camera = { ...DEFAULT_SESSION, deskMode: false, ...s?.camera }
   const sonar = { ...DEFAULT_SESSION, ...s?.sonar }
+  const sonarSession = useStore((st) => st.sessions.sonar)
+  const [sonarBusy, setSonarBusy] = React.useState(false)
 
   return (
     <>
@@ -401,30 +401,35 @@ export function SettingsScreen(): React.JSX.Element {
               note={
                 <>
                   Sonar plays two inaudible tones, 19.5 and 20.25 kHz, at a capped low level through the built-in speakers only, never through headphones or
-                  external speakers. The microphone listens for their echo off your hand, so macOS shows its orange dot while sonar runs. Some pets and some young
-                  people can hear these tones. Each session stops by itself after the time you set. Nothing is recorded or saved.
+                  external speakers. The microphone listens for their echo off your hand. Sonar stays on until you turn it off, so macOS keeps its orange
+                  microphone dot on the whole time. The tones stop by themselves on headphones or other speakers, while the Mac or its display sleeps, with the lid
+                  closed and while Ghostkeys is paused, and come back when that ends. Some pets and some young people can hear these tones. Nothing is recorded or
+                  saved.
                   {!hello?.sensors.sound && ' This Mac has no microphone Ghostkeys can use.'}
                 </>
               }
             >
-              <Row title="Use sonar" pro desc="Hover over a speaker as a slider, push, pull, sweep across the keys, slide along a grille." htmlFor="sonar">
-                <Switch id="sonar" disabled={!hello?.sensors.sound} checked={sonar.enabled} onCheckedChange={(enabled) => set({ sonar: { ...sonar, enabled } })} />
+              <Row title="Sonar" pro desc="Hover over a speaker as a slider, push, pull, sweep across the keys, slide along a grille." htmlFor="sonar">
+                <Switch
+                  id="sonar"
+                  disabled={!hello?.sensors.sound || sonarBusy}
+                  checked={sonar.enabled}
+                  onCheckedChange={(enabled) => {
+                    setSonarBusy(true)
+                    void (enabled ? turnOn('sonar') : turnOffSonar()).finally(() => setSonarBusy(false))
+                  }}
+                />
               </Row>
-              <SliderRow
-                title="Run for"
-                desc="Each session stops by itself after this long."
-                value={sonar.sessionSeconds}
-                min={10}
-                max={120}
-                step={5}
-                format={(v) => `${v} s`}
-                onCommit={(sessionSeconds) => set({ sonar: { ...sonar, sessionSeconds } })}
-              />
-              <Row title="Start by itself in" desc="A session starts when one of these apps comes to the front.">
-                <AutoApps value={sonar.autoApps} onChange={(autoApps) => set({ sonar: { ...sonar, autoApps } })} />
-              </Row>
-              <Row title="Sonar" desc={sonar.enabled ? 'Starts the tones and the microphone now.' : 'Turn on sonar above first.'}>
-                <SonarButtons enabled={sonar.enabled} />
+              <Row
+                title="Status"
+                desc={
+                  !sonar.enabled
+                    ? 'Off. The tones never play while sonar is off.'
+                    : (sonarProblem(sonarSession) ??
+                      (sonarSession?.active ? 'Listening. The tones play until you turn sonar off.' : 'Starting.'))
+                }
+              >
+                <SonarBench />
               </Row>
             </Section>
           )}

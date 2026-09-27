@@ -57,7 +57,8 @@ final class SoundSession {
     var running: Bool { session != nil || (simulate && processor != nil) }
 
     /// Opens the microphone. `userInitiated` must be true for anything that could show the permission prompt.
-    /// Returns an error message, or nil on success.
+    /// `sonarField`: sonar mode, the stereo tones play (and are kept playing by `maintainSonarTones`) for as long as
+    /// the session is open. Returns an error message, or nil on success.
     func start(wantSonar: Bool, userInitiated: Bool, sonarField: Bool = false) -> String? {
         guard !running else { return nil }
         let classifier = (try? Data(contentsOf: tapModelURL)).flatMap { try? JSONDecoder().decode(TapTypeClassifier.self, from: $0) }
@@ -67,12 +68,14 @@ final class SoundSession {
         opts.tapTypes = classifier != nil
         let proc = SoundModeProcessor(options: opts, tapClassifier: classifier)
         tapTypesOn = classifier != nil
+        let mode = sonarField ? "sonar" : "sound"
 
         if simulate {
             processor = proc
             sonarOn = wantSonar
             sonarFieldOn = sonarField
-            Log.info("sound session started (simulated: no microphone opened)")
+            fieldMode = sonarField
+            Log.info("\(mode) session started (simulated: no microphone opened)")
             return nil
         }
         guard Self.hardwarePresent else { return "no microphone on this Mac" }
@@ -81,9 +84,7 @@ final class SoundSession {
         case "not_determined" where !userInitiated: return "microphone permission not granted yet; start a session from the app first"
         default: break
         }
-        let s = AcousticSession { [weak self] chunk in
-            self?.queue.async { self?.process(chunk) }
-        }
+        let s = makeAcousticSession()
         do { try s.start() } catch {
             return "could not open the microphone: \(error)"
         }
@@ -91,20 +92,16 @@ final class SoundSession {
         processor = proc
         sonarOn = false
         sonarFieldOn = false
+        fieldMode = sonarField
+        toneRetryAt = 0
+        toneProblem = nil
         MicMarker.set(true)
         if sonarField {
-            // The generator enforces its own limits (-30 dBFS combined, built-in speakers only, 60 s, 10 s cooldown).
-            let g = StereoPilotGenerator()
-            do {
-                try s.startStereoPilots(g)
-                stereo = g
-                sonarFieldOn = true
-                lastRenew = Clock.now()
-            } catch {
-                Log.info("sonar tones refused, running without sonar: \(error)")
-            }
+            let line = maintainSonarTones()
+            Log.info("sonar session started (microphone open; \(line ?? "tones playing"))")
+            return nil
         } else if wantSonar {
-            // The generator enforces its own limits (-30 dBFS, built-in speaker only, 60 s, 10 s cooldown).
+            // The generator enforces its own limits (-30 dBFS, built-in speaker only, 60 s, cooldown after a refusal).
             let g = PilotToneGenerator()
             do {
                 try s.startPilotTone(g)
@@ -112,11 +109,19 @@ final class SoundSession {
                 sonarOn = true
                 lastRenew = Clock.now()
             } catch {
-                Log.info("sonar off for this session: \(error)")
+                Log.info("wave pilot tone off for this session: \(Self.describe(error))")
             }
         }
-        Log.info("sound session started (microphone open\(sonarOn ? ", sonar on" : ""))")
+        Log.info("sound session started (microphone open\(sonarOn ? ", wave pilot tone on" : ""))")
         return nil
+    }
+
+    private func makeAcousticSession() -> AcousticSession {
+        let s = AcousticSession { [weak self] chunk in
+            self?.queue.async { self?.process(chunk) }
+        }
+        s.onConfigurationChange = { [weak self] in self?.queue.async { self?.audioConfigurationChanged(s) } }
+        return s
     }
 
     func stop() {
@@ -126,21 +131,16 @@ final class SoundSession {
         pilot = nil
         stereo = nil
         sonarFieldOn = false
+        fieldMode = false
+        toneProblem = nil
         processor?.reset()
         processor = nil
         sonarOn = false
         tapTypesOn = false
     }
 
-    /// Keep the pilot tone alive in long sessions (the generator stops itself after 60 s otherwise).
+    /// Keep the single wave pilot tone alive in long sound sessions (the generator stops itself after 60 s otherwise).
     func tick() {
-        if let stereo, let session, sonarFieldOn, Clock.now() - lastRenew > 30 {
-            if stereo.renew() { lastRenew = Clock.now() } else {
-                session.stopPilotTone(immediately: true)
-                sonarFieldOn = false
-                Log.info("sonar stopped: output is no longer the built-in speakers")
-            }
-        }
         guard let pilot, let session, sonarOn, Clock.now() - lastRenew > 30 else { return }
         if pilot.renew() {
             lastRenew = Clock.now()
@@ -148,7 +148,119 @@ final class SoundSession {
             // renew() re-checks the output route; anything but the built-in speaker stops the tone.
             session.stopPilotTone(immediately: true)
             sonarOn = false
-            Log.info("sonar stopped: output is no longer the built-in speaker")
+            Log.info("wave pilot tone stopped: output is no longer the built-in speaker")
+        }
+    }
+
+    // MARK: Sonar tones (continuous while sonar is on)
+
+    /// Why the tones are not playing in sonar mode (nil while they play).
+    private(set) var toneProblem: String?
+    private var toneRetryAt = 0.0
+    private var fieldMode = false
+    private var configChanges: [Double] = []
+
+    /// Sonar mode, called every second: renews the tones (the renewal re-runs the built-in-speakers route check, so a
+    /// switch to headphones or Bluetooth stops them within a second, or at once via the audio configuration change),
+    /// and restarts them once the route is fine again. A refusal waits the 10 s cooldown before the next try;
+    /// renewals never do. Returns a log line when the tone state changed.
+    @discardableResult
+    func maintainSonarTones() -> String? {
+        guard fieldMode, !simulate, let session else { return nil }
+        let now = Clock.now()
+        if let stereo {
+            if stereo.state == .playing {
+                if stereo.renew() { return nil }
+                session.stopPilotTone(immediately: true)
+                self.stereo = nil
+                sonarFieldOn = false
+                toneRetryAt = now + SpeakerSafety.cooldown
+                toneProblem = "output is \(Self.describe(OutputRoute.current()))"
+                return "sonar tones stopped: \(toneProblem!); they come back by themselves on the built-in speakers"
+            }
+            // Cut from outside (audio configuration change) or the 60 s watchdog (renewals stopped).
+            session.stopPilotTone(immediately: true)
+            self.stereo = nil
+            sonarFieldOn = false
+            toneRetryAt = max(toneRetryAt, now + 1)
+            toneProblem = stereo.autoStopped ? "tones timed out without renewal" : "audio output changed"
+            return "sonar tones stopped: \(toneProblem!); retrying"
+        }
+        guard now >= toneRetryAt else { return nil }
+        let g = StereoPilotGenerator()
+        do {
+            try session.startStereoPilots(g)
+            stereo = g
+            sonarFieldOn = true
+            lastRenew = now
+            let was = toneProblem
+            toneProblem = nil
+            return was == nil ? "tones playing" : "sonar tones back on (built-in speakers)"
+        } catch {
+            toneRetryAt = now + SpeakerSafety.cooldown
+            let problem = Self.describe(error)
+            guard problem != toneProblem else { return nil }
+            toneProblem = problem
+            return "sonar tones refused: \(problem); trying again every \(Int(SpeakerSafety.cooldown)) s"
+        }
+    }
+
+    /// Called when the microphone could not be reopened after an audio configuration change.
+    var onFailure: (String) -> Void = { _ in }
+
+    /// AVAudioEngine stopped itself (device, route, sample rate or channel count changed): the tones are already cut
+    /// and the microphone delivers nothing. Reopen it; sonar tones come back through the next route check.
+    private func audioConfigurationChanged(_ changed: AcousticSession) {
+        guard let old = session, old === changed else { return }
+        let now = Clock.now()
+        configChanges = configChanges.filter { now - $0 < 30 } + [now]
+        old.stop()
+        stereo = nil
+        pilot = nil
+        sonarFieldOn = false
+        sonarOn = false
+        let s = makeAcousticSession()
+        do { try s.start() } catch {
+            session = nil
+            MicMarker.set(false)
+            processor?.reset()
+            processor = nil
+            fieldMode = false
+            Log.info("audio configuration changed and the microphone could not be reopened: \(error)")
+            onFailure("could not reopen the microphone after an audio change: \(error)")
+            return
+        }
+        session = s
+        if fieldMode {
+            if configChanges.count >= 3 {
+                toneRetryAt = now + 30
+                toneProblem = "audio configuration keeps changing"
+                Log.info("audio configuration changed \(configChanges.count) times in 30 s: microphone reopened, sonar tones wait 30 s")
+            } else {
+                toneRetryAt = now + 0.5
+                toneProblem = "audio output changed"
+                Log.info("audio configuration changed: tones cut, microphone reopened; tones resume after the route check")
+            }
+        } else {
+            Log.info("audio configuration changed: microphone reopened")
+        }
+    }
+
+    static func describe(_ error: Error) -> String {
+        switch error {
+        case PilotToneError.routeNotAllowed(let route): return "output is \(describe(route)), not the built-in speakers"
+        case PilotToneError.coolingDown(let left): return "cooling down (\(Int(left.rounded(.up))) s left)"
+        case AcousticSession.SessionError.microphoneDenied: return "microphone access is denied"
+        default: return "\(error)"
+        }
+    }
+
+    static func describe(_ route: OutputRoute) -> String {
+        switch route {
+        case .builtInSpeaker: return "the built-in speakers"
+        case .headphones: return "headphones"
+        case .external(let t): return t == "blue" ? "a Bluetooth device" : "an external device (\(t.trimmingCharacters(in: .whitespaces)))"
+        case .unknown: return "an unknown device"
         }
     }
 

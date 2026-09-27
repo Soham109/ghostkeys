@@ -141,3 +141,39 @@ describe('actionSchema', () => {
     expect(actionSchema.safeParse(macro).success).toBe(false)
   })
 })
+
+describe('sonar', () => {
+  const schema = (t: string) => daemonMessageSchemaByType[t as keyof typeof daemonMessageSchemaByType]!
+
+  it('parses sonar session messages (they used to be dropped as protocol errors)', () => {
+    const m = { type: 'session', kind: 'sonar', active: true, secondsLeft: 0, continuous: true, enabled: true, sonarField: false, tonesOff: 'output is headphones' }
+    const r = schema('session').safeParse(m)
+    expect(r.success).toBe(true)
+    expect(r.success && r.data).toMatchObject(m)
+  })
+
+  it('parses continuous sonar air values', () => {
+    const m = { type: 'air', t: 2, gesture: 'hover_level', phase: 'changed', value: 0.4, displacementMm: 40, side: 'left', source: 'sonar' }
+    expect(schema('air').safeParse(m).success).toBe(true)
+  })
+
+  it('keeps settings.sonar and unknown settings through a config round trip', () => {
+    const config = {
+      version: 1,
+      zones: [],
+      bindings: [],
+      settings: {
+        sensitivity: 0.5, typingGateMs: 450, doubleWindowMs: 350, minConfidence: 0.8, hud: true, haptics: false,
+        sound: { enabled: false, sessionSeconds: 30, autoApps: [] },
+        camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false },
+        sonar: { enabled: true, sessionSeconds: 30, autoApps: [] },
+        someFutureSetting: { on: true }
+      }
+    }
+    const r = schema('config').safeParse({ type: 'config', config })
+    expect(r.success).toBe(true)
+    const settings = (r.success ? (r.data as { config: { settings: Record<string, unknown> } }).config.settings : {})
+    expect(settings.sonar).toEqual({ enabled: true, sessionSeconds: 30, autoApps: [] })
+    expect(settings.someFutureSetting).toEqual({ on: true })
+  })
+})

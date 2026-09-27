@@ -71,6 +71,7 @@ final class Daemon: @unchecked Sendable {
     private var imuWindowStart = -1.0
     private var imuHz = 0.0
     private var lastAccessibility = false
+    private var powerObservers: [NSObjectProtocol] = []
 
     init(options: Options) throws {
         self.options = options
@@ -126,6 +127,23 @@ final class Daemon: @unchecked Sendable {
 
         Log.info("ghostkeysd \(Self.version) on \(device.model) (\(device.chip), \(device.family))"
                  + (options.dryRun ? " [dry-run]" : "") + "; config in \(store.directory.path)")
+
+        // Sonar tones stop while the Mac or its display sleeps, and come back after.
+        let ws = NSWorkspace.shared.notificationCenter
+        let pairs: [(Notification.Name, (SessionCoordinator) -> Void)] = [
+            (NSWorkspace.willSleepNotification, { $0.setSystemAsleep(true) }),
+            (NSWorkspace.didWakeNotification, { $0.setSystemAsleep(false) }),
+            (NSWorkspace.screensDidSleepNotification, { $0.setDisplayAsleep(true) }),
+            (NSWorkspace.screensDidWakeNotification, { $0.setDisplayAsleep(false) }),
+        ]
+        for (name, apply) in pairs {
+            powerObservers.append(ws.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                guard let self else { return }
+                self.core.async { apply(self.sessions) }
+            })
+        }
+        // Sonar is a setting: if it is on, it starts with the daemon.
+        core.async { [weak self] in self?.sessions.syncSonar(trigger: "startup") }
     }
 
     func stop() {
@@ -541,6 +559,7 @@ final class Daemon: @unchecked Sendable {
             pausedReason = nil
             limiter.reset()
             server.broadcast(status())
+            sessions.syncSonar(trigger: "resume", userInitiated: true)
         case "calibration_start":
             let zones = (m["zones"] as? [String]) ?? config.zones.map(\.id)
             let target = (m["target"] as? NSNumber)?.intValue ?? 20
@@ -585,6 +604,7 @@ final class Daemon: @unchecked Sendable {
                 applyConfigToEngine()
                 server.broadcast(configMessage())
                 server.broadcast(status())
+                sessions.settingsChanged(client: c)
             } catch {
                 sendError("invalid config: \(error)", to: c)
             }
@@ -681,7 +701,19 @@ final class Daemon: @unchecked Sendable {
         case "sonar_session_start":
             sessions.startSonar(seconds: (m["seconds"] as? NSNumber)?.doubleValue, client: c)
         case "sonar_session_stop":
-            sessions.stopSonar(reason: "requested")
+            // Sonar is a setting: stopping it turns the setting off (the tray and sidebar "Stop" use this).
+            guard config.settings.sonar.enabled else { return sessions.settingsChanged(client: c) }
+            var new = config
+            new.settings.sonar.enabled = false
+            do {
+                try store.save(new)
+                config = new
+                Log.info("sonar turned off (sonar_session_stop)")
+                server.broadcast(configMessage())
+                sessions.settingsChanged(client: c)
+            } catch {
+                sendError("sonar_session_stop: could not save the setting: \(error)", to: c)
+            }
         case "sim_sonar" where options.noHardwareSessions:
             // Test-only: SonarField output. {"gesture": "push", "side": "left"} or {"air": {...air message fields...}}
             var air = m["air"] as? [String: Any]

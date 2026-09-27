@@ -268,7 +268,8 @@ export interface Settings {
   /** 0..minConfidence: a weaker tap may complete a double or triple whose other tap was confident. */
   followUpConfidence?: number
   sound?: SessionSettings
-  /** Stereo sonar. The tones never play unless enabled. */
+  /** Stereo sonar. The tones never play unless enabled; while enabled it runs continuously (no time limit, so
+   * sessionSeconds and autoApps are ignored). */
   sonar?: SessionSettings
   camera?: SessionSettings & { deskMode: boolean }
 }
@@ -474,6 +475,16 @@ export interface SessionMsg {
   kind: 'air' | 'sound' | 'sonar'
   /** sonar: the stereo tones are actually playing */
   sonarField?: boolean
+  /** sonar: no time limit, it runs while settings.sonar.enabled is true (secondsLeft is 0) */
+  continuous?: boolean
+  /** sonar: the setting */
+  enabled?: boolean
+  /** sonar: enabled but held until this ends ("paused", "asleep", "display_asleep", "lid_closed") */
+  waiting?: string
+  /** sonar: why the tones are not playing while the microphone is open (headphones, audio change...) */
+  tonesOff?: string
+  /** sound: not started because sonar is on and already does everything sound mode does */
+  coveredBy?: 'sonar'
   active: boolean
   secondsLeft: number
   reason?: string

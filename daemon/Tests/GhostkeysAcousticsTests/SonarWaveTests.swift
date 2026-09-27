@@ -122,13 +122,24 @@ import Testing
         #expect(g.state == .idle)
     }
 
-    @Test func cooldownBetweenSessions() throws {
+    @Test func cooldownOnlyAfterARefusal() throws {
         let clock = FakeClock()
-        let g = Self.make(clock: clock)
+        final class Route: @unchecked Sendable { var now = OutputRoute.builtInSpeaker }
+        let route = Route()
+        let g = PilotToneGenerator(routeCheck: { route.now }, clock: { clock.now })
+        // A plain stop (the user turned it off) never cools down: it can start again right away.
         try g.start()
         _ = g.render(count: 4_800)
         g.stop()
         _ = g.render(count: 4_800)
+        try g.start()
+        #expect(g.state == .playing)
+        g.stop()
+        _ = g.render(count: 4_800)
+        // A refusal does: 10 s before the next start, even once the route is fine again.
+        route.now = .headphones
+        #expect(throws: PilotToneError.routeNotAllowed(.headphones)) { try g.start() }
+        route.now = .builtInSpeaker
         clock.now += 5
         #expect(throws: PilotToneError.self) { try g.start() }
         clock.now += 6

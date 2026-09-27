@@ -100,9 +100,9 @@ These cannot be configured away, and apply to both `PilotToneGenerator` and `Ste
 
 - **Level cap: -30 dBFS.** Per channel, and for the stereo pair the two amplitudes together (so even a mono downmix stays under -30 dBFS). Default stereo split is -36 dBFS per channel. Requests above the cap are clamped.
 - **20 ms fade in and out**, so starting and stopping never click.
-- **Auto-stop after 60 s** of playback per session unless `renew()` is called. `renew()` re-checks the output route.
-- **10 s cooldown** after a session ends before a new one may start (`start()` throws `.coolingDown`).
-- **Built-in speaker only.** `start()` reads the default output device from CoreAudio and refuses unless the transport is built-in (`bltn`) and the data source is the internal speaker (`ispk`). Headphones (`hdpn`), Bluetooth, USB, HDMI, AirPlay and anything unknown are refused. `AcousticSession` also cuts the tones immediately on any audio configuration change (for example headphones plugged in).
+- **Renewal watchdog: 60 s.** The tone stops by itself after 60 s of playback without a `renew()`. An owner that wants the tone to keep going (the daemon's sonar switch has no time limit) renews it well inside that window; every renewal re-checks the output route, so the safety check keeps running for as long as the tone plays. If the owner hangs, the tone still stops.
+- **10 s cooldown after a refusal or a safety stop** (route refused at `start()`, route no longer allowed at `renew()`, `stopImmediately()`, the watchdog): `start()` throws `.coolingDown` until it ends. A plain `stop()` (the user turned it off) and renewals never start a cooldown.
+- **Built-in speaker only.** `start()` reads the default output device from CoreAudio and refuses unless the transport is built-in (`bltn`) and the data source is the internal speaker (`ispk`). Headphones (`hdpn`), Bluetooth, USB, HDMI, AirPlay and anything unknown are refused. `AcousticSession` also cuts the tones immediately on any audio configuration change (for example headphones plugged in), then calls `onConfigurationChange`: AVAudioEngine has stopped itself at that point, so the owner must reopen the session (the microphone delivers nothing until it does).
 
 **Pets and some people can hear 19 to 20 kHz.** Dogs and cats hear well above 20 kHz, and some children and young adults hear 19.5 kHz. Keep sonar sessions short, never run the tones in the background, and say so in the UI wherever sonar is enabled.
 
@@ -123,7 +123,7 @@ It returns a `Report`: median pilot SNR per side (SonarField needs at least 25 d
 3. **The orange dot.** While `AcousticSession` runs, macOS shows the orange microphone indicator and lists the app in Control Center. That is expected; never try to hide it. Show a matching "listening" state in the HUD. Closing the session removes it.
 4. **Permission.** Check `AcousticSession.microphoneAuthorization` first. If `.notDetermined`, only start from a user action in the UI (macOS will prompt). The permission is attributed to the responsible app (the Electron app, or Terminal in dev).
 5. **Threading.** `AcousticSession` calls back on an AVFoundation thread. Hop each `Chunk` onto the daemon's detection queue and call `processor.process(chunk.samples, time: chunk.time)` there. Call `noteTapOnset` and `suppressSonar` from the same queue.
-6. **Sonar.** Only when the user enabled it, only inside an open mic session. Single pilot: `session.startPilotTone(PilotToneGenerator())` with `options.sonar`. SonarField: `session.startStereoPilots(StereoPilotGenerator())` with `options.sonarField = true`. Handle the errors (route refused, cooling down) by running without sonar. Call `renew()` about every 30 s while still wanted, and stop the tones when the session closes.
+6. **Sonar.** Only when the user enabled it, only inside an open mic session. Single pilot: `session.startPilotTone(PilotToneGenerator())` with `options.sonar`. SonarField: `session.startStereoPilots(StereoPilotGenerator())` with `options.sonarField = true`. Handle the errors (route refused, cooling down) by running without the tones and retrying after the cooldown. Call `renew()` while still wanted (the daemon's sonar switch renews every second, which is also how it notices a route change within a second), and stop the tones when the session closes. Set `onConfigurationChange` and reopen the session when it fires. The daemon runs SonarField continuously while `settings.sonar.enabled` is on, and holds it (mic closed, tones off) while paused, asleep (system or display) or with the lid closed.
 7. **Gating.** Respect `paused`. Call `suppressSonar(until: t + 0.45)` on every keystroke and on IMU motion or bumps. Map `.gesture` to `{"type":"gesture",...}` and `.air` to `{"type":"air",...}`. A finger slide also produces a `rub` gesture; bind one or the other.
 8. **Calibration.** Tap types: about 20 taps per type, `LabeledTap(features:label:)` from `TapFeatureExtractor` on `TapWindowAligner` windows, train, report `leaveOneOutAccuracy()`, save the labeled taps too.
 
@@ -140,7 +140,7 @@ It returns a `Report`: median pilot SNR per side (SonarField needs at least 25 d
   - Pilot separation (one side's echo leaves the other side under 5%); clock drift (0.4 Hz) corrected.
   - Rejections: music tones near the pilots, typing, external suppression, missing pilots, still hand.
   - Finger slides in four directions with friction; none when hovering without contact or when rubbing without moving.
-- Tone generators: -30 dBFS cap (per channel and combined), fades, 60 s auto-stop, renew, cooldown, route refusal, correct frequency per channel.
+- Tone generators: -30 dBFS cap (per channel and combined, also across ten minutes of continuous renewal), fades, 60 s watchdog, renew, cooldown only after a refusal or safety stop, route refusal, a route change mid-play stopping the tones within the fade, correct frequency per channel.
 - Performance: 60 s of 48 kHz audio through the full processor in 256-sample chunks under 0.5 s, in a debug build: 0.23 s with single-pilot sonar, 0.42 to 0.44 s with SonarField and rubs.
 
 ```sh
