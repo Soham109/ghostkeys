@@ -94,6 +94,7 @@ pub const TEST_ACTIONS_PER_SECOND: usize = 2;
 struct ClientState {
     streams: BTreeSet<String>,
     test_times: Vec<f64>,
+    feedback_times: Vec<f64>,
 }
 
 pub struct Core {
@@ -258,6 +259,27 @@ impl Core {
             sonar: None,
             tap_types: None,
             simulated: None,
+            extra: Map::new(),
+        }
+    }
+
+    /// Sonar (Mac: 20 kHz tones through the built-in speakers) is not available on Windows. The
+    /// state message still goes out, so the app can show the switch as unavailable.
+    fn sonar_msg(&self, reason: Option<&str>, error: Option<String>) -> OutMsg {
+        let mut extra = Map::new();
+        extra.insert("enabled".into(), json!(self.config.settings.sonar_enabled()));
+        extra.insert("continuous".into(), json!(true));
+        OutMsg::Session {
+            kind: "sonar".into(),
+            active: false,
+            seconds_left: 0.0,
+            reason: reason.map(String::from),
+            trigger: None,
+            error,
+            sonar: None,
+            tap_types: None,
+            simulated: None,
+            extra,
         }
     }
 
@@ -288,6 +310,7 @@ impl Core {
             to(me, self.config_msg()),
             to(me, self.session_msg("sound", now, None, None)),
             to(me, self.session_msg("air", now, None, None)),
+            to(me, self.sonar_msg(None, None)),
         ]
     }
 
@@ -453,6 +476,59 @@ impl Core {
                 out.push(to(me, OutMsg::Calibration { phase: "taptype_failed".into(), fields }));
             }
             InMsg::CalibrationTaptypeCancel => {}
+            InMsg::CalibrationApplyRecommendation | InMsg::CalibrationApplyMerge { .. } => {
+                out.push(to(me, OutMsg::error("calibration is not available on Windows: there are no zones to keep, drop or merge")));
+            }
+            InMsg::SonarSessionStart => {
+                out.push(to(me, self.sonar_msg(Some("error"), Some("sonar is not available on Windows".into()))));
+            }
+            InMsg::SonarSessionStop => {
+                // Turns settings.sonar.enabled off (saved, config broadcast), as on the Mac.
+                if self.config.settings.sonar_enabled() {
+                    let mut new = self.config.clone();
+                    if let Some(Value::Object(sonar)) = new.settings.extra.get_mut("sonar") {
+                        sonar.insert("enabled".into(), json!(false));
+                    }
+                    match self.store.save(&new) {
+                        Ok(()) => {
+                            self.config = new;
+                            out.push(to(Target::All, self.config_msg()));
+                        }
+                        Err(e) => out.push(to(me, OutMsg::error(format!("could not save config: {e}")))),
+                    }
+                }
+                out.push(to(Target::All, self.sonar_msg(Some("turned_off"), None)));
+            }
+            InMsg::FeedbackMissed { .. } | InMsg::FeedbackFalse => {
+                let (kind, zone) = match &msg_kind_zone(text) {
+                    Some((k, z)) => (k.clone(), z.clone()),
+                    None => ("false".to_string(), None),
+                };
+                // At most one every 2 s and 20 per minute, like the Mac.
+                let times = self.clients.get_mut(&id).map(|c| {
+                    c.feedback_times.retain(|t| now - t < 60.0);
+                    let ok = c.feedback_times.len() < 20 && c.feedback_times.last().is_none_or(|l| now - l >= 2.0);
+                    if ok {
+                        c.feedback_times.push(now);
+                    }
+                    ok
+                });
+                if times == Some(false) {
+                    out.push(to(me, OutMsg::error("feedback: at most one every 2 s and 20 per minute")));
+                } else {
+                    let mut f = Map::new();
+                    if let Some(z) = zone {
+                        f.insert("zone".into(), json!(z));
+                    }
+                    f.insert("retrained".into(), json!(false));
+                    f.insert("reason".into(), json!("not calibrated yet"));
+                    f.insert("note".into(), json!("Windows counts knocks without a zone model, so there is nothing to learn from feedback"));
+                    out.push(to(me, feedback_msg(&kind, f)));
+                }
+            }
+            InMsg::DiagnosticsExport => {
+                out.push(to(me, OutMsg::error("diagnostics export is not available on Windows yet")));
+            }
         }
         out
     }
@@ -527,10 +603,10 @@ impl Core {
     /// A knock from either source: gates, then the grammar.
     fn on_knock(&mut self, t: f64, strength: f64, source: &str) -> Vec<Outgoing> {
         if self.is_paused() {
-            return vec![rejected(t, "paused")];
+            return vec![rejected_knock(t, "paused")];
         }
         if self.input.seconds_since_input() < self.config.settings.typing_gate_s() {
-            return vec![rejected(t, "typing")];
+            return vec![rejected_knock(t, "typing")];
         }
         if self.tilt.in_excursion() {
             return vec![rejected(t, "motion")];
@@ -673,8 +749,32 @@ impl Core {
     }
 }
 
+/// ("missed" | "false", zone) of a feedback message's raw text.
+fn msg_kind_zone(text: &str) -> Option<(String, Option<String>)> {
+    let v: Value = serde_json::from_str(text).ok()?;
+    let kind = match v.get("type")?.as_str()? {
+        "feedback_missed" => "missed",
+        _ => "false",
+    };
+    Some((kind.to_string(), v.get("zone").and_then(Value::as_str).map(String::from)))
+}
+
+/// A rejection without features (motion, burst): no zone / confidence / strength, as on the Mac.
 fn rejected(t: f64, reason: &str) -> Outgoing {
-    to(Target::Stream("taps"), OutMsg::Rejected { t: clock::ms(t), reason: reason.into() })
+    to(Target::Stream("taps"), OutMsg::Rejected { t: clock::ms(t), reason: reason.into(), zone: None, confidence: None, strength: None })
+}
+
+/// A knock dropped by a gate: it would have landed in `anywhere` with confidence 1. No `strength`:
+/// the Windows detectors do not measure the peak in milli-g the Mac reports there.
+fn rejected_knock(t: f64, reason: &str) -> Outgoing {
+    to(
+        Target::Stream("taps"),
+        OutMsg::Rejected { t: clock::ms(t), reason: reason.into(), zone: Some(ANYWHERE.into()), confidence: Some(1.0), strength: None },
+    )
+}
+
+fn feedback_msg(kind: &str, fields: Map<String, Value>) -> OutMsg {
+    OutMsg::Feedback { kind: kind.into(), fields }
 }
 
 fn action_msg(d: &ActionDone) -> Outgoing {

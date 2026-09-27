@@ -131,7 +131,7 @@ final class ActionRunner: @unchecked Sendable {
         case "brightness":
             let step = a["step"]!.double!
             // One brightness key press is 1/16 of the range (6.25%).
-            let presses = max(1, min(16, Int((abs(step) / 6.25).rounded())))
+            let presses = SafeNumbers.int(abs(step) / 6.25, in: 1...16) ?? 1
             for _ in 0..<presses { try EventPoster.auxKey(step >= 0 ? .brightnessUp : .brightnessDown) }
         case "open":
             try open(a["target"]!.string!)
@@ -210,7 +210,7 @@ final class ActionRunner: @unchecked Sendable {
 
     private func volume(step: Double) throws {
         guard let current = Self.readVolume() else { throw ActionError("could not read the output volume (digital output?)") }
-        let next = max(0, min(100, current + Int(step.rounded())))
+        let next = max(0, min(100, current + (SafeNumbers.int(step, in: -100...100) ?? 0)))
         try osa("set volume output volume \(next)")
     }
 
@@ -332,7 +332,7 @@ final class ActionRunner: @unchecked Sendable {
         if let op = a["op"]?.string { parts.append("op=\(op)") }
         if kind == "media", let c = a["command"]?.string { parts.append("command=\(c)") }
         if kind == "keystroke" { parts.append("key=\(a["key"]?.string ?? "?")") }
-        if let step = a["step"]?.double { parts.append("step=\(Int(step))") }
+        if let step = a["step"]?.double { parts.append("step=\(SafeNumbers.int(step, in: -1000...1000).map(String.init) ?? "invalid")") }
         for f in ["text", "command", "source", "target", "name"] {
             if let v = a[f]?.string, !(kind == "media" && f == "command") { parts.append("\(f): \(v.count) chars") }
         }

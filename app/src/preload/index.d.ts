@@ -7,6 +7,7 @@ declare global {
       ready(): Promise<void>
       summary(): Record<string, unknown>
       shot(name: string): Promise<void>
+      stores?: Record<string, unknown>
     }
   }
 }

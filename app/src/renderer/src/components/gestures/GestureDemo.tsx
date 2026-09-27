@@ -284,7 +284,7 @@ export function GestureDemo({ gesture, zone, pair, modifiers, family, zones, pau
   const f = scene.frame(at ?? live)
   return (
     <div ref={ref} className={cn('relative overflow-hidden', className)} role="img" aria-label={label ?? `How to do ${gesture.replace(/_/g, ' ')}`}>
-      <svg viewBox={scene.viewBox.join(' ')} className="laptop-map block h-full w-full" preserveAspectRatio="xMidYMid meet">
+      <svg viewBox={scene.viewBox.join(' ')} className="laptop-map block h-full w-full" preserveAspectRatio="xMidYMid meet" aria-hidden>
         {scene.view === 'top' && <TopView scene={scene} f={f} zones={zs} />}
         {scene.view === 'side' && <SideView f={f} />}
         {scene.view === 'front' && <FrontView f={f} />}

@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { useStore, isDirty } from '@/lib/store'
 import { Button } from './ui/button'
 import { Kbd } from './ui/controls'
+import { Confirm } from './ui/overlays'
 
 export function SaveBar(): React.JSX.Element {
   const dirty = useStore(isDirty)
@@ -10,6 +11,7 @@ export function SaveBar(): React.JSX.Element {
   const saving = useStore((s) => s.saving)
   const save = useStore((s) => s.saveDraft)
   const discard = useStore((s) => s.discardDraft)
+  const [ask, setAsk] = React.useState(false)
   const show = dirty && (route === 'zones' || route === 'bindings' || route === 'live')
 
   return (
@@ -25,7 +27,7 @@ export function SaveBar(): React.JSX.Element {
         >
           <span className="text-[13px] text-ink-2">Unsaved changes</span>
           <div className="flex items-center gap-1">
-            <Button variant="ghost" onClick={discard}>
+            <Button variant="ghost" onClick={() => setAsk(true)}>
               Discard
             </Button>
             <Button variant="primary" onClick={save} disabled={saving}>
@@ -35,6 +37,16 @@ export function SaveBar(): React.JSX.Element {
           </div>
         </motion.div>
       )}
+      <Confirm
+        key="confirm"
+        open={ask}
+        onOpenChange={setAsk}
+        title="Discard your changes?"
+        body="Your zone and binding edits since the last save are thrown away."
+        confirmLabel="Discard changes"
+        destructive
+        onConfirm={discard}
+      />
     </AnimatePresence>
   )
 }

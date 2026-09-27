@@ -125,7 +125,7 @@ export function BindingsScreen(): React.JSX.Element {
     const approved = await ensureActionApproved(b.action, `Testing "${b.label}".`)
     if (!approved) return
     if (approved !== b.action) setDraft((c) => ({ ...c, bindings: c.bindings.map((x) => (x.id === b.id ? { ...x, action: approved } : x)) }))
-    if (!client.send({ type: 'test_action', action: approved })) toast('Could not reach the helper')
+    if (!client.send({ type: 'test_action', action: approved })) toast('Ghostkeys isn\u2019t running right now. Restart it from the menu bar, then try again.')
   }
   const rowMenu = async (b: Binding): Promise<void> => {
     const id = await window.gk.contextMenu([

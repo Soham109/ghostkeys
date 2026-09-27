@@ -5,13 +5,14 @@ import type { CalibrationMsg, Zone } from '@shared/protocol'
 import { SURFACE_LABEL } from '@shared/protocol'
 import { useStore } from '@/lib/store'
 import { client } from '@/lib/client'
-import { cn, pct } from '@/lib/utils'
+import { cn, nameList, pct } from '@/lib/utils'
 import { PageHeader } from '@/components/Page'
 import { Button } from '@/components/ui/button'
 import { Check, Segmented, ZoneIndex } from '@/components/ui/controls'
 import { Tick } from '@/components/ui/glyphs'
 import { LaptopMap } from '@/components/laptop/LaptopMap'
 import { Seismograph } from '@/components/Seismograph'
+import { ModeSwitch, TapTest, TrainingSession, usePractice } from './Practice'
 
 type Step = 'pick' | 'capture' | 'negatives' | 'training' | 'results'
 type Done = Extract<CalibrationMsg, { phase: 'done' }>
@@ -603,7 +604,7 @@ function Results({ zones }: { zones: Zone[] }): React.JSX.Element {
   const summary =
     weak.length === 0
       ? 'Every zone is ready.'
-      : `${words[ready] ?? ready} ${ready === 1 ? 'zone is' : 'zones are'} ready. ${weak.map(([id]) => name(id)).join(' and ')} ${weak.length === 1 ? 'needs' : 'need'} another pass.`
+      : `${words[ready] ?? ready} ${ready === 1 ? 'zone is' : 'zones are'} ready. ${nameList(weak.map(([id]) => name(id)))} ${weak.length === 1 ? 'needs' : 'need'} another pass.`
 
   return (
     <Frame
@@ -726,17 +727,31 @@ export function CalibrationScreen(): React.JSX.Element {
   const step = useWizard((s) => s.step)
   const picked = useWizard((s) => s.picked)
   const zones = useStore((s) => s.config?.zones ?? [])
+  const mode = usePractice((s) => s.mode)
 
-  // Default to every zone the first time.
+  // Default to every switched-on zone the first time.
   React.useEffect(() => {
-    if (step === 'pick' && picked.length === 0 && zones.length) useWizard.setState({ picked: zones.map((z) => z.id) })
+    if (step === 'pick' && picked.length === 0 && zones.length) useWizard.setState({ picked: zones.filter((z) => z.enabled !== false).map((z) => z.id) })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [zones.length])
 
   return (
     <>
-      <PageHeader title="Calibration" actions={<Stepper step={step} />} />
+      <PageHeader
+        title="Calibration"
+        actions={
+          <div className="flex items-center gap-6">
+            {mode === 'calibrate' && step !== 'pick' && <Stepper step={step} />}
+            <ModeSwitch />
+          </div>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col">
+        {mode === 'test' ? (
+          <TapTest zones={zones} />
+        ) : mode === 'training' ? (
+          <TrainingSession zones={zones} />
+        ) : (
         <AnimatePresence mode="wait" initial={false}>
           <motion.div
             key={step === 'training' ? 'results' : step}
@@ -752,6 +767,7 @@ export function CalibrationScreen(): React.JSX.Element {
             {(step === 'training' || step === 'results') && <Results zones={zones} />}
           </motion.div>
         </AnimatePresence>
+        )}
       </div>
     </>
   )

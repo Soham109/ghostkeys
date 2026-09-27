@@ -134,7 +134,7 @@ export function BindingEditor({
     const approved = await ensureActionApproved(b.action, 'Testing this action.')
     if (!approved) return
     if (approved !== b.action) patch({ action: approved })
-    if (!client.send({ type: 'test_action', action: approved })) toast('Could not reach the helper')
+    if (!client.send({ type: 'test_action', action: approved })) toast('Ghostkeys isn\u2019t running right now. Restart it from the menu bar, then try again.')
   }
   const done = async (): Promise<void> => {
     const label = b.label.trim() || describeAction(b.action)

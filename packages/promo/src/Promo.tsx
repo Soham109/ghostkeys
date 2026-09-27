@@ -63,6 +63,6 @@ export const Promo: React.FC<{ vo: boolean }> = ({ vo }) => (
     <Captions until={S.end} />
     <CutFlash cuts={[S.macro, S.split, S.grille, S.calib, S.cover, S.lid, S.air, S.sonar, S.app, S.appCut + 30, S.hero]} />
     <Grain opacity={0.045} />
-    <Audio src={staticFile(vo ? "mix-film-vo.wav" : "sfx-film.wav")} />
+    <Audio src={staticFile(vo ? "mix-film-vo.wav" : "mix-film-novo.wav")} />
   </AbsoluteFill>
 );

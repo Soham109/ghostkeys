@@ -8,6 +8,11 @@ let options = Options.parse(CommandLine.arguments)
 Log.verbose = options.verbose
 _ = Clock.start
 
+// Hardware check without sound: before any lock or sensor, so it can run next to the app's daemon.
+if let seconds = options.sonarToneTestSeconds {
+    exit(SonarToneTest.run(seconds: seconds))
+}
+
 // Sensor driver settings are put back however we leave: normal exit, SIGINT/SIGTERM/SIGHUP, parent death, or exit()
 // anywhere. Crashes and SIGKILL are covered by spu-originals.json, restored on the next start or --restore-sensors.
 atexit {

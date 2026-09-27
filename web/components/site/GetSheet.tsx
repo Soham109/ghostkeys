@@ -1,12 +1,14 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { scroller } from "@/lib/scroll";
 
 const KEY = "gk-mac-waitlist";
 
 /**
  * Until the notarized .dmg and checkout exist, "Download for Mac" and "Buy Pro" (links to #get-mac / #get-pro)
- * open this sheet instead of looping to /pricing/. The address stays in this browser only.
+ * open this sheet instead of looping to /pricing/. There is no backend: the address stays in this browser only,
+ * so the copy promises nothing (no "we'll email you", no "you're on the list").
  */
 export function GetSheet() {
   const dialog = useRef<HTMLDialogElement>(null!);
@@ -30,9 +32,17 @@ export function GetSheet() {
       e.stopPropagation();
       setKind(a.getAttribute("href") === "#get-pro" ? "pro" : "mac");
       dialog.current.showModal();
+      // the page must not scroll behind the sheet: Lenis would keep taking wheel input
+      scroller.lenis?.stop();
     };
+    const d = dialog.current;
+    const onClose = () => scroller.lenis?.start();
+    d.addEventListener("close", onClose);
     document.addEventListener("click", onClick, true);
-    return () => document.removeEventListener("click", onClick, true);
+    return () => {
+      document.removeEventListener("click", onClick, true);
+      d.removeEventListener("close", onClose);
+    };
   }, []);
 
   const submit = (e: React.FormEvent) => {
@@ -62,7 +72,7 @@ export function GetSheet() {
           Almost <em>ready.</em>
         </h2>
         <p className="lede mt-5 max-w-[40ch] !text-[16px]">
-          {kind === "pro" ? "Pro opens with the download, at $19 for the first 14 days. " : ""}Leave your email and we&rsquo;ll email you when the Mac download is ready.
+          The Mac download is not out yet.{kind === "pro" ? " Pro opens with it, at $19 for the first 14 days." : ""}
         </p>
         <form onSubmit={submit} noValidate className="mt-8 flex flex-col gap-3 sm:flex-row">
           <label htmlFor={`${id}-e`} className="sr-only">
@@ -71,6 +81,7 @@ export function GetSheet() {
           <input
             id={`${id}-e`}
             type="email"
+            inputMode="email"
             autoComplete="email"
             placeholder="you@example.com"
             value={email}
@@ -82,13 +93,13 @@ export function GetSheet() {
             className="input-line flex-1"
           />
           <button type="submit" className="btn-ink h-10 px-5 text-[14px]">
-            Notify me
+            Save
           </button>
         </form>
         <p role="status" className="mt-4 min-h-[20px] text-[13px] font-light" style={{ color: status === "invalid" ? "var(--signal)" : "var(--ink-3)" }}>
-          {status === "saved" && "Saved. You're on the list."}
+          {status === "saved" && "Saved in this browser only. Nothing was sent."}
           {status === "invalid" && "Enter a full email address, like you@example.com."}
-          {status === "idle" && "Kept in this browser until signup opens. Nothing is sent yet."}
+          {status === "idle" && "Kept in this browser only. Nothing is sent."}
         </p>
       </div>
     </dialog>

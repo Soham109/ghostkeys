@@ -30,3 +30,11 @@ export function slugify(s: string): string {
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')
 }
+
+/** "Left palm rest", "Left palm rest and lid", "Left palm rest, lid and top strip", "Left palm rest, lid and 4 other zones". */
+export function nameList(names: string[], max = 3): string {
+  const n = names.map((x, i) => (i === 0 ? x : x.toLowerCase()))
+  if (n.length <= 1) return n[0] ?? ''
+  if (n.length > max) return `${n.slice(0, max - 1).join(', ')} and ${n.length - (max - 1)} other zones`
+  return `${n.slice(0, -1).join(', ')} and ${n[n.length - 1]}`
+}

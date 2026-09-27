@@ -11,6 +11,7 @@ export const NAV: { route: Route; label: string }[] = [
   { route: 'bindings', label: 'Gestures and actions' },
   { route: 'calibration', label: 'Calibration' },
   { route: 'sensors', label: 'Sensors' },
+  { route: 'sonar', label: 'Sonar' },
   { route: 'settings', label: 'Settings' },
   { route: 'guide', label: 'Gesture guide' }
 ]
@@ -78,12 +79,12 @@ function SessionLine(): React.JSX.Element | null {
           <div key={k} className="flex items-center gap-2.5 text-[12px]" role="status">
             <span className="size-1.5 rounded-full bg-ink" />
             <span className="flex-1 text-ink">{SESSION_NAME[k]} on</span>
-            <span className="num text-[11px] text-ink-3">{Math.max(0, Math.round(m.secondsLeft))}s</span>
+            {!m.continuous && <span className="num text-[11px] text-ink-3">{Math.max(0, Math.round(m.secondsLeft))}s</span>}
             <button
               className="text-[12px] text-ink-2 hover:text-ink"
               onClick={() => client.send({ type: SESSION_STOP[k] })}
             >
-              Stop
+              {m.continuous ? 'Turn off' : 'Stop'}
             </button>
           </div>
         )

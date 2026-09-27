@@ -18,7 +18,7 @@ Like everything else in Ghostkeys, this runs entirely on your machine. Audio is 
 
 ## Sonar: gestures in the air, no touching
 
-Sonar is a separate switch from the rest of sound mode. Turn it on and Ghostkeys plays two inaudible tones at once, one from each side of the keyboard, and listens for how your hand changes them. That gives it a sense of where your hand is above the keyboard, not just whether a sound happened:
+Sonar is a separate switch from the rest of sound mode: one switch, on or off, in Settings. Turn it on and Ghostkeys plays two inaudible tones at once, one from each side of the keyboard, and listens for how your hand changes them. That gives it a sense of where your hand is above the keyboard, not just whether a sound happened:
 
 - **Hover.** Raise or lower a hand above a speaker and Ghostkeys tracks the height continuously, useful for a volume-style slider.
 - **Push / pull.** A quick motion down toward a speaker, or up away from it.
@@ -27,11 +27,18 @@ Sonar is a separate switch from the rest of sound mode. Turn it on and Ghostkeys
 
 Sonar pauses itself briefly after every keystroke, and whenever the motion sensor feels the laptop get moved or bumped, so ordinary typing doesn't set it off.
 
-## Sessions and the orange dot
+## Sessions, the sonar switch, and the orange dot
 
-Sound mode and sonar share one microphone session. It's short and deliberate, not always on: it starts when you ask for it, or, if you've set it up that way, automatically while a chosen app is in front, runs for 30 seconds by default and never more than 120, and stops on its own at the end, when you pause Ghostkeys, or when that app loses focus. Turning sonar on partway through a running sound session upgrades it rather than starting a second one.
+Sound mode (without sonar) listens in short sessions. A session starts when you ask for it, or, if you've set it up that way, automatically while a chosen app is in front. It runs for 30 seconds by default and never more than 120, and stops on its own at the end, when you pause Ghostkeys, or when that app loses focus.
 
-Whenever a Mac app is using the microphone, macOS shows an orange dot in the menu bar. That's the system's own indicator, not something Ghostkeys draws itself, and it's the honest, verifiable sign that a sound or sonar session is active. If you don't see it, nothing is listening. The dot disappears as soon as the session ends.
+Sonar works differently: it has no time limit. While the Sonar switch is on, the tones play and the microphone listens until you turn the switch off, from Settings, the Sensors page, the sidebar, or the menu bar. It also covers everything sound mode does, so a sound session isn't needed while sonar is on. It steps aside by itself, and comes back by itself when the reason ends:
+
+- **Headphones, Bluetooth or other speakers.** The tones stop at once. The microphone stays open, and the tones come back when the built-in speakers are the output again.
+- **The Mac or its display goes to sleep, or you close the lid.** The tones stop and the microphone closes.
+- **You pause Ghostkeys.** Same: tones off, microphone closed, until you resume.
+- **You quit Ghostkeys.** Everything stops.
+
+Whenever a Mac app is using the microphone, macOS shows an orange dot in the menu bar. That's the system's own indicator, not something Ghostkeys draws itself, and it's the honest, verifiable sign that a sound session or sonar is listening. If you don't see it, nothing is listening. With sonar on, the dot stays on the whole time; it disappears as soon as sonar is off or held (asleep, lid closed, paused).
 
 ## Safety limits that can't be turned off
 
@@ -39,13 +46,14 @@ These are built into the code, not settings you can change:
 
 - The two sonar tones together never exceed -30 dBFS, quiet enough to stay inaudible to almost everyone.
 - Every tone fades in and out over 20 milliseconds, so starting and stopping never clicks.
-- A session's tones stop by themselves after 60 seconds unless renewed, and there's a 10 second gap before new tones can start again.
-- Tones only ever play through the built-in speakers. Headphones, Bluetooth, USB, HDMI, and AirPlay output all refuse to play them, and plugging in headphones mid-session cuts the tones immediately.
+- Tones stop by themselves after 60 seconds unless renewed. While sonar is on, Ghostkeys renews them every second, and every renewal checks the output again, so the speaker check never stops running.
+- Tones only ever play through the built-in speakers. Headphones, Bluetooth, USB, HDMI, and AirPlay output all refuse to play them, and switching to headphones while sonar is on cuts the tones immediately.
+- After a refusal like that, Ghostkeys waits 10 seconds before trying the tones again.
 
 ## Notes on speakers and pets
 
 - **Your own speakers.** A microphone doesn't know the difference between a tap on the case and a loud, sharp sound coming from your own speakers sitting right next to it. Expect sound mode to be more prone to false triggers while you're playing loud audio.
-- **Pets, and some people.** Dogs and cats hear well above 20 kHz, and some children and young adults can hear 19 to 20 kHz too, right where the sonar tones sit. Keep sonar sessions short, and don't leave them running in the background.
+- **Pets, and some people.** Dogs and cats hear well above 20 kHz, and some children and young adults can hear 19 to 20 kHz too, right where the sonar tones sit. Sonar stays on until you turn it off, so turn it off when pets are around, or when you're not using it.
 - **A pet's paw or nose** against the case can sound enough like a tap to matter for the tap-type side of sound mode. If a pet has regular access to your laptop, plan to keep sound mode off around it.
 
 ## Testing sonar on your own Mac

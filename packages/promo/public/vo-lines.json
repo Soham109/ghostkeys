@@ -12,34 +12,39 @@
       "seconds": 1.13
     },
     {
-      "f": 285,
+      "f": 330,
       "text": "Tap the palm rest.",
       "seconds": 1.01
     },
     {
-      "f": 405,
+      "f": 480,
       "text": "Knock the grille.",
       "seconds": 0.86
     },
     {
-      "f": 525,
+      "f": 540,
       "text": "Every blank surface becomes a key.",
       "seconds": 1.89
     },
     {
-      "f": 650,
+      "f": 645,
       "text": "Eight hundred readings a second, from the motion sensor inside.",
       "seconds": 3.03
     },
     {
-      "f": 790,
+      "f": 795,
       "text": "A few minutes of calibration, and it learns your hands.",
       "seconds": 2.48
     },
     {
-      "f": 895,
-      "text": "Cover the sensor. Nudge the lid.",
-      "seconds": 1.58
+      "f": 900,
+      "text": "Cover the sensor.",
+      "seconds": 0.87
+    },
+    {
+      "f": 960,
+      "text": "Nudge the lid.",
+      "seconds": 0.85
     },
     {
       "f": 1005,
@@ -47,7 +52,7 @@
       "seconds": 0.73
     },
     {
-      "f": 1150,
+      "f": 1200,
       "text": "Hover to set the volume.",
       "seconds": 1.04
     },
@@ -67,7 +72,7 @@
       "seconds": 1.22
     },
     {
-      "f": 1830,
+      "f": 1860,
       "text": "Ghostkeys. Your MacBook has hidden keys.",
       "seconds": 1.96
     }

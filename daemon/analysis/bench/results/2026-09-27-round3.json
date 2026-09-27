@@ -1,0 +1,851 @@
+{
+  "label" : "round3",
+  "metrics" : [
+    {
+      "better" : "up",
+      "key" : "cv.calib1.recall",
+      "note" : "zone taps accepted with the right zone",
+      "value" : 0.6851239669421487
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib1.wrongZone",
+      "note" : "zone taps accepted as another zone",
+      "value" : 0.009917355371900827
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib1.negAccepted",
+      "note" : "typing\/click negatives accepted as a tap (before the typing gate)",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib1.grilleDouble",
+      "note" : "estimated grille double-tap success",
+      "value" : 0.5236505102040816
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib_bak.recall",
+      "note" : "zone taps accepted with the right zone",
+      "value" : 0.7352941176470589
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib_bak.wrongZone",
+      "note" : "zone taps accepted as another zone",
+      "value" : 0.025490196078431372
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib_bak.negAccepted",
+      "note" : "typing\/click negatives accepted as a tap (before the typing gate)",
+      "value" : 0.012244897959183673
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib_bak.grilleDouble",
+      "note" : "estimated grille double-tap success",
+      "value" : 0.26565
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib2.recall",
+      "note" : "zone taps accepted with the right zone",
+      "value" : 0.9276923076923077
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib2.wrongZone",
+      "note" : "zone taps accepted as another zone",
+      "value" : 0.007692307692307693
+    },
+    {
+      "better" : "down",
+      "key" : "cv.calib2.negAccepted",
+      "note" : "typing\/click negatives accepted as a tap (before the typing gate)",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "cv.calib2.grilleDouble",
+      "note" : "estimated grille double-tap success",
+      "value" : 0.7981625000000001
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib_bak.wrongZone",
+      "note" : "",
+      "value" : 0.0196078431372549
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib_bak.negAccepted",
+      "note" : "",
+      "value" : 0.08163265306122448
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib1>calib_bak.recall",
+      "note" : "",
+      "value" : 0.22549019607843138
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib2.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib1>calib2.negAccepted",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib1>calib2.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib1.wrongZone",
+      "note" : "",
+      "value" : 0.019801980198019802
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib1.negAccepted",
+      "note" : "",
+      "value" : 0.03225806451612903
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib_bak>calib1.recall",
+      "note" : "",
+      "value" : 0.5544554455445545
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib2.wrongZone",
+      "note" : "",
+      "value" : 0.11666666666666667
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib_bak>calib2.negAccepted",
+      "note" : "",
+      "value" : 0.09090909090909091
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib_bak>calib2.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib1.wrongZone",
+      "note" : "",
+      "value" : 0.008264462809917356
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib1.negAccepted",
+      "note" : "",
+      "value" : 0.06451612903225806
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib2>calib1.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib_bak.wrongZone",
+      "note" : "",
+      "value" : 0.0196078431372549
+    },
+    {
+      "better" : "down",
+      "key" : "cross.calib2>calib_bak.negAccepted",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "cross.calib2>calib_bak.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "cross.all.falseAccept",
+      "note" : "wrong-zone taps + accepted negatives, per candidate, over all train\/test session pairs",
+      "value" : 0.03415783274440518
+    },
+    {
+      "better" : "info",
+      "key" : "cross.all.recall",
+      "note" : "right-zone accepts across sessions (a bonus, not the goal)",
+      "value" : 0.1184407796101949
+    },
+    {
+      "better" : "down",
+      "key" : "xsaved.all.falseAccept",
+      "note" : "same, with the model files the daemon saved (the live model is calib2's)",
+      "value" : 0.014134275618374558
+    },
+    {
+      "better" : "info",
+      "key" : "xsaved.all.recall",
+      "note" : "right-zone accepts across sessions (a bonus, not the goal)",
+      "value" : 0.10344827586206896
+    },
+    {
+      "better" : "up",
+      "key" : "s1.onsetRecall",
+      "note" : "labelled taps the onset detector finds",
+      "value" : 0.9016393442622951
+    },
+    {
+      "better" : "up",
+      "key" : "s1.recall",
+      "note" : "held-out lap taps accepted with the right zone",
+      "value" : 0.8721311475409836
+    },
+    {
+      "better" : "down",
+      "key" : "s1.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1.handlingTapsPerMin",
+      "note" : "taps fired while the laptop was being handled\/repositioned on the lap",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1.handlingGesturesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1.tapLatencyMsP50",
+      "note" : "onset to tap event",
+      "value" : 80.36041259765625
+    },
+    {
+      "better" : "down",
+      "key" : "s1.tapLatencyMsP90",
+      "note" : "",
+      "value" : 111.74201965332031
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.wrongZone",
+      "note" : "lap taps accepted as the wrong zone by other sessions' models",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "s1x.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.saved.wrongZone",
+      "note" : "lap taps accepted as the wrong zone by other sessions' models",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "s1x.saved.recall",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "s1x.saved.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "robust.sens0.2.recall",
+      "note" : "lap taps recognised when the onset triggers elsewhere than in calibration",
+      "value" : 0.8360655737704918
+    },
+    {
+      "better" : "down",
+      "key" : "robust.sens0.2.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "robust.sens0.8.recall",
+      "note" : "lap taps recognised when the onset triggers elsewhere than in calibration",
+      "value" : 0.8688524590163934
+    },
+    {
+      "better" : "down",
+      "key" : "robust.sens0.8.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "robust.soft0.6x.recall",
+      "note" : "lap taps recognised when the onset triggers elsewhere than in calibration",
+      "value" : 0.8852459016393442
+    },
+    {
+      "better" : "down",
+      "key" : "robust.soft0.6x.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "splice.double.success",
+      "note" : "real grille taps composed into doubles (250 ms apart) that fire",
+      "value" : 0.7368421052631579
+    },
+    {
+      "better" : "down",
+      "key" : "splice.double.keyAfter150",
+      "note" : "same doubles followed by a key press 150 ms later that still fire",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "splice.double.mouseAfter100",
+      "note" : "same doubles followed by pointer activity 100 ms later that still fire",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "splice.strayGestures",
+      "note" : "gestures anywhere else in the composed streams",
+      "value" : 1
+    },
+    {
+      "better" : "down",
+      "key" : "rest.tapsPerMin",
+      "note" : "desk at rest; one real ~30 mg disturbance at 3.9 s",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "rest.gesturesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "diag.tapsPerMin",
+      "note" : "two 3 s 'missed right-grille' reports: one holds no tap, the other a tap buried in trackpad use",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib1.recall",
+      "note" : "old-style model after upgraded(), in-session held-out taps",
+      "value" : 0.6694214876033058
+    },
+    {
+      "better" : "info",
+      "key" : "upg.calib1.asSaved.recall",
+      "note" : "same models as saved (no upgrade, no guard)",
+      "value" : 0.6983471074380165
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib1.wrongZone",
+      "note" : "",
+      "value" : 0.011570247933884297
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib1.negAccepted",
+      "note" : "typing negatives accepted (as saved: 0.019)",
+      "value" : 0.016129032258064516
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib1.junk1.strictAtTap",
+      "note" : "taps arriving strict with 1 typing spike(s) before each, upgraded old-style model",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib1.junk2.strictAtTap",
+      "note" : "taps arriving strict with 2 typing spike(s) before each, upgraded old-style model",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib_bak.recall",
+      "note" : "old-style model after upgraded(), in-session held-out taps",
+      "value" : 0.7068627450980393
+    },
+    {
+      "better" : "info",
+      "key" : "upg.calib_bak.asSaved.recall",
+      "note" : "same models as saved (no upgrade, no guard)",
+      "value" : 0.7549019607843137
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib_bak.wrongZone",
+      "note" : "",
+      "value" : 0.022549019607843137
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib_bak.negAccepted",
+      "note" : "typing negatives accepted (as saved: 0.037)",
+      "value" : 0.036734693877551024
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib_bak.junk1.strictAtTap",
+      "note" : "taps arriving strict with 1 typing spike(s) before each, upgraded old-style model",
+      "value" : 0.0058823529411764705
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib_bak.junk2.strictAtTap",
+      "note" : "taps arriving strict with 2 typing spike(s) before each, upgraded old-style model",
+      "value" : 0.0058823529411764705
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.recall",
+      "note" : "old-style model after upgraded(), in-session held-out taps",
+      "value" : 0.9346153846153846
+    },
+    {
+      "better" : "info",
+      "key" : "upg.calib2.asSaved.recall",
+      "note" : "same models as saved (no upgrade, no guard)",
+      "value" : 0.953076923076923
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib2.wrongZone",
+      "note" : "",
+      "value" : 0.003076923076923077
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib2.negAccepted",
+      "note" : "typing negatives accepted (as saved: 0.336)",
+      "value" : 0.1
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib2.junk1.strictAtTap",
+      "note" : "taps arriving strict with 1 typing spike(s) before each, upgraded old-style model",
+      "value" : 0.08692307692307692
+    },
+    {
+      "better" : "down",
+      "key" : "upg.calib2.junk2.strictAtTap",
+      "note" : "taps arriving strict with 2 typing spike(s) before each, upgraded old-style model",
+      "value" : 0.41615384615384615
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.zone.left-edge",
+      "note" : "per zone; as saved 0.900",
+      "value" : 0.9
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.zone.left-grille",
+      "note" : "per zone; as saved 0.855",
+      "value" : 0.85
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.zone.left-palm",
+      "note" : "per zone; as saved 0.955",
+      "value" : 0.94
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.zone.right-edge",
+      "note" : "per zone; as saved 1.000",
+      "value" : 1
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.zone.right-grille",
+      "note" : "per zone; as saved 0.990",
+      "value" : 0.98
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.zone.right-palm",
+      "note" : "per zone; as saved 1.000",
+      "value" : 0.95
+    },
+    {
+      "better" : "up",
+      "key" : "upg.calib2.zone.top-strip",
+      "note" : "per zone; as saved 0.995",
+      "value" : 0.955
+    },
+    {
+      "better" : "down",
+      "key" : "guard.s1.strictAtTap",
+      "note" : "held-out lap taps that arrive while the guard is strict (own model)",
+      "value" : 0.09508196721311475
+    },
+    {
+      "better" : "info",
+      "key" : "guard.s1.strictCandidates",
+      "note" : "all lap candidates (handling included) seen while strict",
+      "value" : 0.36264900662251653
+    },
+    {
+      "better" : "down",
+      "key" : "guard.junk1.calib1.strictAtTap",
+      "note" : "taps arriving strict with 1 typing spike(s) before each",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "guard.junk1.calib1.recall",
+      "note" : "",
+      "value" : 0.6851239669421487
+    },
+    {
+      "better" : "down",
+      "key" : "guard.junk2.calib1.strictAtTap",
+      "note" : "taps arriving strict with 2 typing spike(s) before each",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "guard.junk2.calib1.recall",
+      "note" : "",
+      "value" : 0.6851239669421487
+    },
+    {
+      "better" : "down",
+      "key" : "guard.junk1.calib_bak.strictAtTap",
+      "note" : "taps arriving strict with 1 typing spike(s) before each",
+      "value" : 0.00392156862745098
+    },
+    {
+      "better" : "up",
+      "key" : "guard.junk1.calib_bak.recall",
+      "note" : "",
+      "value" : 0.7352941176470589
+    },
+    {
+      "better" : "down",
+      "key" : "guard.junk2.calib_bak.strictAtTap",
+      "note" : "taps arriving strict with 2 typing spike(s) before each",
+      "value" : 0.00392156862745098
+    },
+    {
+      "better" : "up",
+      "key" : "guard.junk2.calib_bak.recall",
+      "note" : "",
+      "value" : 0.7352941176470589
+    },
+    {
+      "better" : "down",
+      "key" : "guard.junk1.calib2.strictAtTap",
+      "note" : "taps arriving strict with 1 typing spike(s) before each",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "guard.junk1.calib2.recall",
+      "note" : "",
+      "value" : 0.9276923076923077
+    },
+    {
+      "better" : "down",
+      "key" : "guard.junk2.calib2.strictAtTap",
+      "note" : "taps arriving strict with 2 typing spike(s) before each",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "guard.junk2.calib2.recall",
+      "note" : "",
+      "value" : 0.9276923076923077
+    },
+    {
+      "better" : "up",
+      "key" : "splice.strict.double.success",
+      "note" : "composed grille doubles that fire with the guard forced strict",
+      "value" : 0.631578947368421
+    },
+    {
+      "better" : "up",
+      "key" : "posture.known.s1.lapActiveAtTap",
+      "note" : "held-out lap taps that arrive while the lap model is live (desk + lap set, picked by gravity)",
+      "value" : 1
+    },
+    {
+      "better" : "up",
+      "key" : "posture.known.s1.recall",
+      "note" : "held-out lap taps accepted with the right zone through the set (lap model alone: s1.recall; desk alone: s1x.recall)",
+      "value" : 0.8415300546448088
+    },
+    {
+      "better" : "down",
+      "key" : "posture.known.s1.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "posture.known.s1.switchesPerMin",
+      "note" : "posture switches after the first placement, per minute of the lap recording",
+      "value" : 1.5418536231889741
+    },
+    {
+      "better" : "down",
+      "key" : "posture.known.s1.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.known.rest.deskActive",
+      "note" : "share of the desk rest recording with the desk model live",
+      "value" : 1
+    },
+    {
+      "better" : "down",
+      "key" : "posture.known.rest.switchesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "info",
+      "key" : "posture.lapModelTiltDegrees",
+      "note" : "angle between the lap models' calibration gravity and the desk's (median over folds)",
+      "value" : 6.1520336519596786
+    },
+    {
+      "better" : "up",
+      "key" : "posture.gravityOnly.s1.lapActiveAtTap",
+      "note" : "held-out lap taps that arrive while the lap model is live (desk + lap set, picked by gravity)",
+      "value" : 0.6721311475409836
+    },
+    {
+      "better" : "up",
+      "key" : "posture.gravityOnly.s1.recall",
+      "note" : "held-out lap taps accepted with the right zone through the set (lap model alone: s1.recall; desk alone: s1x.recall)",
+      "value" : 0.644808743169399
+    },
+    {
+      "better" : "down",
+      "key" : "posture.gravityOnly.s1.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "posture.gravityOnly.s1.switchesPerMin",
+      "note" : "posture switches after the first placement, per minute of the lap recording",
+      "value" : 0.5139512077296581
+    },
+    {
+      "better" : "down",
+      "key" : "posture.gravityOnly.s1.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.gravityOnly.rest.deskActive",
+      "note" : "share of the desk rest recording with the desk model live",
+      "value" : 1
+    },
+    {
+      "better" : "down",
+      "key" : "posture.gravityOnly.rest.switchesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.legacy.s1.lapActiveAtTap",
+      "note" : "held-out lap taps that arrive while the lap model is live (desk + lap set, picked by gravity)",
+      "value" : 1
+    },
+    {
+      "better" : "up",
+      "key" : "posture.legacy.s1.recall",
+      "note" : "held-out lap taps accepted with the right zone through the set (lap model alone: s1.recall; desk alone: s1x.recall)",
+      "value" : 0.8415300546448088
+    },
+    {
+      "better" : "down",
+      "key" : "posture.legacy.s1.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "posture.legacy.s1.switchesPerMin",
+      "note" : "posture switches after the first placement, per minute of the lap recording",
+      "value" : 1.0279024154593162
+    },
+    {
+      "better" : "down",
+      "key" : "posture.legacy.s1.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.legacy.rest.deskActive",
+      "note" : "share of the desk rest recording with the desk model live",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "posture.legacy.rest.switchesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.ownOnly.s1.lapActiveAtTap",
+      "note" : "held-out lap taps that arrive while the lap model is live (desk + lap set, picked by gravity)",
+      "value" : 1
+    },
+    {
+      "better" : "up",
+      "key" : "posture.ownOnly.s1.recall",
+      "note" : "held-out lap taps accepted with the right zone through the set (lap model alone: s1.recall; desk alone: s1x.recall)",
+      "value" : 0.8688524590163934
+    },
+    {
+      "better" : "down",
+      "key" : "posture.ownOnly.s1.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "posture.ownOnly.s1.switchesPerMin",
+      "note" : "posture switches after the first placement, per minute of the lap recording",
+      "value" : 1.5418536231889741
+    },
+    {
+      "better" : "down",
+      "key" : "posture.ownOnly.s1.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.ownOnly.rest.deskActive",
+      "note" : "share of the desk rest recording with the desk model live",
+      "value" : 1
+    },
+    {
+      "better" : "down",
+      "key" : "posture.ownOnly.rest.switchesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.noNegPool.s1.lapActiveAtTap",
+      "note" : "held-out lap taps that arrive while the lap model is live (desk + lap set, picked by gravity)",
+      "value" : 1
+    },
+    {
+      "better" : "up",
+      "key" : "posture.noNegPool.s1.recall",
+      "note" : "held-out lap taps accepted with the right zone through the set (lap model alone: s1.recall; desk alone: s1x.recall)",
+      "value" : 0.8524590163934426
+    },
+    {
+      "better" : "down",
+      "key" : "posture.noNegPool.s1.wrongZone",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "posture.noNegPool.s1.switchesPerMin",
+      "note" : "posture switches after the first placement, per minute of the lap recording",
+      "value" : 1.5418536231889741
+    },
+    {
+      "better" : "down",
+      "key" : "posture.noNegPool.s1.handlingTapsPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.noNegPool.rest.deskActive",
+      "note" : "share of the desk rest recording with the desk model live",
+      "value" : 1
+    },
+    {
+      "better" : "down",
+      "key" : "posture.noNegPool.rest.switchesPerMin",
+      "note" : "",
+      "value" : 0
+    },
+    {
+      "better" : "down",
+      "key" : "posture.deskTaps.wrongSwitchesPer100",
+      "note" : "desk taps and negatives of another desk day that switch a desk + lap set to lap, per 100 candidates (890)",
+      "value" : 0
+    },
+    {
+      "better" : "up",
+      "key" : "posture.ref.lapOnly.s1.recall",
+      "note" : "same folds, lap model alone (3 zones, nothing borrowed), for comparison with posture.*.s1.recall",
+      "value" : 0.8688524590163934
+    },
+    {
+      "better" : "info",
+      "key" : "xpost.deskByLap.recall",
+      "note" : "desk calibration taps (lap zones) accepted with the right zone by a lap model",
+      "value" : 0.11666666666666667
+    },
+    {
+      "better" : "down",
+      "key" : "xpost.deskByLap.wrongZone",
+      "note" : "",
+      "value" : 0.08888888888888889
+    },
+    {
+      "better" : "down",
+      "key" : "xpost.deskByLap.negAccepted",
+      "note" : "desk typing negatives accepted by a lap model",
+      "value" : 0
+    }
+  ]
+}

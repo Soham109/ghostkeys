@@ -99,7 +99,16 @@ function ThemeCycle() {
   const next: Record<ThemePref, ThemePref> = { system: "light", light: "dark", dark: "system" };
   const name = pref === "system" ? "Auto" : pref === "light" ? "Light" : "Dark";
   return (
-    <button onClick={() => setThemePref(next[pref])} className="label hover:!text-ink lg:hidden" aria-label={`Theme: ${name}. Change theme`}>
+    <button
+      onClick={() => setThemePref(next[pref])}
+      className="label inline-flex items-center gap-1.5 hover:!text-ink lg:hidden"
+      aria-label={`Theme: ${name}. Change theme`}
+    >
+      {/* a half-filled disc, so the word reads as a switch and not a caption */}
+      <svg aria-hidden width="9" height="9" viewBox="0 0 10 10" className="shrink-0">
+        <circle cx="5" cy="5" r="4.25" fill="none" stroke="currentColor" strokeWidth="1" />
+        <path d="M5 0.75a4.25 4.25 0 0 1 0 8.5z" fill="currentColor" />
+      </svg>
       {name}
     </button>
   );

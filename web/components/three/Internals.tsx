@@ -339,7 +339,7 @@ export function Internals({ taps, state, signal, ink }: { taps: TapField; state:
               void main(){
                 float d = length(vUv - 0.5) * 2.0;
                 float core = exp(-d * d * 60.0);
-                float ring = exp(-pow((d - fract(uTime * 0.6) * 0.9) / 0.02, 2.0)) * (1.0 - fract(uTime * 0.6));
+                float ring = exp(-((d - fract(uTime * 0.6) * 0.9) / 0.02) * ((d - fract(uTime * 0.6) * 0.9) / 0.02)) * (1.0 - fract(uTime * 0.6));
                 float soft = exp(-d * 9.0) * (1.0 - exp(-d * d * 400.0));
                 vec3 c = uInk * (soft * 0.12 + ring * 0.22 + uFlare * (soft * 0.9 + exp(-d * 5.0) * 0.2));
                 gl_FragColor = vec4(c, 1.0);

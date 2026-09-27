@@ -9,6 +9,7 @@ final class DiagnosticsRecorder {
         var t: Double
         var a: SIMD3<Double>, g: SIMD3<Double>
         var sinceKey: Double, sinceMouse: Double
+        var sinceKeyUp: Double = 99
         var flags: UInt32
     }
 
@@ -24,11 +25,12 @@ final class DiagnosticsRecorder {
     private var events: [Event] = []
 
     init(capacity: Int = 9_000) {          // 10 s at ~800 Hz, with headroom
-        ring = Array(repeating: Sample(t: 0, a: .zero, g: .zero, sinceKey: 99, sinceMouse: 99, flags: 0), count: capacity)
+        ring = Array(repeating: Sample(t: 0, a: .zero, g: .zero, sinceKey: 99, sinceMouse: 99, sinceKeyUp: 99, flags: 0), count: capacity)
     }
 
-    func record(_ s: IMUSample, sinceKey: Double, sinceMouse: Double, modifiers: Set<String>) {
-        ring[head] = Sample(t: s.t, a: s.a, g: s.g, sinceKey: sinceKey, sinceMouse: sinceMouse, flags: Self.flags(modifiers))
+    func record(_ s: IMUSample, sinceKey: Double, sinceMouse: Double, modifiers: Set<String>, sinceKeyUp: Double = 99) {
+        ring[head] = Sample(t: s.t, a: s.a, g: s.g, sinceKey: sinceKey, sinceMouse: sinceMouse, sinceKeyUp: sinceKeyUp,
+                            flags: Self.flags(modifiers))
         head = (head + 1) % ring.count
         filled = min(filled + 1, ring.count)
     }
@@ -47,6 +49,27 @@ final class DiagnosticsRecorder {
         for i in 0..<filled { out.append(ring[(start + i) % ring.count]) }
         guard let last = out.last?.t else { return [] }
         return out.filter { last - $0.t <= seconds }
+    }
+
+    /// True if a key press or release, or any pointer event, happened within `radius` seconds of `t`
+    /// (reconstructed from the buffered idle times; call once the buffer extends past t + radius).
+    func inputNear(_ t: Double, radius: Double) -> Bool {
+        for x in window(from: t - radius, to: t + radius + 0.05) {
+            for since in [x.sinceKey, x.sinceKeyUp, x.sinceMouse] where since < 60 {
+                if abs((x.t - since) - t) <= radius { return true }
+            }
+        }
+        return false
+    }
+
+    /// Samples with t in [from, to], oldest first.
+    func window(from: Double, to: Double) -> [Sample] {
+        samples().filter { $0.t >= from && $0.t <= to }
+    }
+
+    /// Test hook: a pointer event at `t`, as the idle-time column of every later buffered sample would show it.
+    func markPointerEvent(at t: Double) {
+        for i in 0..<ring.count where ring[i].t >= t { ring[i].sinceMouse = min(ring[i].sinceMouse, ring[i].t - t) }
     }
 
     /// Test hook (simulated sessions only): adds a tap-like transient to the buffered samples `ago` seconds back,
@@ -103,7 +126,13 @@ final class DiagnosticsRecorder {
     /// `segments` label parts of it (for a missed tap: one "capture" segment with the zone and the found onset).
     func export(to url: URL, seconds: Double, deviceModel: String, zones: [String],
                 segments: [GkrecSegment] = [], notes extra: [String] = []) throws -> Int {
-        let s = samples(lastSeconds: seconds)
+        try Self.write(samples(lastSeconds: seconds), events: events, to: url, deviceModel: deviceModel, zones: zones,
+                       segments: segments, notes: extra)
+    }
+
+    /// Writes any list of samples (it may have gaps, for example tap windows from a calibration) as a .gkrec.
+    static func write(_ s: [Sample], events: [Event] = [], to url: URL, deviceModel: String, zones: [String],
+                      segments: [GkrecSegment] = [], notes extra: [String] = []) throws -> Int {
         guard let t0 = s.first?.t else { throw ActionError("no sensor data buffered yet") }
         var imu: [[Float]] = Array(repeating: [], count: 7)
         var act: [[Float]] = Array(repeating: [], count: 4)

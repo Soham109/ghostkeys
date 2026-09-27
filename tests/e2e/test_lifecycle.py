@@ -37,7 +37,8 @@ async def _assert_clean_shutdown(daemon_binary, port, tmp_path, sig: int, sig_nu
     try:
         async with Client(f"ws://127.0.0.1:{port}/", token=d.token) as c:
             hs = await c.handshake()
-        imu_present = bool(hs["hello"]["sensors"].get("imu"))
+        # Simulated sensors report an imu in hello but never touch the driver, so there is nothing to restore.
+        imu_present = bool(hs["hello"]["sensors"].get("imu")) and harness.REAL_SENSORS
 
         d.proc.send_signal(sig)
         code = d.wait(timeout=5.0)
@@ -92,6 +93,9 @@ async def test_sigkill_then_restore_sensors_recovers(daemon_binary, port, tmp_pa
     SIGKILL our own daemon on purpose here -- that's exactly the scenario this
     mechanism exists for, and --restore-sensors is the safe, explicit way to
     prove it recovered rather than leaving the motion sensor altered."""
+    if not harness.REAL_SENSORS:
+        pytest.skip("needs the real motion sensor driver (GHOSTKEYS_E2E_REAL_SENSORS=1); "
+                    "--simulate-sensors never writes driver settings, so there is nothing to restore")
     config_dir = tmp_path / "ghostkeys-config"
     originals_path = config_dir / "spu-originals.json"
 

@@ -5,6 +5,7 @@ import { guideDocs } from "@/lib/guide";
 export const metadata: Metadata = {
   title: "Guide | Ghostkeys",
   description: "How Ghostkeys works: calibration, zones, gestures, actions, sound mode, the camera add-on, privacy and troubleshooting.",
+  alternates: { canonical: "/guide/" },
 };
 
 export default function GuideIndex() {

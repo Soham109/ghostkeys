@@ -78,7 +78,7 @@ const lidPoint = (x: number, y: number, z: number, delta: number): V3 => {
   const a = -(LID_ANGLE + delta);
   return [x, 0.1 + y * Math.cos(a) - z * Math.sin(a), -10.6 + y * Math.sin(a) + z * Math.cos(a)];
 };
-export const lidDeltaAt = (f: number) => k(f, [[930, 0], [946, 0], [953, 0.075], [966, 0.075], [980, 0]]);
+export const lidDeltaAt = (f: number) => k(f, [[930, 0], [948, 0], [955, 0.075], [966, 0.075], [980, 0]]);
 
 const TIP_ROT: Rot = { pitch: -0.5, yaw: -0.9, roll: -0.25 };
 

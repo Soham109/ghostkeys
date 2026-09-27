@@ -7,6 +7,7 @@
     "dev": "next dev",
     "prebuild": "node scripts/sync-content.mjs",
     "build": "next build",
+    "postbuild": "node scripts/copy-vercel-config.mjs",
     "serve": "node scripts/serve.mjs",
     "typecheck": "tsc --noEmit",
     "shots": "node scripts/screenshots.mjs",

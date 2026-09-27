@@ -7,3 +7,6 @@ export const DOWNLOAD_URL = "#get-mac";
 export const BUY_URL = "#get-pro";
 export const SALES_URL = "/faq/";
 export const SOURCE_URL = "/privacy/";
+
+/** Production origin: canonical links, og:image and the sitemap resolve against it. */
+export const SITE_ORIGIN = "https://ghostkeys-nine.vercel.app";

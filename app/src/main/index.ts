@@ -3,9 +3,11 @@ import { randomBytes } from 'node:crypto'
 import { copyFileSync, existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import { DaemonSupervisor } from './daemon'
 import { DaemonBridge } from './bridge'
 import { runScreenshots } from './screenshots'
+import { isShown } from '@shared/match'
 import { runSelfTest } from './selftest'
 import { buildMenu, registerNativeIpc, type FeedbackHooks } from './native'
 import { loadLibrary } from './library'
@@ -17,8 +19,10 @@ import { licenseState, parseLicense } from '@shared/license'
 const PORT = Number(process.env.GK_PORT ?? DEFAULT_PORT)
 const MOCK = process.env.GK_MOCK === '1'
 const SELFTEST = process.env.SELFTEST === '1'
-/** Offscreen scripted runs: screenshots, or the self-test against a real daemon. */
-const SCREENSHOT = process.env.SCREENSHOT === '1' || SELFTEST
+/** Dev only: a scripted UI check (scripts/verify) that drives the offscreen window against a simulated daemon. */
+const VERIFY_DRIVER = !app.isPackaged ? process.env.GK_VERIFY_DRIVER : undefined
+/** Offscreen scripted runs: screenshots, the self-test against a real daemon, or a verify driver. */
+const SCREENSHOT = process.env.SCREENSHOT === '1' || SELFTEST || !!VERIFY_DRIVER
 const APP_ROOT = app.getAppPath()
 const RES_DIR = app.isPackaged ? process.resourcesPath : join(APP_ROOT, 'resources')
 
@@ -26,17 +30,26 @@ app.setName('Ghostkeys')
 
 // Electron's own files (caches, local storage, prefs) live in Ghostkeys/app; the daemon owns Ghostkeys/daemon.
 // Must run before the app is ready. Idempotent: prefs from the old shared folder are copied once.
+// Scripted runs (screenshots, self-test) must not touch the user's Library: they pass GK_USERDATA (a scratch folder).
 const GK_SUPPORT = join(app.getPath('appData'), 'Ghostkeys')
-const APP_DATA = join(GK_SUPPORT, 'app')
+const SCRATCH_DATA = process.env.GK_USERDATA
+const APP_DATA = SCRATCH_DATA || join(GK_SUPPORT, 'app')
+if (SCREENSHOT && !SCRATCH_DATA) {
+  console.error('[paths] SCREENSHOT/SELFTEST needs GK_USERDATA so the user\'s Library is left alone; refusing to start.')
+  process.exit(2)
+}
 try {
   mkdirSync(APP_DATA, { recursive: true })
-  const oldPrefs = join(GK_SUPPORT, 'app-prefs.json')
-  const newPrefs = join(APP_DATA, 'app-prefs.json')
-  if (existsSync(oldPrefs) && !existsSync(newPrefs)) copyFileSync(oldPrefs, newPrefs)
+  if (!SCRATCH_DATA) {
+    const oldPrefs = join(GK_SUPPORT, 'app-prefs.json')
+    const newPrefs = join(APP_DATA, 'app-prefs.json')
+    if (existsSync(oldPrefs) && !existsSync(newPrefs)) copyFileSync(oldPrefs, newPrefs)
+  }
 } catch (e) {
   console.error('[paths] could not prepare', APP_DATA, e)
 }
 app.setPath('userData', APP_DATA)
+app.setPath('sessionData', APP_DATA)
 
 // ---------------------------------------------------------------- prefs
 
@@ -254,6 +267,8 @@ function onDaemonMessage(msg: DaemonMessage): void {
         ? msg.zones.map((z) => zoneName(z)).join(' then ')
         : (zoneName(msg.zone) ?? GESTURE_LABEL[msg.gesture])
     lastGesture = { title, at: Date.now() }
+    // Only gestures that do something reach the HUD, unless the user asked to see every detection.
+    if (!isShown(bridge.config, msg, !!prefs.showAllGestures)) return
     showHud(title, ZONELESS_GESTURES.includes(msg.gesture) ? null : GESTURE_LABEL[msg.gesture])
   } else if (msg.type === 'feedback') {
     const z = msg.zone ? (zoneName(msg.zone) ?? msg.zone) : 'Last tap'
@@ -339,7 +354,9 @@ function refreshTray(): void {
         : 'Listening for taps'
   const sessions = SESSION_KINDS.filter((k) => bridge.sessions[k]?.active)
   const sessionLabel = (k: SessionKind): string =>
-    `${SESSION_NAME[k]} on, ${Math.max(0, Math.round(bridge.sessions[k]?.secondsLeft ?? 0))} s left`
+    bridge.sessions[k]?.continuous
+      ? `${SESSION_NAME[k]} on`
+      : `${SESSION_NAME[k]} on, ${Math.max(0, Math.round(bridge.sessions[k]?.secondsLeft ?? 0))} s left`
   const sig = JSON.stringify([statusLabel, sessions.map(sessionLabel), bridge.paused])
   if (sig === traySig) return
   traySig = sig
@@ -351,7 +368,8 @@ function refreshTray(): void {
       { label: statusLabel, enabled: false },
       ...sessions.flatMap((k): Electron.MenuItemConstructorOptions[] => [
         { label: sessionLabel(k), enabled: false },
-        { label: `Turn off the ${SESSION_NAME[k].toLowerCase()}`, click: () => bridge.send({ type: SESSION_STOP[k] }) }
+        // Sonar: sonar_session_stop turns the setting off in the daemon.
+        { label: k === 'sonar' ? 'Turn off sonar' : `Turn off the ${SESSION_NAME[k].toLowerCase()}`, click: () => bridge.send({ type: SESSION_STOP[k] }) }
       ]),
       { type: 'separator' },
       {
@@ -421,6 +439,7 @@ const RELAYABLE = new Set<AppMessage['type']>([
   'calibration_start',
   'calibration_zone',
   'calibration_negatives',
+  'calibration_doubles',
   'calibration_finish',
   'calibration_cancel',
   'config_get',
@@ -560,6 +579,20 @@ if (!gotLock) {
       quitting = true
       supervisor.stop()
       setTimeout(() => app.exit(code), 1500)
+      return
+    }
+    if (VERIFY_DRIVER) {
+      hudWindow = createHudWindow()
+      let code = 1
+      try {
+        const driver = (await import(/* @vite-ignore */ pathToFileURL(VERIFY_DRIVER).href)) as { default: (ctx: unknown) => Promise<number> }
+        code = await driver.default({ main: mainWindow, hud: hudWindow, bridge, supervisor, sendApprovals, dialog, outDir: join(APP_ROOT, 'screenshots') })
+      } catch (e) {
+        console.error('[verify] driver failed:', e)
+      }
+      quitting = true
+      supervisor.stop()
+      setTimeout(() => app.exit(code), 800)
       return
     }
     if (SCREENSHOT) {

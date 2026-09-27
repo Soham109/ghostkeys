@@ -16,6 +16,22 @@
 //   5. Reject option: if the Mahalanobis distance to the nearest zone mean is larger than a threshold
 //      learned from how spread out the calibration taps were, the answer is "none".
 //
+//   6. Ensemble (models trained since 27 Sep 2026): the probabilities above are averaged 50/50 with
+//      an L2-regularised multinomial logistic regression (C = 0.3, Logistic.swift), and the final
+//      confidence goes through Platt scaling fitted on 5-fold out-of-fold predictions, so
+//      minConfidence reads as "estimated chance the zone is right". Evaluated on the user's two real
+//      calibrations with 10 x repeated stratified 5-fold CV, at minConfidence 0.8
+//      (recall / wrong zone / typing negatives accepted):
+//        calib1 (8 zones, 31 negatives):  0.695/0.017/0.016  ->  0.683/0.013/0.003
+//        calib2 (7 zones, 11 negatives):  0.949/0.015/0.364  ->  0.929/0.010/0.009
+//      and unchanged on the lab recording (5-fold 52/61). Models saved without these fields
+//      classify exactly as before.
+//
+//   7. Precision (27 Sep 2026): the reject distance is the 99th percentile of the out-of-fold spread (it used
+//      to be max(1.3 q95, 1.1 max), which one outlier could inflate 3x), and `typicalDistance` (the median)
+//      feeds FamiliarityGuard in the engine. Models saved earlier get both from `upgraded()` when loaded.
+//      Evaluated with daemon/analysis/bench; see docs/review/DETECTION_AUDIT.md.
+//
 // The "none" class does not take part in the covariance or the Gaussian part: its samples are a
 // grab bag (every key on the keyboard, clicks) and would inflate the zone covariance.
 
@@ -63,8 +79,32 @@ public struct ZoneModel: Codable, Sendable {
     public static let onsetFloorRange: ClosedRange<Double> = 0.004...0.0175
     /// Feature indices the model ignores (set to 0 before whitening). Optional for old models.
     var ignoredFeatures: [Int]? = nil
+    /// Logistic-regression member of the ensemble, and the Platt scaling of the final confidence.
+    /// Both optional: models saved before they existed classify exactly as before.
+    var logistic: LogisticModel? = nil
+    var platt: PlattScaling? = nil
+    /// Median out-of-fold distance of the calibration taps to their zone mean: how far a typical tap of this
+    /// user's calibration sits. Used by FamiliarityGuard. Optional: filled by `upgraded()` for older models.
+    public var typicalDistance: Double? = nil
+    /// Per-label reject distance (same order as `labels`), used instead of `rejectDistance` for the winning zone.
+    /// Only models upgraded by `upgraded()` have it (a zone whose own calibration spread is wider than the pooled limit
+    /// gets a limit scaled to its spread); nil: `rejectDistance` for every zone.
+    public var zoneRejectDistances: [Double]? = nil
+    /// Posture of the calibration (round 3, docs/review/DETECTION_ROUND3.md): the mean direction (unit length) of the
+    /// low-passed gravity over the training samples that carry one (`TapFeatures.gravity`). `Trainer` fills it.
+    /// Optional: nil for models saved by older builds and for models trained from samples without gravity.
+    /// `ZoneModelSet` picks the model whose calibration gravity is nearest the machine's current gravity.
+    public var calibrationGravity: SIMD3<Double>? = nil
+    /// 90th percentile angle (degrees) between those samples' gravity and `calibrationGravity`: a few degrees for one
+    /// posture, more when the samples mix postures. nil when `calibrationGravity` is nil.
+    public var calibrationGravitySpread: Double? = nil
 
     public init(labels: [String]) { self.labels = labels }
+
+    /// Angle in degrees between this model's calibration gravity and `gravity` (nil if the model has none).
+    public func gravityAngle(to gravity: SIMD3<Double>) -> Double? {
+        calibrationGravity.flatMap { ZoneModelSet.angleDegrees($0, gravity) }
+    }
 
     var featureCount: Int { mean.count }
     var isTrained: Bool { !samples.isEmpty && featureCount > 0 }
@@ -103,6 +143,9 @@ public struct ZoneModel: Codable, Sendable {
         public var distance: Double
         /// True if the reject option (distance too large) produced the "none".
         public var outOfDistribution: Bool
+        /// When the reject option produced the "none": the confidence the winning zone would have had without it
+        /// (how sure the zone vote alone was). nil otherwise. Used by FamiliarityGuard to tell a far-off tap from junk.
+        public var zoneConfidence: Double? = nil
     }
 
     public func classifyDetailed(_ f: TapFeatures) -> Result {
@@ -158,6 +201,12 @@ public struct ZoneModel: Codable, Sendable {
         for c in 0..<nLabels {
             if c == noneIndex { p[c] = pNone } else { p[c] = 0.5 * pKnn[c] + 0.5 * (1 - pNone) * pGauss[c] }
         }
+        // Ensemble (models trained since 27 Sep 2026): average with a multinomial logistic
+        // regression over the same labels. See the header of this file for the evaluation.
+        if let lr = logistic, lr.weights.count == nLabels {
+            let pl = lr.probabilities(masked(f.values))
+            for c in 0..<nLabels { p[c] = 0.5 * p[c] + 0.5 * pl[c] }
+        }
         var top = 0
         for c in 0..<nLabels where p[c] > p[top] { top = c }
 
@@ -168,21 +217,38 @@ public struct ZoneModel: Codable, Sendable {
         }
         // Reject option: far from every zone the user calibrated.
         let dTop = dist[top]
-        if dTop > rejectDistance {
-            return Result(zone: Self.noneLabel, confidence: Stats.clamp(1 - rejectDistance / dTop + 0.5, 0, 1),
-                          x: 0.5, y: 0.5, probabilities: p, distance: dTop, outOfDistribution: true)
+        let limit = rejectDistance(forLabel: top)
+        if dTop > limit {
+            let wouldBe = logistic != nil ? (platt?.apply(p[top]) ?? p[top]) : p[top]
+            return Result(zone: Self.noneLabel, confidence: Stats.clamp(1 - limit / dTop + 0.5, 0, 1),
+                          x: 0.5, y: 0.5, probabilities: p, distance: dTop, outOfDistribution: true,
+                          zoneConfidence: Stats.clamp(wouldBe, 0, 1))
         }
-        // Soften confidence in the outer 20% of the accepted region so borderline taps fall below
-        // minConfidence rather than firing actions.
+        // Calibrated models: the confidence is an estimate of P(correct zone), fitted out of fold.
+        if logistic != nil {
+            let zone = labels[top]
+            let (x, y) = position(zone: zone, features: f.values)
+            let conf = platt?.apply(p[top]) ?? p[top]
+            return Result(zone: zone, confidence: Stats.clamp(conf, 0, 1), x: x, y: y, probabilities: p,
+                          distance: dTop, outOfDistribution: false)
+        }
+        // Older models: soften confidence in the outer 20% of the accepted region so borderline
+        // taps fall below minConfidence rather than firing actions.
         var conf = p[top]
-        if rejectDistance < 1e300 {
-            let edge = 0.8 * rejectDistance
-            if dTop > edge { conf *= 1 - 0.5 * (dTop - edge) / (rejectDistance - edge) }
+        if limit < 1e300 {
+            let edge = 0.8 * limit
+            if dTop > edge { conf *= 1 - 0.5 * (dTop - edge) / (limit - edge) }
         }
         let zone = labels[top]
         let (x, y) = position(zone: zone, features: f.values)
         return Result(zone: zone, confidence: Stats.clamp(conf, 0, 1), x: x, y: y, probabilities: p,
                       distance: dTop, outOfDistribution: false)
+    }
+
+    /// The reject distance that applies when the label at `index` wins (see `zoneRejectDistances`).
+    public func rejectDistance(forLabel index: Int) -> Double {
+        if let z = zoneRejectDistances, index >= 0, index < z.count, z[index].isFinite { return z[index] }
+        return rejectDistance
     }
 
     func masked(_ x: [Double]) -> [Double] {
@@ -236,6 +302,45 @@ public struct ZoneModel: Codable, Sendable {
         /// factors (see FeatureIndex.forceScaled), so the model accepts softer and harder taps than
         /// the ones calibrated.
         var augment: [Double] = []
+        /// Add the logistic-regression member (see the file header).
+        var ensemble = true
+        /// Fit Platt scaling of the confidence on inner out-of-fold predictions.
+        var calibrate = true
+        /// Starting point for the logistic regression (speeds up the inner fits).
+        var warmStart: LogisticModel? = nil
+    }
+
+    static func fitLogistic(_ m: ZoneModel, _ x: [[Double]], _ y: [String], warmStart: LogisticModel? = nil) -> LogisticModel? {
+        let index = Dictionary(uniqueKeysWithValues: m.labels.enumerated().map { ($1, $0) })
+        let yi = y.compactMap { index[$0] }
+        guard yi.count == x.count, m.labels.count >= 2 else { return nil }
+        return LogisticModel.fit(x.map { m.masked($0) }, yi, classes: m.labels.count, warmStart: warmStart)
+    }
+
+    /// Platt scaling from 5-fold out-of-fold predictions of the uncalibrated ensemble.
+    /// Every accepted (non-"none") prediction is a pair (raw confidence, was it the right zone);
+    /// typing negatives predicted as a zone count as wrong.
+    static func fitPlatt(_ x: [[Double]], _ y: [String], options: TrainingOptions, k: Int,
+                         warmStart: LogisticModel?) -> PlattScaling? {
+        var inner = options
+        inner.calibrate = false
+        inner.warmStart = warmStart
+        var fold = [Int](repeating: 0, count: x.count)
+        var rank: [String: Int] = [:]
+        for i in x.indices { fold[i] = rank[y[i], default: 0] % 5; rank[y[i], default: 0] += 1 }
+        var raw: [Double] = [], ok: [Bool] = []
+        for f in 0..<5 {
+            let tr = x.indices.filter { fold[$0] != f }
+            let te = x.indices.filter { fold[$0] == f }
+            guard !te.isEmpty, Set(tr.map { y[$0] }).count >= 2 else { continue }
+            let m = fit(features: tr.map { x[$0] }, labels: tr.map { y[$0] }, k: k, options: inner)
+            for i in te {
+                let r = m.classifyDetailed(TapFeatures(values: x[i], t: 0))
+                guard r.zone != noneLabel else { continue }
+                raw.append(r.confidence); ok.append(r.zone == y[i])
+            }
+        }
+        return PlattScaling.fit(raw: raw, correct: ok)
     }
 
     static func fit(features original: [[Double]], labels rawLabels: [String], k: Int = 5,
@@ -250,6 +355,12 @@ public struct ZoneModel: Codable, Sendable {
         }
         var model = fitCore(features: x, labels: y, groups: group, k: k)
         model.ignoredFeatures = options.ignored.isEmpty ? nil : options.ignored.sorted()
+        if options.ensemble {
+            model.logistic = fitLogistic(model, x, y, warmStart: options.warmStart)
+            if options.calibrate {
+                model.platt = fitPlatt(original, rawLabels, options: options, k: k, warmStart: model.logistic)
+            }
+        }
 
         // Tap strength distribution and the learned onset floor (from the real samples only).
         var quantiles: [String: [Double]] = [:]
@@ -315,9 +426,15 @@ public struct ZoneModel: Codable, Sendable {
             }
         }
         if spread.count >= 5 {
-            // Generous margins: a missed tap is annoying, but the none class, the k-NN vote and
-            // minConfidence also stand between an odd spike and an action.
-            model.rejectDistance = max(1.3 * Stats.quantile(spread, 0.95), 1.1 * (spread.max() ?? 0))
+            // Precision first (27 Sep 2026): reject beyond the 99th percentile of the out-of-fold spread. The old
+            // rule, max(1.3 x q95, 1.1 x max), let one outlier set the limit: the user's live model had 31.2 against
+            // a q95 of 10.0, i.e. no rejection at all, and taps from another session (posture, surface, strength)
+            // were then accepted as confident wrong zones. Measured with analysis/bench: q95 alone halves those
+            // cross-session false accepts (0.068 -> 0.031) for 0.8 points of in-session recall; with the engine's
+            // FamiliarityGuard doing the cross-session work, q99 gets 0.033 at 0.2 points and keeps more doubles
+            // than q95 or 1.3 x q95 (2 of 19 composed doubles more).
+            model.rejectDistance = Stats.quantile(spread, 0.99)
+            model.typicalDistance = Stats.quantile(spread, 0.5)
         }
         let rawMeans = geo.rawMeans, counts = geo.counts
 
@@ -419,5 +536,72 @@ public struct ZoneModel: Codable, Sendable {
             for i in 0..<p { z[i] = (x[i] - mean[i]) / scale[i] }
             return LinearAlgebra.forwardSolve(cholesky, n: p, z)
         }
+    }
+}
+
+// MARK: Upgrading models saved by older builds
+
+extension ZoneModel {
+    /// Leave-one-out distances of the stored zone samples to their own zone mean (recomputed without the sample),
+    /// in the model's whitened space. Zones with fewer than 3 samples are skipped.
+    func leaveOneOutSpread() -> [Double] { leaveOneOutSpreadByLabel().map(\.distance) }
+
+    /// Same, with the label index of each distance.
+    func leaveOneOutSpreadByLabel() -> [(label: Int, distance: Double)] {
+        var sums: [Int: [Double]] = [:], counts: [Int: Int] = [:]
+        for (i, s) in samples.enumerated() where sampleLabels[i] < classMeans.count && !classMeans[sampleLabels[i]].isEmpty {
+            let c = sampleLabels[i]
+            if var acc = sums[c] { for j in acc.indices { acc[j] += s[j] }; sums[c] = acc } else { sums[c] = s }
+            counts[c, default: 0] += 1
+        }
+        var out: [(label: Int, distance: Double)] = []
+        for (i, s) in samples.enumerated() {
+            let c = sampleLabels[i]
+            guard let sum = sums[c], let n = counts[c], n >= 3 else { continue }
+            var d = 0.0
+            for j in s.indices { let m = (sum[j] - s[j]) / Double(n - 1); d += (s[j] - m) * (s[j] - m) }
+            out.append((c, d.squareRoot()))
+        }
+        return out
+    }
+
+    /// The same model with the precision rules of newer builds, for models saved before them (no-op otherwise):
+    /// `typicalDistance` is filled and the reject distance is tightened to about the 95th percentile of the
+    /// calibration spread, never loosened.
+    ///
+    /// The out-of-fold spread is not stored, so it is estimated from the stored whitened samples with
+    /// leave-one-out zone means. On the three real calibrations that estimate runs low (median 0.94x, q95 0.72x to
+    /// 0.80x the out-of-fold values, because the whitening was fitted with the sample in it), hence the factors.
+    ///
+    /// Per zone (round 2, docs/review/DETECTION_ROUND2.md): zones are not equally spread. On the live model's
+    /// calibration (calib2) the pooled limit cut into the normal taps of the wide zones (top-strip, right-edge,
+    /// right-palm), which cost 3.4 points of in-session recall. So each zone also gets a limit scaled to its own
+    /// spread: its median leave-one-out distance times the pooled shape (the same 1.3 x q95, taken over every tap's
+    /// distance divided by its own zone's median). A zone keeps the pooled limit if that is larger, so no zone is
+    /// tighter than before, and none is looser than the saved limit. Measured: calib2 in-session recall 0.919 ->
+    /// 0.935 (as saved 0.953), saved-model cross-session false accepts unchanged (0.014).
+    public func upgraded() -> ZoneModel {
+        guard typicalDistance == nil, isTrained else { return self }
+        let byLabel = leaveOneOutSpreadByLabel()
+        let spread = byLabel.map(\.distance)
+        guard spread.count >= 5 else { return self }
+        var m = self
+        m.typicalDistance = Stats.quantile(spread, 0.5) / 0.94
+        let pooled = min(rejectDistance, 1.3 * Stats.quantile(spread, 0.95))
+        m.rejectDistance = pooled
+        // Per-zone scale (median), pooled shape (95th percentile of distance / own zone's median).
+        var zoneMedian: [Int: Double] = [:]
+        for c in Set(byLabel.map(\.label)) {
+            zoneMedian[c] = Stats.quantile(byLabel.filter { $0.label == c }.map(\.distance), 0.5)
+        }
+        let normalized = byLabel.compactMap { e in zoneMedian[e.label].flatMap { $0 > 0 ? e.distance / $0 : nil } }
+        if normalized.count >= 5 {
+            let shape = 1.3 * Stats.quantile(normalized, 0.95)
+            m.zoneRejectDistances = labels.indices.map { c in
+                guard let med = zoneMedian[c], med > 0 else { return pooled }
+                return min(rejectDistance, max(pooled, med * shape))
+            }
+        }
+        return m
     }
 }

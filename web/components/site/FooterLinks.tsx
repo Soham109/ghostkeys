@@ -9,10 +9,11 @@ export function FooterRow() {
         <span className="text-[14px] font-medium tracking-[-0.02em]">ghostkeys</span>
       </a>
       <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-        <nav aria-label="Footer" className="flex gap-6">
+        <nav aria-label="Footer" className="flex flex-wrap gap-x-6 gap-y-3">
           {[
             ["/guide/", "Guide"],
             ["/pricing/", "Pricing"],
+            ["/compatibility/", "Compatibility"],
             ["/privacy/", "Privacy"],
           ].map(([href, label]) => (
             <a key={href} href={href} className="label transition-colors hover:!text-ink">

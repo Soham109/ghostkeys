@@ -1,0 +1,35 @@
+{
+  "name": "chaos",
+  "started": "2026-09-27 00:50:13 -0500",
+  "findings": [
+    {
+      "severity": "medium",
+      "title": "calibration_finish reported 'done' while model/ was read-only (save likely silently failed)",
+      "repro": "chmod 0500 /private/tmp/claude-501/-Users-sohamaggarwal/5865e2c2-7871-49a1-8e02-7f828d1f782d/scratchpad/run/chaos/diskfull/model, then complete a calibration",
+      "detail": "Daemon.finishCalibration logs a Log.error on saveModel failure but always broadcasts phase:done regardless of whether the save succeeded.",
+      "t": "2026-09-27 00:50:42 -0500"
+    }
+  ],
+  "metrics": {
+    "config_write_kill_trials": 15,
+    "config_write_kill_corrupt_count": 0,
+    "calibration_in_progress_kill_trials": 8,
+    "calibration_in_progress_kill_corrupt_count": 0,
+    "model_save_kill_trials": 10,
+    "model_save_kill_corrupt_count": 0,
+    "restore_sensors_exit_code": 0,
+    "restore_sensors_stdout": "nothing to restore: no sensor settings were left behind"
+  },
+  "notes": [
+    "SIGKILL-mid-config_set: 15/15 trials left config.json (+.bak) valid JSON (ConfigStore.write()'s atomic Data.write held up)",
+    "SIGKILL-mid-model-save: 10/10 trials left model/report/samples files valid JSON",
+    "--restore-sensors after SIGKILL: exit 0, printed 'nothing to restore: no sensor settings were left behind'",
+    "fresh daemon started cleanly against the same --config-dir right after --restore-sensors",
+    "disk-full config_set correctly reported an error: invalid config: Error Domain=NSCocoaErrorDomain Code=513 \"Creating a temporary file via mktemp failed. Creating the temporary file via _amkrtemp previously also failed with errno Optional(13)\" UserInfo={NSUserStringVariant=(\n    Folder\n), NSFilePath=/tmp/claude-501/-Users-sohamaggarwal/5865e2c2-7871-49a1-8e02-7f828d1f782d/scratchpad/run/chaos/diskfull/config.json, NSURL=file:///tmp/claude-501/-Users-sohamaggarwal/5865e2c2-7871-49a1-8e02-7f828d1f782d/scratchpad/run/chaos/diskfull/config.json, NSDebugDescription=Creating a temporary file via mktemp failed. Creating the temporary file via _amkrtemp previously also failed with errno Optional(13), NSUnderlyingError=0xc2ef74330 {Error Domain=NSPOSIXErrorDomain Code=13 \"Permission denied\"}}",
+    "recovered after restoring permissions: config_set succeeded (config)",
+    "clock-jump chaos test skipped: changing the system clock needs sudo (prohibited by the overnight safety rules), and the daemon's CLI has no --simulate-clock-jump hook to fault-inject this in-process; out of reach for a black-box, no-sudo stress test."
+  ],
+  "samples": [],
+  "finished": "2026-09-27 00:50:42 -0500",
+  "status": "completed"
+}

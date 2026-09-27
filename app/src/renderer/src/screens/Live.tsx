@@ -14,6 +14,9 @@ import { LaptopMap } from '@/components/laptop/LaptopMap'
 import { Seismograph } from '@/components/Seismograph'
 import { FeedbackActions } from '@/components/Feedback'
 import { useBlockedBindings } from '@/components/SessionNeed'
+import { WhyHelper } from '@/components/WhyHelper'
+import { isShown } from '@shared/match'
+import { usePractice, useTraining } from './Practice'
 
 export function useNow(ms: number): number {
   const [now, setNow] = React.useState(() => Date.now())
@@ -46,6 +49,7 @@ function statusLine(s: ReturnType<typeof useStore.getState>): string {
 
 function Notices(): React.JSX.Element {
   const blocked = useBlockedBindings()
+  const unfamiliar = useStore((s) => !!s.status?.detector?.unfamiliar || s.unfamiliar)
   const hello = useStore((s) => s.hello)
   const status = useStore((s) => s.status)
   const navigate = useStore((s) => s.navigate)
@@ -61,6 +65,25 @@ function Notices(): React.JSX.Element {
           }
         >
           Ghostkeys paused itself because actions fired too fast in a row. Check your bindings, then resume.
+        </Notice>
+      )}
+      {unfamiliar && (
+        <Notice
+          action={
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                usePractice.setState({ mode: 'training' })
+                useTraining.setState({ phase: 'intro' })
+                navigate('calibration')
+              }}
+            >
+              Calibrate this position
+            </Button>
+          }
+        >
+          Ghostkeys isn&rsquo;t sure about this position. Taps need to be clearer until you recalibrate here.
         </Notice>
       )}
       {blocked.length > 0 && (
@@ -139,9 +162,16 @@ function FeedRow({ item, config, now }: { item: FeedItem; config: Config; now: n
 }
 
 function Feed({ config }: { config: Config }): React.JSX.Element {
-  const feed = useStore((s) => s.feed)
+  const all = useStore((s) => s.feed)
+  const showAll = useStore((s) => !!s.info?.prefs.showAllGestures)
+  const feed = all.filter((f) => isShown(config, f.gesture, showAll))
   const now = useNow(1000)
-  if (!feed.length) return <Empty title="Nothing yet." />
+  if (!feed.length)
+    return (
+      <Empty title="Nothing yet.">
+        {showAll ? undefined : 'Gestures that run one of your bindings show up here.'}
+      </Empty>
+    )
   // Group by minute with a mono divider.
   const groups: { key: string; items: FeedItem[] }[] = []
   for (const f of feed) {
@@ -289,6 +319,7 @@ export function LiveScreen(): React.JSX.Element {
               >
                 <p className="label-mono px-4 pt-6 pb-2">Recent gestures</p>
                 {config && <Feed config={config} />}
+                <WhyHelper />
                 <div className="flex h-11 shrink-0 items-center px-4 shadow-[0_-1px_0_var(--hairline)]">
                   <FeedbackActions />
                 </div>

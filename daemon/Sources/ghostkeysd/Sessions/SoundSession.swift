@@ -30,6 +30,20 @@ final class SoundSession {
     /// Called on the core queue for each calibration onset: the label and whether a usable window was found.
     var onCalibrationSample: (_ label: String, _ captured: Bool) -> Void = { _, _ in }
 
+    /// `sonar_debug` on the "debug" stream (~10 Hz while a sonar session runs), wired by the daemon: whether anyone
+    /// subscribed, and where to send. Called on the core queue.
+    static var debugWanted: () -> Bool = { false }
+    static var debugSink: ([String: Any]) -> Void = { _ in }
+    private var lastDebugAt = 0.0
+    private var volumeCache: (t: Double, value: (scalar: Double, muted: Bool)?) = (-1e9, nil)
+
+    /// Output volume slider, read from CoreAudio at most once a second.
+    func outputVolume(at t: Double) -> (scalar: Double, muted: Bool)? {
+        if t - volumeCache.t >= 1 || t < volumeCache.t { volumeCache = (t, AudioDeviceSummary.defaultOutputVolume()) }
+        return volumeCache.value
+    }
+    private var loggedToneFormats = false
+
     var onGesture: (Gesture) -> Void = { _ in }
     /// Continuous SonarField values (hover_level, finger_slide), as `air` message fields.
     var onAir: ([String: Any]) -> Void = { _ in }
@@ -57,22 +71,29 @@ final class SoundSession {
     var running: Bool { session != nil || (simulate && processor != nil) }
 
     /// Opens the microphone. `userInitiated` must be true for anything that could show the permission prompt.
-    /// Returns an error message, or nil on success.
+    /// `sonarField`: sonar mode, the stereo tones play (and are kept playing by `maintainSonarTones`) for as long as
+    /// the session is open. Returns an error message, or nil on success.
     func start(wantSonar: Bool, userInitiated: Bool, sonarField: Bool = false) -> String? {
         guard !running else { return nil }
         let classifier = (try? Data(contentsOf: tapModelURL)).flatMap { try? JSONDecoder().decode(TapTypeClassifier.self, from: $0) }
         var opts = SoundModeProcessor.Options()
         opts.sonar = wantSonar && !sonarField        // SonarField replaces the single pilot
         opts.sonarField = sonarField
+        if let pilots = SonarDiagnostics.pilots {
+            opts.fieldConfig.leftPilotHz = pilots.left
+            opts.fieldConfig.rightPilotHz = pilots.right
+        }
         opts.tapTypes = classifier != nil
         let proc = SoundModeProcessor(options: opts, tapClassifier: classifier)
         tapTypesOn = classifier != nil
+        let mode = sonarField ? "sonar" : "sound"
 
         if simulate {
             processor = proc
             sonarOn = wantSonar
             sonarFieldOn = sonarField
-            Log.info("sound session started (simulated: no microphone opened)")
+            fieldMode = sonarField
+            Log.info("\(mode) session started (simulated: no microphone opened)")
             return nil
         }
         guard Self.hardwarePresent else { return "no microphone on this Mac" }
@@ -81,30 +102,34 @@ final class SoundSession {
         case "not_determined" where !userInitiated: return "microphone permission not granted yet; start a session from the app first"
         default: break
         }
-        let s = AcousticSession { [weak self] chunk in
-            self?.queue.async { self?.process(chunk) }
-        }
+        let s = makeAcousticSession()
+        if sonarField { s.probeFrequencies = [proc.field.pilotFrequencies.left, proc.field.pilotFrequencies.right] }
         do { try s.start() } catch {
             return "could not open the microphone: \(error)"
         }
+        Self.logAudioPath(s)
+        if sonarField, let cap = SonarDiagnostics.capture {
+            s.captureRaw(to: cap.url, seconds: cap.seconds, delay: cap.delay) { line in Log.info(line) }
+            Log.info("sonar diagnostics: raw capture armed (\(cap.seconds) s after \(cap.delay) s) to \(cap.url.path)")
+        }
+        loggedToneFormats = false
         session = s
         processor = proc
         sonarOn = false
         sonarFieldOn = false
+        fieldMode = sonarField
+        toneRetryAt = 0
+        toneProblem = nil
+        lastVolume = nil
+        volumeHint = nil
         MicMarker.set(true)
         if sonarField {
-            // The generator enforces its own limits (-30 dBFS combined, built-in speakers only, 60 s, 10 s cooldown).
-            let g = StereoPilotGenerator()
-            do {
-                try s.startStereoPilots(g)
-                stereo = g
-                sonarFieldOn = true
-                lastRenew = Clock.now()
-            } catch {
-                Log.info("sonar tones refused, running without sonar: \(error)")
-            }
+            let line = maintainSonarTones()
+            Log.info("sonar session started (microphone open; \(line ?? "tones playing"))")
+            if let volumeHint { Log.info("sonar: \(volumeHint)") }
+            return nil
         } else if wantSonar {
-            // The generator enforces its own limits (-30 dBFS, built-in speaker only, 60 s, 10 s cooldown).
+            // The generator enforces its own limits (-30 dBFS, built-in speaker only, 60 s, cooldown after a refusal).
             let g = PilotToneGenerator()
             do {
                 try s.startPilotTone(g)
@@ -112,11 +137,28 @@ final class SoundSession {
                 sonarOn = true
                 lastRenew = Clock.now()
             } catch {
-                Log.info("sonar off for this session: \(error)")
+                Log.info("wave pilot tone off for this session: \(Self.describe(error))")
             }
         }
-        Log.info("sound session started (microphone open\(sonarOn ? ", sonar on" : ""))")
+        Log.info("sound session started (microphone open\(sonarOn ? ", wave pilot tone on" : ""))")
         return nil
+    }
+
+    /// Once per session: which devices and formats are really in use.
+    private static func logAudioPath(_ s: AcousticSession) {
+        let i = s.inputPathInfo
+        Log.info("audio input: \(i.device?.description ?? "unknown device"); engine input format \(Int(i.hardwareSampleRate)) Hz, "
+                 + "\(i.hardwareChannels) ch\(i.resampled ? " (resampled to 48 kHz)" : ""); voice processing \(i.voiceProcessingEnabled ? "ON" : "off"), "
+                 + "AGC \(i.voiceProcessingAGCEnabled ? "on" : "off"), mic mode \(i.microphoneMode) (preferred \(i.preferredMicrophoneMode))")
+        Log.info("audio output: \(AudioDeviceSummary.defaultOutput()?.description ?? "unknown device"); route \(describe(OutputRoute.current()))")
+    }
+
+    private func makeAcousticSession() -> AcousticSession {
+        let s = AcousticSession { [weak self] chunk in
+            self?.queue.async { self?.process(chunk) }
+        }
+        s.onConfigurationChange = { [weak self] in self?.queue.async { self?.audioConfigurationChanged(s) } }
+        return s
     }
 
     func stop() {
@@ -126,21 +168,16 @@ final class SoundSession {
         pilot = nil
         stereo = nil
         sonarFieldOn = false
+        fieldMode = false
+        toneProblem = nil
         processor?.reset()
         processor = nil
         sonarOn = false
         tapTypesOn = false
     }
 
-    /// Keep the pilot tone alive in long sessions (the generator stops itself after 60 s otherwise).
+    /// Keep the single wave pilot tone alive in long sound sessions (the generator stops itself after 60 s otherwise).
     func tick() {
-        if let stereo, let session, sonarFieldOn, Clock.now() - lastRenew > 30 {
-            if stereo.renew() { lastRenew = Clock.now() } else {
-                session.stopPilotTone(immediately: true)
-                sonarFieldOn = false
-                Log.info("sonar stopped: output is no longer the built-in speakers")
-            }
-        }
         guard let pilot, let session, sonarOn, Clock.now() - lastRenew > 30 else { return }
         if pilot.renew() {
             lastRenew = Clock.now()
@@ -148,7 +185,158 @@ final class SoundSession {
             // renew() re-checks the output route; anything but the built-in speaker stops the tone.
             session.stopPilotTone(immediately: true)
             sonarOn = false
-            Log.info("sonar stopped: output is no longer the built-in speaker")
+            Log.info("wave pilot tone stopped: output is no longer the built-in speaker")
+        }
+    }
+
+    // MARK: Sonar tones (continuous while sonar is on)
+
+    /// Why the tones are not playing in sonar mode (nil while they play).
+    private(set) var toneProblem: String?
+    private var toneRetryAt = 0.0
+    private var fieldMode = false
+    private var configChanges: [Double] = []
+    private var lastVolume: Double?
+    /// Advice about the output volume for sonar_debug (nil when it is fine).
+    private(set) var volumeHint: String?
+    /// Measured on an M5 Pro MacBook Pro at 19% (CoreAudio: -36 dB): simulated hand echoes sat at or below the
+    /// mic noise and almost nothing was detected; each volume step up raises the pilots at the mic by a few dB.
+    static let recommendedVolume = 0.5
+
+    /// Sonar mode, called every second: renews the tones (the renewal re-runs the built-in-speakers route check, so a
+    /// switch to headphones or Bluetooth stops them within a second, or at once via the audio configuration change),
+    /// and restarts them once the route is fine again. A refusal waits the 10 s cooldown before the next try;
+    /// renewals never do. Returns a log line when the tone state changed.
+    @discardableResult
+    func maintainSonarTones() -> String? {
+        guard fieldMode, !simulate, let session else { return nil }
+        let now = Clock.now()
+        // The tones are scaled by the macOS volume slider. Muted: nothing reaches the mic, so stop them (a plain
+        // stop, no cooldown) until it is unmuted. A changed volume changes every level the trackers learned.
+        let volume = outputVolume(at: now)
+        if let v = volume {
+            if let last = lastVolume, abs(v.scalar - last) >= 0.05 { processor?.field.reset() }
+            lastVolume = v.scalar
+            volumeHint = v.muted ? "the output is muted: sonar needs sound on"
+                : v.scalar < Self.recommendedVolume
+                ? "output volume \(Int((v.scalar * 100).rounded()))%: sonar hears hands far better at \(Int(Self.recommendedVolume * 100))% or more"
+                : nil
+        }
+        if volume?.muted == true {
+            let was = toneProblem
+            if let stereo { stereo.stop(); session.stopPilotTone(); self.stereo = nil; sonarFieldOn = false }
+            toneProblem = "output is muted"
+            return was == toneProblem ? nil : "sonar tones paused: the output is muted; they resume when it is unmuted"
+        }
+        if let stereo {
+            if stereo.state == .playing {
+                if stereo.renew() { return nil }
+                session.stopPilotTone(immediately: true)
+                self.stereo = nil
+                sonarFieldOn = false
+                toneRetryAt = now + SpeakerSafety.cooldown
+                toneProblem = "output is \(Self.describe(OutputRoute.current()))"
+                return "sonar tones stopped: \(toneProblem!); they come back by themselves on the built-in speakers"
+            }
+            // Cut from outside (audio configuration change) or the 60 s watchdog (renewals stopped).
+            session.stopPilotTone(immediately: true)
+            self.stereo = nil
+            sonarFieldOn = false
+            toneRetryAt = max(toneRetryAt, now + 1)
+            toneProblem = stereo.autoStopped ? "tones timed out without renewal" : "audio output changed"
+            return "sonar tones stopped: \(toneProblem!); retrying"
+        }
+        guard now >= toneRetryAt else { return nil }
+        // At the output device's own rate (48 kHz on current MacBooks), so the playback engine never resamples.
+        let pilots: (left: Double, right: Double) = processor?.field.pilotFrequencies ?? (SonarFieldConfig.defaultLeftPilotHz, SonarFieldConfig.defaultRightPilotHz)
+        let level = SonarDiagnostics.levelAmplitude ?? SpeakerSafety.maxAmplitude / 2
+        let g = StereoPilotGenerator(leftFrequency: pilots.left, rightFrequency: pilots.right,
+                                     sampleRate: TonePlayer.outputSampleRate() ?? GhostkeysAcousticsInfo.sampleRate,
+                                     leftAmplitude: level, rightAmplitude: level)
+        do {
+            try session.startStereoPilots(g)
+            stereo = g
+            sonarFieldOn = true
+            lastRenew = now
+            let was = toneProblem
+            toneProblem = nil
+            if !loggedToneFormats, let f = session.tonePlayerFormats {
+                loggedToneFormats = true
+                Log.info("sonar tones: source \(f.source); output device \(f.device); per-channel amplitude "
+                         + "\(String(format: "%.1f", 20 * log10(Double(g.leftAmplitude)))) dBFS")
+            }
+            return was == nil ? "tones playing" : "sonar tones back on (built-in speakers)"
+        } catch {
+            toneRetryAt = now + SpeakerSafety.cooldown
+            let problem = Self.describe(error)
+            guard problem != toneProblem else { return nil }
+            toneProblem = problem
+            return "sonar tones refused: \(problem); trying again every \(Int(SpeakerSafety.cooldown)) s"
+        }
+    }
+
+    /// Called when the microphone could not be reopened after an audio configuration change.
+    var onFailure: (String) -> Void = { _ in }
+
+    /// AVAudioEngine stopped itself (device, route, sample rate or channel count changed): the tones are already cut
+    /// and the microphone delivers nothing. Reopen it; sonar tones come back through the next route check.
+    private func audioConfigurationChanged(_ changed: AcousticSession) {
+        guard let old = session, old === changed else { return }
+        let now = Clock.now()
+        configChanges = configChanges.filter { now - $0 < 30 } + [now]
+        old.stop()
+        stereo = nil
+        pilot = nil
+        sonarFieldOn = false
+        sonarOn = false
+        let s = makeAcousticSession()
+        do { try s.start() } catch {
+            session = nil
+            MicMarker.set(false)
+            processor?.reset()
+            processor = nil
+            fieldMode = false
+            Log.info("audio configuration changed and the microphone could not be reopened: \(error)")
+            onFailure("could not reopen the microphone after an audio change: \(error)")
+            return
+        }
+        session = s
+        if fieldMode {
+            if configChanges.count >= 3 {
+                toneRetryAt = now + 30
+                toneProblem = "audio configuration keeps changing"
+                Log.info("audio configuration changed \(configChanges.count) times in 30 s: microphone reopened, sonar tones wait 30 s")
+            } else {
+                toneRetryAt = now + 0.5
+                toneProblem = "audio output changed"
+                Log.info("audio configuration changed: tones cut, microphone reopened; tones resume after the route check")
+            }
+        } else {
+            Log.info("audio configuration changed: microphone reopened")
+        }
+    }
+
+    static func describe(_ error: Error) -> String {
+        switch error {
+        case PilotToneError.routeNotAllowed(let route): return "output is \(describe(route)), not the built-in speakers"
+        case PilotToneError.coolingDown(let left): return "cooling down (\(Int(left.rounded(.up))) s left)"
+        case AcousticSession.SessionError.microphoneDenied: return "microphone access is denied"
+        case TonePlayer.PlayerError.notRunning: return "the speakers could not start the tones (the output engine did not run)"
+        default:
+            let ns = error as NSError
+            if ns.domain.contains("coreaudio") || ns.domain == NSOSStatusErrorDomain {
+                return "the speakers could not start the tones (CoreAudio error \(ns.code))"
+            }
+            return "\(error)"
+        }
+    }
+
+    static func describe(_ route: OutputRoute) -> String {
+        switch route {
+        case .builtInSpeaker: return "the built-in speakers"
+        case .headphones: return "headphones"
+        case .external(let t): return t == "blue" ? "a Bluetooth device" : "an external device (\(t.trimmingCharacters(in: .whitespaces)))"
+        case .unknown: return "an unknown device"
         }
     }
 
@@ -181,6 +369,10 @@ final class SoundSession {
     private func process(_ chunk: AcousticSession.Chunk) {
         guard let processor, session != nil else { return }
         let events = processor.process(chunk.samples, time: chunk.time)
+        if fieldMode, chunk.time - lastDebugAt >= 0.1, Self.debugWanted() {
+            lastDebugAt = chunk.time
+            Self.debugSink(sonarDebugMessage(t: chunk.time))
+        }
         captureCalibrationWindows(ring: processor.ringBuffer)
         for event in events {
             switch event {
@@ -207,6 +399,58 @@ final class SoundSession {
                 break
             }
         }
+    }
+}
+
+// MARK: - sonar_debug
+
+extension SoundSession {
+    private static func r(_ v: Double, _ digits: Double = 10) -> Double { v.isFinite ? (v * digits).rounded() / digits : -999 }
+
+    /// One `sonar_debug` message: per-side levels and tracker state since the previous message, gate states, and the
+    /// real capture path. See the GhostkeysAcoustics README ("sonar_debug") for field meanings.
+    func sonarDebugMessage(t: Double) -> [String: Any] {
+        guard let processor, let session else { return ["type": "sonar_debug", "t": Clock.protocolMs(t), "running": false] }
+        let d = processor.field.debugSnapshot()
+        func side(_ s: SonarFieldDebug.Side) -> [String: Any] {
+            ["hz": s.frequencyHz, "pilotDbfs": Self.r(s.pilotDbfs), "noiseDbfsPerBin": Self.r(s.noiseDbfsPerBin),
+             "snrDb": Self.r(s.snrDb), "pilotPresent": s.pilotPresent,
+             "sidebandLowDbc": Self.r(s.sidebandLowDbc), "sidebandHighDbc": Self.r(s.sidebandHighDbc),
+             "dopplerShiftBins": [Self.r(s.dopplerLeftShiftBins), Self.r(s.dopplerRightShiftBins)],
+             "pathDeltaMm": Self.r(s.pathDeltaMm, 100), "pathStepVarMm2": Self.r(s.pathStepVarianceMm2, 1000),
+             "pathTotalMm": Self.r(s.pathTotalMm), "dynamicDb": Self.r(s.dynamicDb),
+             "gateOpenShare": Self.r(s.gateOpenShare, 100), "overFloorDb": Self.r(s.overFloorDb)]
+        }
+        let i = session.inputPathInfo
+        var input: [String: Any] = [
+            "hardwareSampleRate": i.hardwareSampleRate, "measuredSampleRate": Self.r(i.measuredSampleRate),
+            "channels": i.hardwareChannels, "format": i.hardwareFormat, "resampled": i.resampled,
+            "voiceProcessing": i.voiceProcessingEnabled, "agc": i.voiceProcessingAGCEnabled,
+            "voiceProcessingBypassed": i.voiceProcessingBypassed,
+            "micMode": i.microphoneMode, "preferredMicMode": i.preferredMicrophoneMode,
+            "bufferFrames": [i.minBufferFrames, i.maxBufferFrames], "maxTimestampGapMs": Self.r(i.maxTimestampGapMs, 100),
+            "highBandRolloffDb": Self.r(d.highBandRolloffDb),
+            // Rows: input channels, then the mono mix the detectors use. Columns: left pilot, right pilot (dBFS).
+            "channelPilotDbfs": i.channelProbeDbfs.map { $0.map { Self.r($0) } },
+            "channelRmsDbfs": i.channelRmsDbfs.map { Self.r($0) }]
+        if let dev = i.device { input["device"] = dev.dictionary }
+        // The pilots are scaled by the macOS output volume slider: at 25% they reach the mic far weaker than at 75%.
+        if let v = outputVolume(at: t) {
+            input["outputVolume"] = Self.r(v.scalar, 1000)
+            input["outputMuted"] = v.muted
+        }
+        var gates: [String: Any] = [
+            "ready": d.ready, "warmedUp": d.warmedUp, "tonesPlaying": sonarFieldOn,
+            "interference": d.interference, "suppressedByDaemon": d.suppressedByDaemon,
+            "guardPeakDbfs": Self.r(d.guardPeakDbfs), "guardMedianDbfs": Self.r(d.guardMedianDbfs),
+            "impulseBlocks": d.impulseBlocks, "burstFrames": d.burstFrames, "restarts": d.restarts,
+            "episode": d.episodeActive, "hover": d.hoverActive, "slide": d.slideActive]
+        if let reason = d.interferenceReason { gates["interferenceReason"] = reason }
+        if let toneProblem { gates["toneProblem"] = toneProblem }
+        if let hint = volumeHint { gates["volumeHint"] = hint }
+        return ["type": "sonar_debug", "t": Clock.protocolMs(t), "windowS": Self.r(d.windowSeconds, 1000),
+                "basebandSamples": d.basebandSamples, "left": side(d.left), "right": side(d.right),
+                "gates": gates, "input": input]
     }
 }
 
@@ -307,7 +551,11 @@ extension SoundSession {
 /// `<default daemon dir>/mic.active` exists (with the daemon's pid) while a real microphone session is open, so
 /// `ghostkeys-lab sonar-bench` can refuse to run at the same time. Removed on stop and at exit.
 enum MicMarker {
-    static var url: URL { ConfigStore.defaultDirectory.appendingPathComponent("mic.active") }
+    /// A daemon started with its own --config-dir (tests, measurements) keeps the marker there, so it never writes
+    /// into the real app's directory.
+    static var url: URL {
+        (ConfigStore.isDefaultDirectory ? ConfigStore.defaultDirectory : ConfigStore.baseDirectory).appendingPathComponent("mic.active")
+    }
     /// At exit: remove the marker if this process wrote it.
     static func clearIfOurs() {
         guard let s = try? String(contentsOf: url, encoding: .utf8),
@@ -317,5 +565,34 @@ enum MicMarker {
     static func set(_ on: Bool) {
         if on { try? "\(getpid())\n".write(to: url, atomically: true, encoding: .utf8) }
         else { try? FileManager.default.removeItem(at: url) }
+    }
+}
+
+// MARK: - Measurement knobs (development daemons only)
+
+/// Environment knobs for measuring sonar on real hardware. Honoured only by a daemon started with its own
+/// `--config-dir` (never the installed app's daemon), so a stray environment variable cannot change the product.
+/// - `GHOSTKEYS_SONAR_CAPTURE=/path/file.wav` (+ `_SECONDS`, default 10, `_DELAY`, default 3): record the raw mic
+///   input once, locally, for offline analysis.
+/// - `GHOSTKEYS_SONAR_PILOTS=19500,20250`: pilot frequencies (snapped to the 750 Hz grid).
+/// - `GHOSTKEYS_SONAR_LEVEL_DB=-36`: per-channel pilot level; the generator's -30 dBFS combined cap still applies.
+enum SonarDiagnostics {
+    private static var env: [String: String] {
+        ConfigStore.isDefaultDirectory ? [:] : ProcessInfo.processInfo.environment
+    }
+    static var capture: (url: URL, seconds: Double, delay: Double)? {
+        guard let path = env["GHOSTKEYS_SONAR_CAPTURE"], !path.isEmpty else { return nil }
+        let seconds = min(10, max(1, Double(env["GHOSTKEYS_SONAR_CAPTURE_SECONDS"] ?? "") ?? 10))
+        let delay = min(20, max(0, Double(env["GHOSTKEYS_SONAR_CAPTURE_DELAY"] ?? "") ?? 3))
+        return (URL(fileURLWithPath: (path as NSString).expandingTildeInPath), seconds, delay)
+    }
+    static var pilots: (left: Double, right: Double)? {
+        let parts = (env["GHOSTKEYS_SONAR_PILOTS"] ?? "").split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        guard parts.count == 2, parts.allSatisfy({ (15_000...21_750).contains($0) }), parts[0] != parts[1] else { return nil }
+        return (parts[0], parts[1])
+    }
+    static var levelAmplitude: Float? {
+        guard let db = Double(env["GHOSTKEYS_SONAR_LEVEL_DB"] ?? ""), db <= -20 else { return nil }
+        return Float(pow(10, db / 20))
     }
 }

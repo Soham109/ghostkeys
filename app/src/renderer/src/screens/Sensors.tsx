@@ -6,7 +6,9 @@ import { useStore, zoneNumber } from '@/lib/store'
 import { client } from '@/lib/client'
 import { PageHeader } from '@/components/Page'
 import { Segmented, ZoneIndex } from '@/components/ui/controls'
+import { SonarQualityLine, useSonarFeed } from './Sonar'
 import { Button } from '@/components/ui/button'
+import { ProblemText, sonarProblem, turnOffSonar } from '@/components/SessionNeed'
 
 const WINDOW_S = 8
 const CAP = 60 * 12
@@ -319,12 +321,22 @@ function SonarPanel(): React.JSX.Element {
           <p className="flex items-baseline gap-1">
             <span className="numeral text-[28px]">{level === null ? '\u2014' : Math.round(level * 100)}</span>
           </p>
-          <p className="tag-mono mt-1 text-ink-3">{label ?? (active ? (session?.sonarField === false ? 'Tones off' : 'Listening') : 'Off')}</p>
+          <p className="tag-mono mt-1 text-ink-3">
+            {label ?? (active ? (session?.sonarField === false ? 'Tones off' : 'Listening') : enabled ? (session?.waiting ? 'Waiting' : 'Starting') : 'Off')}
+          </p>
         </div>
       </div>
+      <div className="mt-2">
+        <SonarQualityLine />
+      </div>
       <div className="mt-auto">
-        <Button variant="text" size="sm" disabled={!enabled && !active} onClick={() => client.send({ type: active ? 'sonar_session_stop' : 'sonar_session_start' })}>
-          {active ? `Stop, ${Math.round(session!.secondsLeft)}s left` : enabled ? 'Start sonar' : 'Off in Settings'}
+        {enabled && sonarProblem(session) && (
+          <p className="mb-1 text-[12px] leading-4 text-ink-3">
+            <ProblemText problem={sonarProblem(session)!} />
+          </p>
+        )}
+        <Button variant="text" size="sm" onClick={() => (enabled ? void turnOffSonar() : useStore.getState().navigate('settings'))}>
+          {enabled ? 'Turn off sonar' : 'Off in Settings'}
         </Button>
       </div>
     </Panel>
@@ -408,7 +420,7 @@ function DecisionLog({ total }: { total: number }): React.JSX.Element {
         <span className="num text-[11px] text-ink-3">{total} ignored</span>
       </div>
       <div className="grid grid-cols-[44px_1fr_64px_40px_36px] gap-2 px-4 pb-1 shadow-[0_1px_0_var(--hairline)]">
-        {['Time', 'Zone guess', 'Outcome', 'Sure', 'Str'].map((h) => (
+        {['Time', 'Zone guess', 'Outcome', 'Sure', 'Force'].map((h) => (
           <span key={h} className="tag-mono text-ink-3">
             {h}
           </span>
@@ -464,6 +476,7 @@ function DecisionLog({ total }: { total: number }): React.JSX.Element {
 }
 
 export function SensorsScreen(): React.JSX.Element {
+  useSonarFeed()
   const buffer = React.useMemo(() => new SensorBuffer(), [])
   const theme = useStore((s) => s.resolvedTheme)
   const rejected = useStore((s) => s.rejected)

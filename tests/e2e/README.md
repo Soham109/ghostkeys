@@ -23,6 +23,30 @@ daemon/.build/debug/ghostkeysd --simulate-sensors --no-hardware-sessions --dry-r
 
 Read the handshake token from `<config dir>/token`, or pass your own with `GHOSTKEYS_TOKEN` (at least 32 characters).
 
+## Running the suite
+
+```sh
+cd tests/e2e
+python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # once
+GHOSTKEYS_E2E_SCRATCH=.build-release-qa GHOSTKEYS_E2E_PORT=47961 .venv/bin/python -m pytest -q
+```
+
+The harness starts every daemon with `--simulate-sensors --no-hardware-sessions --dry-run` and its own temp
+`--config-dir`, so it runs safely while the real app is running.
+
+| variable | default | meaning |
+| --- | --- | --- |
+| `GHOSTKEYS_E2E_PORT` | `47891` | port for the test daemons. 47823 (the app's) is refused. |
+| `GHOSTKEYS_E2E_SCRATCH` | `.build-e2e` | SwiftPM scratch dir under `daemon/` to build `ghostkeysd` into. |
+| `GHOSTKEYS_E2E_REAL_SENSORS` | unset | `1` uses the real motion sensor instead of simulated data (needs the app's daemon stopped). Only then do the sensor-restore checks run. |
+
+`sdk_scenario.mjs` is a separate end-to-end scenario that drives a simulated daemon through `@ghostkeys/sdk`
+(calibration, recommendation, merge, bindings, feedback, approvals, sessions, rate limiter, diagnostics). Build the
+daemon and `packages/sdk` first, then: `node tests/e2e/sdk_scenario.mjs --port 47962`.
+
+Live `sim_spike` taps still pass through the typing and trackpad gates, which read this Mac's real keyboard and mouse
+idle time. While someone uses the machine they can be rejected (`reason: trackpad`); the scenario retries.
+
 Without `--simulate-sensors` the daemon opens the real motion sensor and takes the machine-wide lock
 (`~/Library/Application Support/Ghostkeys/daemon/daemon.lock`); it exits with code 4 while another daemon (for
 example the app's) or a `ghostkeys-lab` session holds it. `--config-dir` does not change that: the sensors belong to
@@ -33,10 +57,14 @@ the machine, not to a config.
 | message | stands in for |
 | --- | --- |
 | `{ "type": "sim_spike", "live": true }` | a physical tap: with `--simulate-sensors` a tap-like transient goes through the live detector (candidates, taps, rejections, calibration capture). Without `live`, it is only added to the 10 s diagnostics buffer (for `feedback_missed`). |
-| `{ "type": "sim_tap", "zone": "right-grille" }` | an accepted IMU tap and its `tap` gesture (bindings, limiter, knuckle hold) |
+| `{ "type": "sim_tap", "zone": "right-grille", "confidence": 0.95 }` | an accepted IMU tap and its `tap` gesture (bindings, limiter, knuckle hold, learn-from-use); features come from a saved calibration sample of that zone |
+| `{ "type": "sim_undo" }` | Cmd+Z within 5 s of a tap (learn-from-use drops the pending taps) |
+| `{ "type": "sim_slow_retrain", "seconds": 2 }` | the next zone-change retrain waits before installing (to test that an older retrain never overwrites a newer one) |
+| `{ "type": "sim_input_event", "ago": 0.2 }` | a pointer event that long ago, in the diagnostics buffer (calibration's ±150 ms input filter) |
+| `{ "type": "sim_adapt" }` | the learn-from-use retrain, without waiting for 60 s of idle (still needs 10 new confirmations) |
 | `{ "type": "sim_tap_type", "tapType": "knuckle" }` | the sound classifier's verdict for the last held tap |
 | `{ "type": "sim_air", "phase": "began", "dx": 0.05, "dy": 0 }` | a `pinch_hold` event from the camera (knob bindings) |
-| `{ "type": "sim_sonar", "gesture": "push", "side": "left" }` | a SonarField gesture (needs a running `sonar` session, which needs `settings.sonar.enabled`) |
+| `{ "type": "sim_sonar", "gesture": "push", "side": "left" }` | a SonarField gesture (needs sonar on: `settings.sonar.enabled`, which starts it) |
 | `{ "type": "sim_sonar", "air": { "gesture": "hover_level", "phase": "changed", "displacementMm": 40 } }` | a continuous sonar value (slider bindings) |
 
 With these, a full zone calibration (`calibration_start`, `calibration_zone`, a few `sim_spike` with `live: true`,

@@ -172,6 +172,9 @@ struct AppSettings: Codable, Equatable, Sendable {
     var followUpConfidence = 0.5
     /// Lets much lighter taps through where the room is quiet (see DetectionSettings.lightTouch).
     var lightTouch = false
+    /// Online adaptation: taps that fired an action and were not undone within 5 s refine the zone model.
+    /// Off by default (DETECTION_AUDIT 6.5) until the guided training session exists.
+    var learnFromUse = false
     var hud = true
     var haptics = false
     var sound = SoundSettings()
@@ -189,6 +192,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         minConfidence = try c.decodeIfPresent(Double.self, forKey: .minConfidence) ?? d.minConfidence
         followUpConfidence = try c.decodeIfPresent(Double.self, forKey: .followUpConfidence) ?? d.followUpConfidence
         lightTouch = try c.decodeIfPresent(Bool.self, forKey: .lightTouch) ?? d.lightTouch
+        learnFromUse = try c.decodeIfPresent(Bool.self, forKey: .learnFromUse) ?? d.learnFromUse
         hud = try c.decodeIfPresent(Bool.self, forKey: .hud) ?? d.hud
         haptics = try c.decodeIfPresent(Bool.self, forKey: .haptics) ?? d.haptics
         sound = try c.decodeIfPresent(SoundSettings.self, forKey: .sound) ?? SoundSettings()
@@ -196,7 +200,7 @@ struct AppSettings: Codable, Equatable, Sendable {
         sonar = try c.decodeIfPresent(SonarSettings.self, forKey: .sonar) ?? SonarSettings()
     }
 
-    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, lightTouch, hud, haptics, sound, camera, sonar }
+    private enum CodingKeys: String, CodingKey { case sensitivity, typingGateMs, doubleWindowMs, minConfidence, followUpConfidence, lightTouch, learnFromUse, hud, haptics, sound, camera, sonar }
 
     var detection: DetectionSettings {
         var s = DetectionSettings()

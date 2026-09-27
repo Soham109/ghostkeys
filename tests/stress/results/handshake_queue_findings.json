@@ -1,0 +1,36 @@
+{
+  "name": "handshake_queue_exhaustion",
+  "started": "2026-09-27 00:51:09 -0500",
+  "findings": [
+    {
+      "severity": "high",
+      "title": "legitimate client could not connect at all with 16 half-open sockets held",
+      "repro": "same as above with n_attackers=16",
+      "detail": "InvalidMessage('did not receive a valid HTTP response')",
+      "t": "2026-09-27 00:51:09 -0500"
+    },
+    {
+      "severity": "high",
+      "title": "legitimate client could not connect at all with 32 half-open sockets held",
+      "repro": "same as above with n_attackers=32",
+      "detail": "InvalidMessage('did not receive a valid HTTP response')",
+      "t": "2026-09-27 00:51:12 -0500"
+    },
+    {
+      "severity": "high",
+      "title": "legitimate client could not connect at all with 64 half-open sockets held",
+      "repro": "same as above with n_attackers=64",
+      "detail": "InvalidMessage('did not receive a valid HTTP response')",
+      "t": "2026-09-27 00:51:16 -0500"
+    }
+  ],
+  "metrics": {
+    "baseline_connect_s": 0.097
+  },
+  "notes": [
+    "baseline clean connect+hello took 0.097s"
+  ],
+  "samples": [],
+  "finished": "2026-09-27 00:51:19 -0500",
+  "status": "completed"
+}

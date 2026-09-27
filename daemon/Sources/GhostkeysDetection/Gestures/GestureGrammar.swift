@@ -56,6 +56,16 @@ struct GestureGrammar {
 
     mutating func reset() { pending = nil; lastLone = nil; lastSingle = nil }
 
+    /// Onset time of the newest tap of the open multi-tap group, if any.
+    var pendingLastTap: Double? { pending?.times.last }
+
+    /// Drops the open group without emitting anything (the engine saw typing or pointer use right after it).
+    mutating func cancelPending() {
+        pending = nil
+        lastLone = nil
+        lastSingle = nil
+    }
+
     mutating func accept(_ tap: TapEvent) -> [GestureEvent] {
         var out: [GestureEvent] = []
         let z = tap.zone, t = tap.t

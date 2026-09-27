@@ -9,3 +9,5 @@ release/
 .env
 .build-*/
 *.gkrec
+__pycache__/
+app/screenshots/verify/

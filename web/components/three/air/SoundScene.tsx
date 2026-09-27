@@ -51,7 +51,9 @@ varying float vH;
 void main() {
   vec4 mv = modelViewMatrix * vec4(position, 1.0);
   vec3 n = normalize(normalMatrix * normal);
-  vRim = 1.0 - abs(dot(n, normalize(-mv.xyz)));
+  // clamped: rounding can push |dot| a hair past 1, and pow() of a negative base is NaN on Metal. One NaN pixel
+  // spreads through the bloom mip chain and blacks out the whole frame (the knock-beat strobe of QA round 5).
+  vRim = clamp(1.0 - abs(dot(n, normalize(-mv.xyz))), 0.0, 1.0);
   vH = position.y;
   gl_Position = projectionMatrix * mv;
 }`;
@@ -63,7 +65,7 @@ varying float vRim;
 varying float vH;
 void main() {
   // fade the foot of the shell: where it meets the keycaps, the intersection line shimmers as it grows
-  float a = pow(vRim, uK) * uA * smoothstep(0.08, 0.35, vH);
+  float a = pow(max(vRim, 0.0), uK) * uA * smoothstep(0.08, 0.35, vH);
   gl_FragColor = vec4(uColor, a);
 }`;
 

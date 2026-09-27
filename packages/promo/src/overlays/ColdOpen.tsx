@@ -13,7 +13,7 @@ export const ColdOpenOverlay: React.FC<{ cam: (f: number) => Cam; k?: number; ve
   const f = useCurrentFrame();
   const { width, height } = useVideoConfig();
   const F = (x: number) => x * k;
-  const tapAt = F(30);
+  const tapAt = Math.round(F(30));
   const p = project(cam(f), width, height, DOT_WORLD);
   const dotIn = prog(f, F(6), F(16));
   const press = interpolate(f, [tapAt - 2, tapAt, tapAt + 5], [1, 0.55, 1.2], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });

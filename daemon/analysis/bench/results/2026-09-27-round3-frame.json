@@ -1,0 +1,415 @@
+[
+  {
+    "aligned" : 0,
+    "key" : "A.lapByDesk.recall",
+    "n" : 183,
+    "note" : "lap taps x 3 desk models, right zone accepted",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0,
+    "key" : "A.lapByDesk.wrongZone",
+    "n" : 183,
+    "note" : "",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0,
+    "key" : "A.lapByDesk.handlingTapsPerMin",
+    "n" : 0,
+    "note" : "false taps while handling the machine",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 22.609396282376302,
+    "key" : "E.lapByDesk.distanceRatioMedian",
+    "n" : 165,
+    "note" : "lap tap distance to nearest desk zone, typical calibration distances",
+    "sensor" : 19.525804987544937
+  },
+  {
+    "aligned" : 0,
+    "key" : "E.lapByDesk.within3",
+    "n" : 165,
+    "note" : "share of lap taps within 3 typical distances (strict mode's limit)",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0.06111111111111111,
+    "key" : "B.deskByLap.recall",
+    "n" : 180,
+    "note" : "",
+    "sensor" : 0.11666666666666667
+  },
+  {
+    "aligned" : 0.08333333333333333,
+    "key" : "B.deskByLap.wrongZone",
+    "n" : 180,
+    "note" : "",
+    "sensor" : 0.08888888888888889
+  },
+  {
+    "aligned" : 0,
+    "key" : "B.deskByLap.negAccepted",
+    "n" : 91,
+    "note" : "desk typing negatives accepted by the lap model",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0.8688524590163934,
+    "key" : "C.lapInSession.recall",
+    "n" : 305,
+    "note" : "",
+    "sensor" : 0.8721311475409836
+  },
+  {
+    "aligned" : 0,
+    "key" : "C.lapInSession.wrongZone",
+    "n" : 305,
+    "note" : "",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0,
+    "key" : "C.lapInSession.handlingTapsPerMin",
+    "n" : 0,
+    "note" : "",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0.4628099173553719,
+    "key" : "D.loso.calib1.recall",
+    "n" : 121,
+    "note" : "",
+    "sensor" : 0.4793388429752066
+  },
+  {
+    "aligned" : 0.049586776859504134,
+    "key" : "D.loso.calib1.wrongZone",
+    "n" : 121,
+    "note" : "",
+    "sensor" : 0.05785123966942149
+  },
+  {
+    "aligned" : 0.06451612903225806,
+    "key" : "D.loso.calib1.negAccepted",
+    "n" : 31,
+    "note" : "",
+    "sensor" : 0.06451612903225806
+  },
+  {
+    "aligned" : 0.19607843137254902,
+    "key" : "D.loso.calib_bak.recall",
+    "n" : 102,
+    "note" : "",
+    "sensor" : 0.20588235294117646
+  },
+  {
+    "aligned" : 0.0196078431372549,
+    "key" : "D.loso.calib_bak.wrongZone",
+    "n" : 102,
+    "note" : "",
+    "sensor" : 0.0196078431372549
+  },
+  {
+    "aligned" : 0.04081632653061224,
+    "key" : "D.loso.calib_bak.negAccepted",
+    "n" : 49,
+    "note" : "",
+    "sensor" : 0.04081632653061224
+  },
+  {
+    "aligned" : 0.008264462809917356,
+    "key" : "D.loso.calib2.recall",
+    "n" : 121,
+    "note" : "",
+    "sensor" : 0.008264462809917356
+  },
+  {
+    "aligned" : 0.1487603305785124,
+    "key" : "D.loso.calib2.wrongZone",
+    "n" : 121,
+    "note" : "",
+    "sensor" : 0.15702479338842976
+  },
+  {
+    "aligned" : 0.09090909090909091,
+    "key" : "D.loso.calib2.negAccepted",
+    "n" : 11,
+    "note" : "",
+    "sensor" : 0.09090909090909091
+  },
+  {
+    "aligned" : 0,
+    "key" : "D.loso.session1.recall",
+    "n" : 61,
+    "note" : "",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0,
+    "key" : "D.loso.session1.wrongZone",
+    "n" : 61,
+    "note" : "",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 0,
+    "key" : "D.loso.session1.handlingTapsPerMin",
+    "n" : 0,
+    "note" : "",
+    "sensor" : 0
+  },
+  {
+    "aligned" : 16222063.780208472,
+    "key" : "F.shift.ringFrequency",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 18515307.123154867
+  },
+  {
+    "aligned" : 49.71513849545752,
+    "key" : "F.shift.twistY",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 50.385845647500346
+  },
+  {
+    "aligned" : 65.42677776904075,
+    "key" : "F.shift.twistZ",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 25.521169740489995
+  },
+  {
+    "aligned" : 11.57585446078654,
+    "key" : "F.shift.xHat",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 18.142916729826904
+  },
+  {
+    "aligned" : 14.563645968096905,
+    "key" : "F.shift.energyRatioX",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 14.708775817713754
+  },
+  {
+    "aligned" : 15.47041755150585,
+    "key" : "F.shift.impulseX",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 14.65345376987226
+  },
+  {
+    "aligned" : 14.640162276543931,
+    "key" : "F.shift.twistX",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 14.350174015517345
+  },
+  {
+    "aligned" : 11.601512226553117,
+    "key" : "F.shift.twistPerImpY",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 11.614214451215263
+  },
+  {
+    "aligned" : 11.360910492196023,
+    "key" : "F.shift.peakGyroY",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 11.5597826853188
+  },
+  {
+    "aligned" : 18.89269909501148,
+    "key" : "F.shift.twistPerImpZ",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 10.668671293868522
+  },
+  {
+    "aligned" : 17.954025494262087,
+    "key" : "F.shift.peakGyroZ",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 9.736668841378401
+  },
+  {
+    "aligned" : 8.526116629073437,
+    "key" : "F.shift.band120to250",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 8.331456154815656
+  },
+  {
+    "aligned" : 9.293420002156358,
+    "key" : "F.shift.peakAccelX",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 8.214750489125786
+  },
+  {
+    "aligned" : 8.333224604356154,
+    "key" : "F.shift.band250to400",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 8.14144679948692
+  },
+  {
+    "aligned" : 7.87533692796807,
+    "key" : "F.shift.gyroAccelRatio",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 7.86339096236574
+  },
+  {
+    "aligned" : 7.155801659304684,
+    "key" : "F.shift.impulseZ",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 7.528457864483378
+  },
+  {
+    "aligned" : 7.373982673934263,
+    "key" : "F.shift.strength",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 7.375807620266027
+  },
+  {
+    "aligned" : 6.807476598708751,
+    "key" : "F.shift.peakAccelZ",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 6.900168997596632
+  },
+  {
+    "aligned" : 6.391269521714159,
+    "key" : "F.shift.impulseDirZ",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 6.4308135108370506
+  },
+  {
+    "aligned" : 5.47079120023437,
+    "key" : "F.shift.peakGyroX",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 5.39480332812167
+  },
+  {
+    "aligned" : 2.3746427953683376,
+    "key" : "F.shift.yHat",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 4.012121543890413
+  },
+  {
+    "aligned" : 4.300758310663887,
+    "key" : "F.shift.impulseDirX",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 3.978409585529111
+  },
+  {
+    "aligned" : 4.360839513344298,
+    "key" : "F.shift.energyRatioZ",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 3.9447471244383143
+  },
+  {
+    "aligned" : 3.861130647478924,
+    "key" : "F.shift.twistPerImpX",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 3.8905248166803608
+  },
+  {
+    "aligned" : 3.01965374468888,
+    "key" : "F.shift.peakAccelY",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 3.13693405494621
+  },
+  {
+    "aligned" : 4.016719031768378,
+    "key" : "F.shift.impulseY",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 2.5739741194443493
+  },
+  {
+    "aligned" : 2.184890143116889,
+    "key" : "F.shift.pulseWidth",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 2.1826252292869195
+  },
+  {
+    "aligned" : 2.030984481376331,
+    "key" : "F.shift.band20to60",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 2.0083530395541342
+  },
+  {
+    "aligned" : 1.855210769840246,
+    "key" : "F.shift.energyRatioY",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 1.9129225048667837
+  },
+  {
+    "aligned" : 1.7154482709783947,
+    "key" : "F.shift.band60to120",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 1.7012237205083847
+  },
+  {
+    "aligned" : 1.601599842666412,
+    "key" : "F.shift.impulseDirY",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 1.4854279435618511
+  },
+  {
+    "aligned" : 1.039247809613227,
+    "key" : "F.shift.riseTime",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 1.0105898380043183
+  },
+  {
+    "aligned" : 0.5367998454488776,
+    "key" : "F.shift.decayTime",
+    "n" : 0,
+    "note" : "|lap - desk| \/ desk within-zone sd, mean over zones x calibrations",
+    "sensor" : 0.5268426695490948
+  },
+  {
+    "aligned" : 158.4101380963863,
+    "key" : "F.peakMg.left-grille",
+    "n" : 19,
+    "note" : "median peak (mg): 'sensor' column = desk calibrations, 'aligned' column = lap",
+    "sensor" : 33.33100718157326
+  },
+  {
+    "aligned" : 187.58868011738406,
+    "key" : "F.peakMg.left-palm",
+    "n" : 14,
+    "note" : "median peak (mg): 'sensor' column = desk calibrations, 'aligned' column = lap",
+    "sensor" : 178.83071185420604
+  },
+  {
+    "aligned" : 616.7868258130778,
+    "key" : "F.peakMg.right-palm",
+    "n" : 22,
+    "note" : "median peak (mg): 'sensor' column = desk calibrations, 'aligned' column = lap",
+    "sensor" : 120.37512390512397
+  }
+]

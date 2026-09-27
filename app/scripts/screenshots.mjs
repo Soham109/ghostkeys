@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 // Captures every screen to app/screenshots/*.png against the mock daemon.
 // Windows render offscreen (webContents.capturePage); nothing is drawn on your display.
 import { spawn } from 'node:child_process'
@@ -15,6 +16,8 @@ const env = {
   SCREENSHOT: '1',
   GHOSTKEYS_TOKEN: randomBytes(32).toString('hex')
 }
+// Electron's caches go to a scratch folder, never the user's Library.
+env.GK_USERDATA = process.env.GK_USERDATA ?? join(process.env.GK_SCRATCH ?? join(root, '.cache'), 'ghostkeys-app-userdata')
 delete env.ELECTRON_RENDERER_URL
 
 const mock = spawn(bin('tsx'), ['scripts/mock-daemon.ts'], { cwd: root, env, stdio: 'inherit' })

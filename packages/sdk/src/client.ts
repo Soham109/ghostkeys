@@ -15,6 +15,9 @@ import {
   type DaemonMessage,
   type DaemonMessageOf,
   type DaemonMessageType,
+  type DiagnosticsMsg,
+  type FeedbackFalseMsg,
+  type FeedbackMissedMsg,
   type HelloMsg,
   type IntegrationCatalog,
   type StatusMsg,
@@ -33,7 +36,7 @@ export interface ReconnectOptions {
 }
 
 export interface GhostkeysClientOptions {
-  /** Default ws://127.0.0.1:47823/ — the daemon only ever binds to loopback. */
+  /** Default ws://127.0.0.1:47823/, since the daemon only ever binds to loopback. */
   url?: string
   /** Explicit WebSocket constructor (e.g. `ws`'s `WebSocket`, or a fake for tests). See ws.ts. */
   webSocket?: WebSocketCtor
@@ -51,6 +54,14 @@ export interface GhostkeysClientOptions {
   requestTimeoutMs?: number
   /** How long connect() waits for the daemon's `hello`. Defaults to requestTimeoutMs. */
   helloTimeoutMs?: number
+  /**
+   * After `hello`, connect() also waits (best-effort) for the greeting's `config` message, so
+   * `lastConfig`/`lastConfigRevision` are already populated by the time connect() resolves -
+   * without this, a fresh client's very first `setConfig(..., { ifRevision })` call right after
+   * connect() would have no revision to compare against yet. Never fails connect(): if config
+   * doesn't arrive within this time, connect() resolves anyway. Default 2000ms.
+   */
+  greetTimeoutMs?: number
 }
 
 type DaemonEvents = { [K in DaemonMessageType]: DaemonMessageOf<K> }
@@ -62,7 +73,13 @@ export interface GhostkeysClientEvents extends DaemonEvents {
   reconnected: HelloMsg
   disconnect: { code?: number; reason?: string; willReconnect: boolean }
   socketError: unknown
-  /** A frame arrived that isn't valid per docs/PROTOCOL.md (unknown type, or failed schema validation). */
+  /**
+   * A message whose `type` this SDK doesn't have a schema for - most likely a newer daemon speaking
+   * a protocol addition this SDK version predates. Passed through unvalidated (not silently
+   * discarded) so a caller can still react to it, e.g. by shape-checking `raw` itself.
+   */
+  unknown: { type: string; raw: unknown }
+  /** A frame that's unparsable JSON, has no string "type", or has a recognized type but fails its schema. */
   protocolError: { raw: string; issue: unknown }
 }
 
@@ -89,13 +106,16 @@ export class GhostkeysClient {
   private readonly reconnectOptions: Required<ReconnectOptions> | null
   private readonly requestTimeoutMs: number
   private readonly helloTimeoutMs: number
+  private readonly greetTimeoutMs: number
 
   private readonly emitter = new TypedEmitter<GhostkeysClientEvents>()
   /**
    * A separate channel for config replies that getConfig()/setConfig() wait on, distinct from the
    * public 'config' event on `emitter` (which every config message, including the post-connect
-   * greeting, is still published to). The greeting config is deliberately never routed here: see
-   * the comment on `greetConfigSeen` in trackState().
+   * greeting, is still published to). A `config` message is only ever routed here while
+   * `pendingConfigRequests > 0`, i.e. while this client is actually waiting on a `config_get` or
+   * `config_set` it sent - never for the unprompted greeting, and never for a `config` broadcast
+   * caused by some other client's request. See trackState().
    */
   private readonly configReplyEmitter = new TypedEmitter<{ reply: ConfigMsg }>()
   private ws: WebSocketLike | null = null
@@ -105,8 +125,10 @@ export class GhostkeysClient {
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null
   private outgoingQueue: AppMessage[] = []
   private readonly desiredStreams = new Set<Stream>()
-  /** Reset per physical connection in openSocket(); see trackState(). */
-  private greetConfigSeen = false
+  /** Incremented when this client sends config_get/config_set, decremented when a config reply is matched. */
+  private pendingConfigRequests = 0
+  /** Reset per physical connection in openSocket(); true once any "config" message has arrived on it. */
+  private sawConfigThisConnection = false
 
   private _lastHello?: HelloMsg
   private _lastStatus?: StatusMsg
@@ -120,6 +142,7 @@ export class GhostkeysClient {
     this.reconnectOptions = options.reconnect === false ? null : { ...DEFAULT_RECONNECT, ...(options.reconnect === true || options.reconnect === undefined ? {} : options.reconnect) }
     this.requestTimeoutMs = options.requestTimeoutMs ?? 5000
     this.helloTimeoutMs = options.helloTimeoutMs ?? this.requestTimeoutMs
+    this.greetTimeoutMs = options.greetTimeoutMs ?? Math.min(2000, this.requestTimeoutMs)
   }
 
   // ---------------------------------------------------------------------
@@ -235,20 +258,30 @@ export class GhostkeysClient {
    */
   async getConfig(): Promise<{ config: Config; revision: string }> {
     const wait = this.awaitConfigReply('config_get reply')
+    this.pendingConfigRequests++
     this.send({ type: 'config_get' })
     const msg = await wait
     return { config: msg.config, revision: configRevision(msg.config) }
   }
 
   /**
-   * Saves a new config. Pass `ifRevision` (from a prior getConfig()/setConfig() call) to guard
-   * against clobbering a change made elsewhere since you last read the config: if the client's
-   * current revision no longer matches, this throws `ConfigConflictError` without sending
-   * anything, so you can getConfig() again and re-apply your change on top of the latest one.
+   * Saves a new config. Pass `ifRevision` (from a prior getConfig()/setConfig() call, possibly on a
+   * different `GhostkeysClient` instance - a revision is a content hash, not tied to any particular
+   * connection) to guard against clobbering a change made elsewhere since that revision was read: if
+   * the actual current revision no longer matches, this throws `ConfigConflictError` without sending
+   * `config_set`, so you can getConfig() again and re-apply your change on top of the latest one.
+   *
+   * If this client instance doesn't know the current revision yet (e.g. it just connected, or the
+   * revision came from a different, already-disconnected client), it fetches one via getConfig()
+   * first rather than assuming a conflict - a fresh client has no basis to claim the config changed
+   * when it never saw a "before" to compare against.
    */
   async setConfig(config: Config, opts: { ifRevision?: string } = {}): Promise<{ config: Config; revision: string }> {
-    if (opts.ifRevision !== undefined && opts.ifRevision !== this._lastConfigRevision) {
-      throw new ConfigConflictError(opts.ifRevision, this._lastConfigRevision)
+    if (opts.ifRevision !== undefined) {
+      const current = this._lastConfigRevision ?? (await this.getConfig()).revision
+      if (opts.ifRevision !== current) {
+        throw new ConfigConflictError(opts.ifRevision, current)
+      }
     }
     const wait = new Promise<{ config: Config; revision: string }>((resolve, reject) => {
       const cleanup = () => {
@@ -256,19 +289,24 @@ export class GhostkeysClient {
         offReply()
         offError()
       }
+      // Matched via trackState() routing a "config" message here (which already decrements
+      // pendingConfigRequests for us) - only the give-up paths below need to decrement themselves.
       const offReply = this.configReplyEmitter.on('reply', (msg) => {
         cleanup()
         resolve({ config: msg.config, revision: configRevision(msg.config) })
       })
       const offError = this.emitter.on('error', (msg) => {
         cleanup()
+        this.pendingConfigRequests = Math.max(0, this.pendingConfigRequests - 1)
         reject(new GhostkeysProtocolError(msg.message))
       })
       const timer = setTimeout(() => {
         cleanup()
+        this.pendingConfigRequests = Math.max(0, this.pendingConfigRequests - 1)
         reject(new GhostkeysTimeoutError('config_set reply', this.requestTimeoutMs))
       }, this.requestTimeoutMs)
     })
+    this.pendingConfigRequests++
     this.send({ type: 'config_set', config })
     return wait
   }
@@ -352,7 +390,7 @@ export class GhostkeysClient {
   }
 
   /** Starts a short camera session (optional camera add-on: air_tap, pinch/palm/circle gestures). */
-  async startAirSession(seconds?: number, camera?: string): Promise<DaemonMessageOf<'session'>> {
+  async startAirSession(seconds?: number, camera?: 'front' | 'desk_view'): Promise<DaemonMessageOf<'session'>> {
     const wait = this.awaitEvent('session', (msg) => msg.kind === 'air', 'camera session to start')
     this.send({ type: 'air_session_start', seconds, camera })
     return wait
@@ -364,11 +402,81 @@ export class GhostkeysClient {
     return wait
   }
 
+  /**
+   * Retries starting sonar at once (it otherwise starts by itself when settings.sonar.enabled turns
+   * on). Resolves with the resulting session state, whether that's active or a failure (the daemon
+   * replies a session message either way - see docs/PROTOCOL.md "session").
+   */
+  async startSonarSession(): Promise<DaemonMessageOf<'session'>> {
+    const wait = this.awaitEvent('session', (msg) => msg.kind === 'sonar', 'sonar session reply')
+    this.send({ type: 'sonar_session_start' })
+    return wait
+  }
+
+  /** Turns settings.sonar.enabled off (this is a setting, not a timed session: it stays off until turned back on). */
+  async stopSonarSession(): Promise<DaemonMessageOf<'session'>> {
+    const wait = this.awaitEvent('session', (msg) => msg.kind === 'sonar', 'sonar session to stop')
+    this.send({ type: 'sonar_session_stop' })
+    return wait
+  }
+
+  /** Disables the daemon's recommended drops from the last calibration (except merge-pair zones) and retrains. */
+  async applyCalibrationRecommendation(): Promise<Extract<CalibrationMsg, { phase: 'recommendation_applied' }>> {
+    const wait = this.awaitEvent(
+      'calibration',
+      (msg): msg is Extract<CalibrationMsg, { phase: 'recommendation_applied' }> => msg.phase === 'recommendation_applied',
+      'calibration_apply_recommendation reply'
+    )
+    this.send({ type: 'calibration_apply_recommendation' })
+    return wait
+  }
+
+  /** Merges two confused zones into one (rect = union, samples relabeled, model retrained, bindings updated). */
+  async applyCalibrationMerge(zones: [string, string], name?: string): Promise<Extract<CalibrationMsg, { phase: 'merge_applied' }>> {
+    const wait = this.awaitEvent(
+      'calibration',
+      (msg): msg is Extract<CalibrationMsg, { phase: 'merge_applied' }> => msg.phase === 'merge_applied',
+      'calibration_apply_merge reply'
+    )
+    this.send({ type: 'calibration_apply_merge', zones, name })
+    return wait
+  }
+
+  /** "I just tapped this zone and nothing happened." At most one every 2s and 20/minute (daemon-enforced). */
+  async reportMissedTap(zone: string): Promise<FeedbackMissedMsg> {
+    const wait = this.awaitEvent(
+      'feedback',
+      (msg): msg is FeedbackMissedMsg => msg.kind === 'missed',
+      'feedback_missed reply'
+    )
+    this.send({ type: 'feedback_missed', zone })
+    return wait
+  }
+
+  /** "The last accepted tap was not meant" (nothing is undone). At most one every 2s and 20/minute (daemon-enforced). */
+  async reportFalseTap(): Promise<FeedbackFalseMsg> {
+    const wait = this.awaitEvent('feedback', (msg): msg is FeedbackFalseMsg => msg.kind === 'false', 'feedback_false reply')
+    this.send({ type: 'feedback_false' })
+    return wait
+  }
+
+  /** Writes the last 10s of raw motion + detector decisions to <config dir>/diagnostics/*.gkrec. At most one every 5s. */
+  async exportDiagnostics(): Promise<DiagnosticsMsg> {
+    const wait = this.awaitEvent('diagnostics', () => true, 'diagnostics_export reply')
+    this.send({ type: 'diagnostics_export' })
+    return wait
+  }
+
   // ---------------------------------------------------------------------
   // Internals
   // ---------------------------------------------------------------------
 
-  /** Resolves on the first config reply that isn't the post-connect greeting. See trackState(). */
+  /**
+   * Resolves on the first config reply routed by trackState() (i.e. sent while
+   * `pendingConfigRequests > 0`) - never the unprompted greeting, and never some other client's
+   * broadcast that arrives while no request of ours is outstanding. On timeout, gives back the
+   * pending-request slot this call reserved, since trackState() will never get to do it for us.
+   */
   private awaitConfigReply(what: string, timeoutMs: number = this.requestTimeoutMs): Promise<ConfigMsg> {
     return new Promise<ConfigMsg>((resolve, reject) => {
       const off = this.configReplyEmitter.on('reply', (msg) => {
@@ -378,6 +486,7 @@ export class GhostkeysClient {
       })
       const timer = setTimeout(() => {
         off()
+        this.pendingConfigRequests = Math.max(0, this.pendingConfigRequests - 1)
         reject(new GhostkeysTimeoutError(what, timeoutMs))
       }, timeoutMs)
     })
@@ -435,7 +544,7 @@ export class GhostkeysClient {
     const headers = token ? { 'X-Ghostkeys-Token': token } : undefined
     const ws = new Ctor(this.url, undefined, headers ? { headers } : undefined)
     this.ws = ws
-    this.greetConfigSeen = false
+    this.sawConfigThisConnection = false
 
     // The hello-wait has its own timer independent of the "did the socket even open" promise below.
     // If opening fails first, this timer must be cleared immediately (not left to fire up to
@@ -457,7 +566,7 @@ export class GhostkeysClient {
     // onmessage must be wired up in the same synchronous tick as the socket is created, before we
     // ever `await` anything: a local daemon (real or fake) can flush its greet frames as part of
     // the same read as the open handshake, and a listener attached after an `await` boundary can
-    // miss them entirely (no message queueing happens underneath — it's a plain callback slot).
+    // miss them entirely (no message queueing happens underneath: it is a plain callback slot).
     ws.onmessage = (ev) => this.handleRawMessage(ev.data)
 
     try {
@@ -517,8 +626,31 @@ export class GhostkeysClient {
     } finally {
       cleanupHello()
     }
+    // Best-effort: the greeting's config is normally already in flight right behind hello, so this
+    // rarely actually waits. Never fails connect() - a daemon (or test double) that doesn't send an
+    // unprompted config just means lastConfig/lastConfigRevision stay unset a little longer.
+    await this.waitForGreetingConfig()
     this.reconnectAttempt = 0
     return hello
+  }
+
+  /** Resolves once this connection's post-connect config broadcast has been seen, or after greetTimeoutMs. */
+  private waitForGreetingConfig(): Promise<void> {
+    if (this.sawConfigThisConnection) return Promise.resolve()
+    return new Promise<void>((resolve) => {
+      const cleanup = () => {
+        off()
+        clearTimeout(timer)
+      }
+      const off = this.emitter.on('config', () => {
+        cleanup()
+        resolve()
+      })
+      const timer = setTimeout(() => {
+        cleanup()
+        resolve()
+      }, this.greetTimeoutMs)
+    })
   }
 
   private flushOutgoing(): void {
@@ -566,7 +698,7 @@ export class GhostkeysClient {
     const type = (parsed as { type: string }).type
     const schema = daemonMessageSchemaByType[type]
     if (!schema) {
-      this.emitter.emit('protocolError', { raw: text, issue: `unknown message type "${type}"` })
+      this.emitter.emit('unknown', { type, raw: parsed })
       return
     }
     const result = schema.safeParse(parsed)
@@ -585,18 +717,18 @@ export class GhostkeysClient {
     else if (msg.type === 'config') {
       this._lastConfig = msg.config
       this._lastConfigRevision = configRevision(msg.config)
-      // The daemon sends exactly one `config` message unprompted, as part of the post-connect
-      // greeting (hello, then status, then config), before any client could possibly have sent
-      // config_get/config_set on this connection. So the very first config message seen per
-      // connection is unconditionally that greeting, never a reply to a request - and is swallowed
-      // here rather than published to configReplyEmitter, so getConfig()/setConfig() can never
-      // resolve with it by mistake even if called in the same tick as connect(). Every config
-      // message after that one is a genuine reply (to this client's own request, or, more rarely,
-      // to another client's) and is published normally.
-      if (this.greetConfigSeen) {
+      this.sawConfigThisConnection = true
+      // Only route to configReplyEmitter while a config_get/config_set of ours is actually
+      // outstanding. This is what keeps getConfig()/setConfig() from ever resolving with the
+      // unprompted post-connect greeting (pendingConfigRequests is 0 at that point, since it arrives
+      // before this client could have sent anything), or with some other client's broadcast that
+      // happens to land while we have nothing pending - while still working correctly even if a test
+      // double's greeting never sends a config at all (earlier logic here keyed off "the first config
+      // message ever seen," which broke exactly that case: it swallowed the real reply to this
+      // client's very first request, treating it as if it were the missing greeting).
+      if (this.pendingConfigRequests > 0) {
+        this.pendingConfigRequests--
         this.configReplyEmitter.emit('reply', msg)
-      } else {
-        this.greetConfigSeen = true
       }
     }
   }

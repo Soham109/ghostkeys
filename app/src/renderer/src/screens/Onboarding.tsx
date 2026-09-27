@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Logo } from '@/components/Logo'
 import { LaptopMap } from '@/components/laptop/LaptopMap'
 import { GestureDemo, type DemoId } from '@/components/gestures/GestureDemo'
+import { FirstGesture, QuickCalibrate, useQuickCal } from './FirstRun'
 
 /** Three gestures that explain the idea: a touch on blank metal, a knock on the grille, a hand over the sensor. */
 const INTRO: { id: string; gesture: DemoId; zone?: string; label: string; action: string }[] = [
@@ -57,14 +58,28 @@ function CheckRow({ label, detail, ok, delay }: { label: string; detail?: string
 export function Onboarding(): React.JSX.Element {
   const step = useStore((s) => s.onboardingStep)
   const hello = useStore((s) => s.hello)
-  const finish = useStore((s) => s.finishOnboarding)
+  const finishRaw = useStore((s) => s.finishOnboarding)
+  // Leaving mid-calibration must stop it, or later taps keep being labelled.
+  const stopQuick = (): void => {
+    const q = useQuickCal.getState()
+    if (q.phase === 'capture' || q.phase === 'typing') {
+      client.send({ type: 'calibration_cancel' })
+      useQuickCal.setState({ phase: 'intro' })
+    }
+  }
+  const finish = (to?: Parameters<typeof finishRaw>[0]): void => {
+    stopQuick()
+    finishRaw(to)
+  }
   const family = hello?.device.family ?? 'macbook-pro-14'
   const granted = !!hello?.permissions.accessibility
   const [asked, setAsked] = React.useState(false)
   const setStep = (n: number): void => useStore.setState({ onboardingStep: n })
   const zones = React.useMemo(() => defaultZones(family), [family])
   const [beat, setBeat] = React.useState(0)
-  const TOTAL = 4
+  const TOTAL = 5
+  const quick = useQuickCal()
+  const liveZones = useStore((s) => s.config?.zones)
 
   React.useEffect(() => {
     if (step !== 0) return
@@ -140,20 +155,8 @@ export function Onboarding(): React.JSX.Element {
       </div>
       <p className="mt-6 max-w-[46ch] text-[12px] leading-relaxed text-ink-3">Media keys, volume, opening apps and Shortcuts work without it.</p>
     </>,
-    <>
-      <Reveal className="text-[28px] leading-[1.1] font-medium tracking-[-0.02em]" lines={['Teach it your taps']} />
-      <p className="mt-3 max-w-[46ch] text-[15px] leading-[1.55] text-ink-2">
-        Tap each zone 20 times, then type normally for 45 seconds. Ghostkeys learns the difference on this Mac, and nothing leaves it.
-      </p>
-      <div className="mt-8 flex items-center gap-6">
-        <Button variant="primary" size="lg" onClick={() => finish('calibration')}>
-          Start calibration
-        </Button>
-        <Button variant="text" onClick={() => finish('live')}>
-          Skip for now
-        </Button>
-      </div>
-    </>
+    <QuickCalibrate key="quick" onDone={() => setStep(4)} />,
+    <FirstGesture key="first" onFinish={(to) => finish(to ?? 'live')} />
   ]
 
   return (
@@ -196,7 +199,14 @@ export function Onboarding(): React.JSX.Element {
                 </motion.div>
               </AnimatePresence>
             ) : (
-              <LaptopMap family={family} zones={zones} mode="static" showLabels={step !== 2} />
+              <LaptopMap
+                family={family}
+                zones={step >= 3 ? (liveZones ?? zones) : zones}
+                mode={step >= 3 ? 'calibrate' : 'static'}
+                showLabels={step !== 2}
+                focusId={step === 3 ? (quick.zones[quick.index] ?? null) : step === 4 ? 'right-palm' : null}
+                listenTaps={step >= 3}
+              />
             )}
           </div>
           <div className="relative flex h-10 items-center justify-center">
@@ -218,7 +228,14 @@ export function Onboarding(): React.JSX.Element {
         </div>
       </div>
       <footer className="flex h-16 shrink-0 items-center gap-6 px-12 shadow-[0_-1px_0_var(--hairline)]">
-        <Button variant="text" className={step === 0 ? 'invisible' : undefined} onClick={() => setStep(step - 1)}>
+        <Button
+          variant="text"
+          className={step === 0 || (step === 3 && ['capture', 'typing', 'training'].includes(quick.phase)) ? 'invisible' : undefined}
+          onClick={() => {
+            stopQuick()
+            setStep(step - 1)
+          }}
+        >
           Back
         </Button>
         <span className="num text-[11px] text-ink-3">
@@ -228,7 +245,7 @@ export function Onboarding(): React.JSX.Element {
           <motion.div className="absolute inset-y-0 left-0 bg-ink" animate={{ width: `${((step + 1) / TOTAL) * 100}%` }} transition={{ duration: 0.28, ease: [0.2, 0, 0, 1] }} />
         </div>
         <div className="ml-auto flex items-center gap-2">
-          {step < TOTAL - 1 &&
+          {step < 3 &&
             (step === 2 && !granted ? (
               <Button variant="text" onClick={() => setStep(step + 1)}>
                 Continue without it

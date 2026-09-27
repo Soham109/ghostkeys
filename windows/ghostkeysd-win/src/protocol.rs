@@ -12,7 +12,8 @@ use crate::config::Config;
 pub const VERSION: &str = "0.1.0";
 pub const DEFAULT_PORT: u16 = 47823;
 /// "air" is the camera add-on stream; accepted so subscriptions match the Mac, never sent on Windows.
-pub const STREAMS: [&str; 5] = ["imu", "lid", "light", "taps", "air"];
+/// "debug" carries `candidate` messages (every knock onset before the gates).
+pub const STREAMS: [&str; 6] = ["imu", "lid", "light", "taps", "air", "debug"];
 
 // ---------------------------------------------------------------- daemon -> app
 
@@ -103,6 +104,36 @@ pub enum OutMsg {
     Rejected {
         t: f64,
         reason: String,
+        /// The classifier's best guess for the dropped tap (Mac, when calibrated). Windows sends
+        /// `anywhere` for knock rejections, none for motion.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zone: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        confidence: Option<f64>,
+        /// log10 of the peak in milli-g.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        strength: Option<f64>,
+    },
+    /// "debug" stream: every onset the detector analysed, before the gates.
+    Candidate {
+        t: f64,
+        zone: Option<String>,
+        confidence: f64,
+        strength: f64,
+        /// "accepted" | a rejection reason | "pending"
+        outcome: String,
+    },
+    /// Reply to feedback_missed / feedback_false, only to the requester.
+    Feedback {
+        kind: String,
+        #[serde(flatten)]
+        fields: Map<String, Value>,
+    },
+    /// Reply to diagnostics_export.
+    Diagnostics {
+        path: String,
+        samples: u64,
+        seconds: f64,
     },
     Gesture {
         t: f64,
@@ -165,6 +196,9 @@ pub enum OutMsg {
         tap_types: Option<bool>,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         simulated: Option<bool>,
+        /// Everything else (sonar: enabled, waiting, sonarField, tonesOff, continuous; coveredBy).
+        #[serde(flatten)]
+        extra: Map<String, Value>,
     },
     /// Continuous camera gestures on the "air" stream (Mac camera add-on; never sent on Windows).
     Air {
@@ -273,6 +307,21 @@ pub enum InMsg {
         target: Option<f64>,
     },
     CalibrationTaptypeCancel,
+    CalibrationApplyRecommendation,
+    CalibrationApplyMerge {
+        #[serde(default)]
+        zones: Vec<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        name: Option<String>,
+    },
+    SonarSessionStart,
+    SonarSessionStop,
+    FeedbackMissed {
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        zone: Option<String>,
+    },
+    FeedbackFalse,
+    DiagnosticsExport,
 }
 
 /// Parses one text frame. Errors are phrased for the `error` reply.

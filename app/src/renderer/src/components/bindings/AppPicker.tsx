@@ -37,11 +37,11 @@ export function AppPicker({ value, onChange }: { value: string; onChange: (id: s
           <Command.Input
             value={query}
             onValueChange={setQuery}
-            placeholder="Search apps or type a bundle id"
+            placeholder="Search apps"
             className="h-9 w-full bg-transparent px-3 text-[13px] text-ink outline-none placeholder:text-ink-3 hairline-b"
           />
           <Command.List className="fade-bottom max-h-64 overflow-y-auto px-1 pt-1 pb-2">
-            <Command.Empty className="px-2 py-3 text-[12px] text-ink-3">No match. Type a full bundle id like com.example.App.</Command.Empty>
+            <Command.Empty className="px-2 py-3 text-[12px] text-ink-3">No app by that name. You can also type an app ID, such as com.example.App.</Command.Empty>
             <Command.Item value="Everywhere *" onSelect={() => pick('*')} className={item}>
               Everywhere
               {value === '*' && <Tick />}

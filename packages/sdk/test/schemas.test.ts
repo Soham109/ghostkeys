@@ -52,10 +52,14 @@ describe('daemonMessageSchemaByType', () => {
           typingGateMs: 450,
           doubleWindowMs: 350,
           minConfidence: 0.8,
+          followUpConfidence: 0.5,
+          lightTouch: false,
+          learnFromUse: true,
           hud: true,
           haptics: false,
           sound: { enabled: false, sessionSeconds: 30, autoApps: [] },
-          camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false }
+          camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false },
+          sonar: { enabled: false, sessionSeconds: 30, autoApps: [] }
         }
       }
     },
@@ -64,7 +68,11 @@ describe('daemonMessageSchemaByType', () => {
     revoked: { type: 'revoked', hash: 'a'.repeat(64), found: true },
     catalog: { type: 'catalog', catalog: { apps: [], commands: [], unsupported: {} } },
     session: { type: 'session', kind: 'sound', active: true, secondsLeft: 30 },
-    air: { type: 'air', t: 1.5, gesture: 'pinch_hold', phase: 'changed', dx: 0.01, dy: -0.02 }
+    air: { type: 'air', t: 1.5, gesture: 'pinch_hold', phase: 'changed', dx: 0.01, dy: -0.02 },
+    candidate: { type: 'candidate', t: 1.5, zone: 'right-grille', confidence: 0.62, strength: 1.4, outcome: 'typing' },
+    feedback: { type: 'feedback', kind: 'false', zone: 'left-grille', t: 1.5, retrained: true, counts: {}, overall: 0.95 },
+    adaptation: { type: 'adaptation', kept: true, confirmed: 14, accuracyBefore: 0.93, accuracyAfter: 0.94 },
+    diagnostics: { type: 'diagnostics', path: '/tmp/x.gkrec', samples: 7970, seconds: 10 }
   }
 
   for (const [type, sample] of Object.entries(samples)) {
@@ -92,9 +100,39 @@ describe('daemonMessageSchemaByType', () => {
     expect(schema.safeParse({ type: 'calibration', phase: 'negatives', secondsLeft: 5 }).success).toBe(true)
     expect(schema.safeParse({ type: 'calibration', phase: 'training' }).success).toBe(true)
     expect(
-      schema.safeParse({ type: 'calibration', phase: 'done', accuracy: {}, overall: 1, confusion: [[1]], labels: ['left-palm'] }).success
+      schema.safeParse({
+        type: 'calibration',
+        phase: 'done',
+        accuracy: {},
+        overall: 1,
+        confusion: [[1]],
+        labels: ['left-palm'],
+        peaks: { 'left-palm': { p10: 0.021, p50: 0.048, p90: 0.11 } },
+        recommendation: { keep: ['left-palm'], drop: {}, merge: [], expectedAccuracy: { 'left-palm': 0.97 } }
+      }).success
     ).toBe(true)
     expect(schema.safeParse({ type: 'calibration', phase: 'cancelled' }).success).toBe(true)
+    expect(
+      schema.safeParse({
+        type: 'calibration',
+        phase: 'recommendation_applied',
+        disabled: ['lid'],
+        keep: ['left-palm'],
+        mergeSuggested: [['left-grille', 'left-edge']]
+      }).success
+    ).toBe(true)
+    expect(
+      schema.safeParse({
+        type: 'calibration',
+        phase: 'merge_applied',
+        zone: 'speaker-grilles',
+        name: 'Speaker grilles',
+        merged: ['right-grille', 'left-grille'],
+        samples: 18,
+        bindingsChanged: [{ id: 'b1', label: 'Volume up', gesture: 'double', from: 'right-grille', to: 'speaker-grilles' }],
+        conflicts: [['b1', 'b2']]
+      }).success
+    ).toBe(true)
     expect(schema.safeParse({ type: 'calibration', phase: 'not-a-real-phase' }).success).toBe(false)
   })
 })
@@ -139,5 +177,42 @@ describe('actionSchema', () => {
   it('rejects a macro step nested inside a macro step (only simple actions are valid steps)', () => {
     const macro = { kind: 'macro', steps: [{ kind: 'macro', steps: [] }] }
     expect(actionSchema.safeParse(macro).success).toBe(false)
+  })
+})
+
+describe('sonar', () => {
+  const schema = (t: string) => daemonMessageSchemaByType[t as keyof typeof daemonMessageSchemaByType]!
+
+  it('parses sonar session messages (they used to be dropped as protocol errors)', () => {
+    const m = { type: 'session', kind: 'sonar', active: true, secondsLeft: 0, continuous: true, enabled: true, sonarField: false, tonesOff: 'output is headphones' }
+    const r = schema('session').safeParse(m)
+    expect(r.success).toBe(true)
+    expect(r.success && r.data).toMatchObject(m)
+  })
+
+  it('parses continuous sonar air values', () => {
+    const m = { type: 'air', t: 2, gesture: 'hover_level', phase: 'changed', value: 0.4, displacementMm: 40, side: 'left', source: 'sonar' }
+    expect(schema('air').safeParse(m).success).toBe(true)
+  })
+
+  it('keeps settings.sonar and unknown settings through a config round trip', () => {
+    const config = {
+      version: 1,
+      zones: [],
+      bindings: [],
+      settings: {
+        sensitivity: 0.5, typingGateMs: 450, doubleWindowMs: 350, minConfidence: 0.8,
+        followUpConfidence: 0.5, lightTouch: false, learnFromUse: true, hud: true, haptics: false,
+        sound: { enabled: false, sessionSeconds: 30, autoApps: [] },
+        camera: { enabled: false, sessionSeconds: 30, autoApps: [], deskMode: false },
+        sonar: { enabled: true, sessionSeconds: 30, autoApps: [] },
+        someFutureSetting: { on: true }
+      }
+    }
+    const r = schema('config').safeParse({ type: 'config', config })
+    expect(r.success).toBe(true)
+    const settings = (r.success ? (r.data as { config: { settings: Record<string, unknown> } }).config.settings : {})
+    expect(settings.sonar).toEqual({ enabled: true, sessionSeconds: 30, autoApps: [] })
+    expect(settings.someFutureSetting).toEqual({ on: true })
   })
 })

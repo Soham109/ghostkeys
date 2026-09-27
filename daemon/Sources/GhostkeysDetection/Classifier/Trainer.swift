@@ -22,6 +22,8 @@ public struct CalibrationReport: Codable, Sendable {
 public final class Trainer {
     private var features: [[Double]] = []
     private var labels: [String] = []
+    /// Gravity direction of each sample (`TapFeatures.gravity`), nil where unknown.
+    private var gravities: [SIMD3<Double>?] = []
 
     /// Number of hold-out rotations (1 / hold-out fraction).
     public var folds = 5
@@ -34,14 +36,16 @@ public final class Trainer {
         guard f.values.count == TapFeatures.count, f.values.allSatisfy(\.isFinite) else { return }
         features.append(f.values)
         labels.append(label)
+        gravities.append(f.gravity.flatMap { g in g.x.isFinite && g.y.isFinite && g.z.isFinite ? g : nil })
     }
 
     /// Removes the samples of one label (for example to redo a zone), or everything when nil.
     public func removeAll(label: String? = nil) {
-        guard let label else { features.removeAll(); labels.removeAll(); return }
+        guard let label else { features.removeAll(); labels.removeAll(); gravities.removeAll(); return }
         let keep = labels.indices.filter { labels[$0] != label }
         features = keep.map { features[$0] }
         labels = keep.map { labels[$0] }
+        gravities = keep.map { gravities[$0] }
     }
 
     public var counts: [String: Int] {
@@ -52,7 +56,7 @@ public final class Trainer {
 
     /// All collected samples, for saving next to the model.
     public var samples: [(features: TapFeatures, label: String)] {
-        zip(features, labels).map { (TapFeatures(values: $0, t: 0), $1) }
+        labels.indices.map { (TapFeatures(values: features[$0], t: 0, gravity: gravities[$0]), labels[$0]) }
     }
 
     /// Calibration taps weaker than this fraction of their zone's median peak are dropped before
@@ -84,7 +88,15 @@ public final class Trainer {
         let kept = keptIndices()
         let features = kept.map { self.features[$0] }
         let labels = kept.map { self.labels[$0] }
-        let full = ZoneModel.fit(features: features, labels: labels, options: options)
+        var full = ZoneModel.fit(features: features, labels: labels, options: options)
+        // Posture of the calibration: mean gravity direction of the kept samples that carry one (round 3). Only when
+        // most of them do: samples saved by older builds have none, and a mean over a minority would describe the
+        // recalibrated zones only.
+        let withGravity = kept.compactMap { self.gravities[$0] }
+        if withGravity.count >= 5, 2 * withGravity.count >= kept.count, let g = ZoneModelSet.meanGravity(withGravity) {
+            full.calibrationGravity = g.direction
+            full.calibrationGravitySpread = g.spread
+        }
         // "none" is always a column: a zone tap rejected by the reject option counts as an error.
         var names = full.labels
         if !names.contains(ZoneModel.noneLabel) { names.append(ZoneModel.noneLabel) }
@@ -108,7 +120,10 @@ public final class Trainer {
             let trainIdx = features.indices.filter { fold[$0] != f }
             let testIdx = features.indices.filter { fold[$0] == f }
             guard !testIdx.isEmpty, !trainIdx.isEmpty else { continue }
-            let m = ZoneModel.fit(features: trainIdx.map { features[$0] }, labels: trainIdx.map { labels[$0] }, options: options)
+            // The report scores the predicted zone only, which Platt scaling never changes: skip it.
+            var foldOptions = options
+            foldOptions.calibrate = false
+            let m = ZoneModel.fit(features: trainIdx.map { features[$0] }, labels: trainIdx.map { labels[$0] }, options: foldOptions)
             for i in testIdx {
                 let predicted = m.classify(TapFeatures(values: features[i], t: 0)).zone
                 if let a = index[labels[i]], let b = index[predicted] { confusion[a][b] += 1 }

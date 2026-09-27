@@ -18,8 +18,8 @@ import type {
 import type { AppInfo, AppPrefs, DaemonState } from '@shared/ipc'
 import { FREE_LICENSE, type LicenseState } from '@shared/license'
 
-export type Route = 'live' | 'zones' | 'bindings' | 'calibration' | 'sensors' | 'settings' | 'guide'
-export const ROUTES: Route[] = ['live', 'zones', 'bindings', 'calibration', 'sensors', 'settings', 'guide']
+export type Route = 'live' | 'zones' | 'bindings' | 'calibration' | 'sensors' | 'sonar' | 'settings' | 'guide'
+export const ROUTES: Route[] = ['live', 'zones', 'bindings', 'calibration', 'sensors', 'sonar', 'settings', 'guide']
 
 export interface FeedItem {
   id: number
@@ -65,6 +65,8 @@ interface State {
   /** Screenshot mode: show the hand drawing sheet. */
   debugHands: boolean
   debugFrames: boolean
+  /** From detection_state: taps don't look like the calibration. */
+  unfamiliar: boolean
   missedPickerOpen: boolean
 
   navigate: (r: Route) => void
@@ -118,6 +120,7 @@ export const useStore = create<State>()((set, get) => ({
   windowFocused: true,
   debugHands: false,
   debugFrames: false,
+  unfamiliar: false,
   missedPickerOpen: false,
 
   navigate: (route) => set({ route, paletteOpen: false }),
@@ -159,6 +162,49 @@ export const useStore = create<State>()((set, get) => ({
     set({ onboarding: false, route: to })
   }
 }))
+
+/** Loose match: every field of `want` has the same value in `got` (key order and extra fields do not matter). */
+function sameValues(want: unknown, got: unknown): boolean {
+  if (Array.isArray(want)) return Array.isArray(got) && want.length === got.length && want.every((w, i) => sameValues(w, got[i]))
+  if (want && typeof want === 'object') {
+    if (!got || typeof got !== 'object') return false
+    return Object.entries(want).every(([k, v]) => sameValues(v, (got as Record<string, unknown>)[k]))
+  }
+  return want === got
+}
+
+/**
+ * Saves settings and waits for the daemon to confirm them (its config reply carries the new values). Resolves to
+ * null on success, or an error message to show the user. Use this before anything that depends on the new
+ * setting, instead of sending the next message after a guessed delay.
+ */
+export function saveSettingsConfirmed(patch: Partial<Config['settings']>, timeoutMs = 4000): Promise<string | null> {
+  return new Promise((resolve) => {
+    const s = useStore.getState()
+    if (!s.config || client.state !== 'open') {
+      resolve('Ghostkeys is not connected to its background service.')
+      return
+    }
+    let done = false
+    const finish = (err: string | null): void => {
+      if (done) return
+      done = true
+      clearTimeout(timer)
+      offConfig()
+      offError()
+      if (err) client.send({ type: 'config_get' }) // put the switches back to what the daemon really has
+      resolve(err)
+    }
+    const offConfig = client.on('config', (m) => {
+      if (Object.entries(patch).every(([k, v]) => sameValues(v, (m.config.settings as unknown as Record<string, unknown>)[k]))) finish(null)
+    })
+    const offError = client.on('error', (e) => {
+      if (/config/i.test(e.message)) finish(e.message)
+    })
+    const timer = setTimeout(() => finish('The Ghostkeys service did not confirm the change.'), timeoutMs)
+    s.saveSettings(patch)
+  })
+}
 
 export const isDirty = (s: Pick<State, 'config' | 'draft'>): boolean =>
   !!s.config && !!s.draft && JSON.stringify({ ...s.config, settings: null }) !== JSON.stringify({ ...s.draft, settings: null })
@@ -233,5 +279,6 @@ export function wireClient(): void {
   client.on('calibration', (calibration) => useStore.setState({ calibration }))
   client.on('session', (m) => useStore.setState((s) => ({ sessions: { ...s.sessions, [m.kind]: m } })))
   client.on('catalog', (m) => useStore.setState({ catalog: m.catalog }))
+  client.on('detection_state', (m) => useStore.setState({ unfamiliar: m.unfamiliar }))
   client.on('error', (e) => useStore.setState({ lastError: e.message }))
 }

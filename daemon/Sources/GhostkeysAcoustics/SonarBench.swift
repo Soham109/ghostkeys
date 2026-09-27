@@ -38,7 +38,7 @@ public enum SonarBench {
     public struct Report: Sendable {
         public var seconds: Double
         public var route: OutputRoute
-        /// Median pilot level above local noise, dB (need at least 25 for SonarField to work).
+        /// Median pilot level above local noise, dB (SonarField needs at least 15; the weaker side of an M5 Pro MacBook Pro measured 27 to 44).
         public var medianSnrLeftDb: Double
         public var medianSnrRightDb: Double
         /// Share of readings with interference flagged (music, other ultrasonic sources, loud noise).
