@@ -439,3 +439,14 @@ html.lenis body {
   width: min(62vw, 900px);
   background: radial-gradient(closest-side, color-mix(in oklab, var(--bg) 55%, transparent) 0%, color-mix(in oklab, var(--bg) 25%, transparent) 60%, transparent 100%);
 }
+
+/* Hero entrance guard: hidden only while JS is running and about to reveal it; a timed failsafe shows it regardless. */
+.js .intro-hidden {
+  visibility: hidden;
+  animation: intro-failsafe 0s linear 2.5s forwards;
+}
+@keyframes intro-failsafe {
+  to {
+    visibility: visible;
+  }
+}

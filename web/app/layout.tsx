@@ -44,7 +44,7 @@ export const viewport: Viewport = {
 };
 
 /** Runs before paint so the stored or system theme applies without a flash. */
-const themeScript = `(function(){try{var p=localStorage.getItem('gk-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var t=(p==='light'||p==='dark')?p:(d?'dark':'light');document.documentElement.dataset.theme=t;document.documentElement.dataset.themePref=p||'system';}catch(e){document.documentElement.dataset.theme='dark';}})();`;
+const themeScript = `(function(){document.documentElement.classList.add('js');try{var p=localStorage.getItem('gk-theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;var t=(p==='light'||p==='dark')?p:(d?'dark':'light');document.documentElement.dataset.theme=t;document.documentElement.dataset.themePref=p||'system';}catch(e){document.documentElement.dataset.theme='dark';}})();`;
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

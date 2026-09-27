@@ -13,9 +13,8 @@ import { AIR_SOUND_SPLIT, AIR_STEPS, beatPositions, CHAPTER_SCREENS, LAYER_STEPS
 import { DOWNLOAD_URL } from "@/lib/site";
 import { PRICING } from "@/lib/pricing";
 import { TryPanel } from "./TryPanel";
-import { LogoMark } from "./Logo";
 import { Toggles } from "./Toggles";
-import { FooterLinks } from "./FooterLinks";
+import { FooterRow } from "./FooterLinks";
 
 const StageCanvas = dynamic(() => import("../three/StageCanvas"), { ssr: false });
 const StillStage = dynamic(() => import("../three/Stills"), { ssr: false });
@@ -233,29 +232,45 @@ function useSplitLines(el: HTMLElement | null, cb: (lines: HTMLElement[], line: 
 
 function Intro() {
   const ref = useRef<HTMLElement>(null);
+  const block = useRef<HTMLDivElement>(null);
   const [el, setEl] = useState<HTMLElement | null>(null);
   useEffect(() => setEl(ref.current), []);
+
+  // Leaving: the whole block (headline, button, scrim) fades and lifts as one unit, so a partial sentence is never on screen.
   useEffect(() => {
-    if (!el) return;
-    document.fonts.ready.then(() => gsap.set(el.querySelectorAll("[data-intro]"), { visibility: "visible" }));
+    if (!el || !block.current) return;
+    const ctx = gsap.context(() => {
+      gsap.fromTo(
+        block.current,
+        { autoAlpha: 1, y: 0 },
+        { autoAlpha: 0, y: -48, ease: "power1.in", immediateRender: false, scrollTrigger: { trigger: el, start: "top+=18% top", end: "top+=62% top", scrub: 0.6 } },
+      );
+    }, el);
+    // reduced motion (no split, no entrance): show the headline as soon as fonts settle
+    const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches || new URLSearchParams(location.search).has("reduced");
+    if (reduced) document.fonts.ready.then(() => el.querySelectorAll<HTMLElement>("[data-intro]").forEach((n) => (n.style.visibility = "visible")));
+    return () => ctx.revert();
   }, [el]);
+
+  // Arriving: all lines rise together from their masks once fonts are ready. Text is never hidden by JS before this runs.
   useSplitLines(el, (lines, line) => {
-    const tl = gsap.timeline({ delay: 0.35 });
-    tl.from(lines, { yPercent: 118, duration: 1.5, stagger: 0.1, ease: "expo.out" })
-      .from(line.querySelectorAll("em"), { filter: "blur(10px)", duration: 1.3, ease: "expo.out" }, 0.15)
-      .from(el!.querySelectorAll("[data-fade]"), { autoAlpha: 0, y: 10, duration: 1.2, stagger: 0.1, ease: "expo.out" }, 0.7);
-    gsap.to(lines, { yPercent: -118, stagger: 0.04, ease: "power2.in", scrollTrigger: { trigger: el, start: "top top", end: "70% top", scrub: 1 } });
-    gsap.to(el!.querySelectorAll("[data-fade]"), { autoAlpha: 0, ease: "none", scrollTrigger: { trigger: el, start: "5% top", end: "40% top", scrub: 1 } });
+    gsap.set(el!.querySelectorAll("[data-intro]"), { visibility: "visible" });
+    if (window.scrollY > 4) return; // reloaded mid-scroll: show the settled state, no entrance
+    const tl = gsap.timeline({ delay: 0.2 });
+    tl.from(lines, { yPercent: 110, duration: 1.3, ease: "expo.out" })
+      .from(line.querySelectorAll("em"), { filter: "blur(10px)", duration: 1.2, ease: "expo.out" }, 0.1)
+      .from(el!.querySelectorAll("[data-fade]"), { autoAlpha: 0, y: 10, duration: 1.1, ease: "expo.out" }, 0.5);
   });
+
   return (
     <section id="top" ref={ref} data-chapter="intro" aria-label="Ghostkeys" style={{ height: `calc(100svh * ${CHAPTER_SCREENS.intro})` }} className="relative">
       <div className="pointer-events-none sticky top-0 h-[100svh]">
-        <div className="page-x absolute inset-x-0 bottom-[13svh]">
-          <div className="scrim invisible" data-intro data-fade aria-hidden />
-          <h1 data-line data-intro className="display invisible max-w-[12ch] text-[length:var(--t-hero)] text-ink">
+        <div ref={block} className="page-x absolute inset-x-0 bottom-[13svh]">
+          <div className="scrim" data-intro data-fade aria-hidden />
+          <h1 data-line data-intro className="display intro-hidden max-w-[12ch] text-[length:var(--t-hero)] text-ink">
             Your MacBook has <em>more</em> buttons.
           </h1>
-          <div data-intro data-fade className="invisible pointer-events-auto mt-10 flex items-center gap-8">
+          <div data-intro data-fade className="intro-hidden pointer-events-auto mt-10 flex items-center gap-8">
             <a href={DOWNLOAD_URL} className="btn-ink h-11 px-6 text-[14px]">
               Download for Mac
             </a>
@@ -379,15 +394,7 @@ function Finale() {
           </p>
         </div>
         <footer data-fade className="page-x pointer-events-auto bg-bg pb-7">
-          <div className="flex flex-col gap-5 border-t hairline pt-5 md:flex-row md:items-center md:justify-between">
-            <span className="flex items-center gap-2.5 text-ink">
-              <LogoMark size={16} />
-              <span className="text-[14px] font-medium tracking-[-0.02em]">ghostkeys</span>
-            </span>
-            <FooterLinks />
-            <Toggles inline />
-          </div>
-          <p className="label mt-4 !text-ink-3">Mac and MacBook are trademarks of Apple Inc. Ghostkeys is not affiliated with Apple.</p>
+          <FooterRow />
         </footer>
       </div>
     </section>

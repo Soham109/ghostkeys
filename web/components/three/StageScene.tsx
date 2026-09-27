@@ -267,6 +267,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     times.forEach((dt) => window.setTimeout(() => hit(0.85, false), dt * 1000));
   };
 
+  const debugLog = useMemo(() => (typeof location !== "undefined" && new URLSearchParams(location.search).has("debug") ? ((window as unknown as { __gkCamLog: number[][] }).__gkCamLog = [] as number[][]) : null), []);
   useFrame((s, dtRaw) => {
     const dt = Math.min(dtRaw, 1 / 20);
     const t = now();
@@ -354,6 +355,7 @@ export function StageScene({ theme, quality, particleSize, reduced }: { theme: T
     const w = size.width, h = size.height;
     camera.setViewOffset(w, h, -shift.current.x * w, shift.current.y * h, w, h);
     camera.updateProjectionMatrix();
+    if (debugLog && debugLog.length < 20000) debugLog.push([performance.now(), window.scrollY, g, camera.position.x, camera.position.y, camera.position.z, dtRaw]);
 
     // ---------- laptop pose and light
     state.lid = ch.lid;
