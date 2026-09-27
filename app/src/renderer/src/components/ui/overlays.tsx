@@ -120,10 +120,36 @@ export const Popover = PopoverPrimitive.Root
 export const PopoverTrigger = PopoverPrimitive.Trigger
 export const PopoverAnchor = PopoverPrimitive.Anchor
 
-export function PopoverContent({ className, ...props }: React.ComponentProps<typeof PopoverPrimitive.Content>): React.JSX.Element {
+// A popover opened from inside a Sheet or Dialog is portaled outside it, and the
+// Sheet's scroll lock then swallows wheel events. Scroll the nearest scrollable
+// ancestor of the pointer ourselves so lists inside popovers always scroll.
+function scrollUnderPointer(e: React.WheelEvent<HTMLDivElement>): void {
+  let el = e.target as HTMLElement | null
+  while (el && el !== e.currentTarget.parentElement) {
+    const style = getComputedStyle(el)
+    const scrollable = /(auto|scroll)/.test(style.overflowY) && el.scrollHeight > el.clientHeight
+    if (scrollable) {
+      el.scrollTop += e.deltaY
+      e.stopPropagation()
+      return
+    }
+    el = el.parentElement
+  }
+}
+
+export function PopoverContent({ className, onWheel, ...props }: React.ComponentProps<typeof PopoverPrimitive.Content>): React.JSX.Element {
   return (
     <PopoverPrimitive.Portal>
-      <PopoverPrimitive.Content sideOffset={4} align="start" className={cn(popSurface, 'p-0', className)} {...props} />
+      <PopoverPrimitive.Content
+        sideOffset={4}
+        align="start"
+        className={cn(popSurface, 'p-0', className)}
+        onWheel={(e) => {
+          scrollUnderPointer(e)
+          onWheel?.(e)
+        }}
+        {...props}
+      />
     </PopoverPrimitive.Portal>
   )
 }
