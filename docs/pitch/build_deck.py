@@ -26,7 +26,7 @@ for key, a_, ly in calls:
 # 3 ---------------------------------------------------------------- the hard part (real data)
 s = new_slide()
 h = text(s, M, Inches(0.7), Inches(11.5), Inches(1.0), "A tap looks a lot like a keystroke.", size=40, font=XL)
-CH_X, CH_W, CH_H = M, CW, Inches(1.25)
+CH_X, CH_W, CH_H = M, CW, Inches(1.1)
 ymax = max(max(p[1] for p in SIG["taps"]), max(p[1] for p in SIG["typing"]))
 
 
@@ -40,20 +40,22 @@ def chart(pts, top, lab):
     return line
 
 
-l1 = chart(SIG["taps"], Inches(1.95), "Taps")
-l2 = chart(SIG["typing"], Inches(3.65), "Typing")
-steps = ["Something hit", "Not typing or on the trackpad", "Two models vote on the spot", "Unsure? Do nothing"]
+l1 = chart(SIG["taps"], Inches(1.8), "Taps")
+l2 = chart(SIG["typing"], Inches(3.4), "Typing")
+steps = [("Something hit", "The sensor jumps above the laptop's normal background shake."),
+         ("Not typing?", "If a key or the trackpad moved at that moment, it is ignored."),
+         ("Which spot?", "33 measurements of the bump. Two small models compare it with the taps you gave during setup."),
+         ("Unsure? Do nothing", "If it does not look like your taps, nothing fires. It also learns desk and lap separately.")]
 sw = CW / 4
-for i, t in enumerate(steps):
+for i, (t, sub) in enumerate(steps):
     x = int(M + sw * i)
-    dot(s, x + Inches(0.06), Inches(5.65), Inches(0.06), fill=LIT if i == 3 else EDGE)
+    dot(s, x + Inches(0.06), Inches(5.2), Inches(0.06), fill=LIT if i == 3 else EDGE)
     if i < 3:
-        seg(s, x + Inches(0.2), Inches(5.65), int(M + sw * (i + 1)) - Inches(0.1), Inches(5.65), color=INK4)
-    text(s, x, Inches(5.85), int(sw) - Inches(0.3), Inches(0.7), t, size=16, line=1.15)
-text(s, M, Inches(6.85), CW, Inches(0.4), "Real sensor data, 800 readings a second. 33 measurements per tap. All on the laptop.",
-     size=13, color=INK3)
-anim(s, l1, 400, "wipe", 1400)
-anim(s, l2, 400, "wipe", 1400)
+        seg(s, x + Inches(0.2), Inches(5.2), int(M + sw * (i + 1)) - Inches(0.1), Inches(5.2), color=INK4)
+    text(s, x, Inches(5.4), int(sw) - Inches(0.3), Inches(0.4), t, size=16)
+    text(s, x, Inches(5.8), int(sw) - Inches(0.35), Inches(0.9), sub, size=12, color=INK2, line=1.2)
+text(s, M, Inches(6.95), CW, Inches(0.4), "Real sensor data, 800 readings a second. Everything runs on the laptop; nothing is sent anywhere.",
+     size=12, color=INK3)
 
 # S ---------------------------------------------------------------- sonar
 s = new_slide()
@@ -125,6 +127,22 @@ for i, (big, what, before) in enumerate(res):
     small(s, x, Inches(5.2), before, color=INK3)
 text(s, M, Inches(6.7), CW, Inches(0.4), "Measured on our own recordings and re-checked independently.", size=13, color=INK3)
 
+# W ---------------------------------------------------------------- who it's for
+s = new_slide()
+text(s, M, Inches(0.9), Inches(11.5), Inches(1.0), "Who it's for.", size=40, font=XL)
+text(s, M, Inches(1.75), Inches(11), Inches(0.5), "Anyone who lives on a MacBook and repeats the same few actions all day.", size=16, color=INK2)
+who = [("Spreadsheet people", "Run a macro or AutoSum with a palm tap."),
+       ("Designers", "Undo and switch tools without leaving the canvas."),
+       ("Developers", "Build, run and jump between windows."),
+       ("Anyone on calls", "Mute with a tap they can find without looking.")]
+cw4 = CW / 4
+for i, (t, d_) in enumerate(who):
+    x = int(M + cw4 * i)
+    seg(s, x, Inches(3.3), x + int(cw4) - Inches(0.35), Inches(3.3), color=INK4)
+    text(s, x, Inches(3.5), int(cw4) - Inches(0.3), Inches(0.9), t, size=24, font=XL, line=1.05)
+    text(s, x, Inches(4.5), int(cw4) - Inches(0.4), Inches(1.0), d_, size=15, color=INK2, line=1.2)
+text(s, M, Inches(6.7), CW, Inches(0.4), "Works on the MacBook they already carry: desk, couch, train.", size=13, color=INK3)
+
 # 5 ---------------------------------------------------------------- business
 s = new_slide()
 h = text(s, M, Inches(0.9), Inches(11.5), Inches(1.0), "Free to try. Pay once to unlock everything.", size=40, font=XL)
@@ -148,10 +166,11 @@ anim(s, t1, 300, "fade", 1200)
 NOTES = [
  "This is Ghostkeys. It turns the blank parts of your MacBook, the palm rests, the speaker grilles and the strip above the keys, into buttons. No new hardware, nothing to plug in.",
  "Look at a MacBook: a lot of the top is dead space. With Ghostkeys you tap it. Tap the top strip to jump back to your last app, double tap the right grille for a screenshot, tap the left palm rest to mute a call. You choose what each spot does.",
- "The hard part: every Apple silicon MacBook has a motion sensor inside that reads 800 times a second, and a tap barely shows up on it. Typing looks almost the same, as you can see. So every bump goes through four checks: did something hit, were you typing or on the trackpad, which spot was it, and are we sure. If we are not sure, we do nothing. A missed tap costs a second try. A wrong action costs trust.",
+ "The hard part: every Apple silicon MacBook has a motion sensor inside that reads 800 times a second. A tap barely shows up, and typing looks almost the same, as you can see here. So every bump goes through four checks. One: did something actually hit, above the normal shake of the laptop. Two: were you typing or using the trackpad at that moment; if so, ignore it. Three: which spot was it; we take 33 measurements of the bump, like how strong, how long and which direction, and two small models compare it with the taps you gave during setup. Four: are we sure; if it does not look like your taps, we do nothing. A missed tap costs a second try. A wrong action costs trust. It also keeps separate models for desk and lap, because a laptop on your lap wobbles differently.",
  "It also works without touching. The speakers play two tones too high for people to hear, and the mic listens to how your hand changes them. Raise or lower your hand to change the volume. It is early, and it needs the Mac's own speakers.",
  "If you have a camera, you can pinch in the air in front of the screen, like turning a dial. It is optional and off by default, and the video never leaves the Mac.",
  "We measured it on our own recordings, and someone who did not write the code re-checked every number. Wrong taps went from 16.5 percent to 1.4. Picking up the laptop used to set off about two false taps a minute, now none. And after calibrating on your lap, it catches 84 percent of lap taps, up from zero.",
+ "Who is it for? Anyone who lives on a MacBook and repeats the same few actions all day. Spreadsheet people running macros, designers who want undo without leaving the canvas, developers building and switching windows, and anyone on calls who wants mute on a spot they can find without looking.",
  "The business is simple. Free gets you two palm buttons. Pro is 29 dollars once for everything. Teams is 49 dollars per seat per year. There is nothing to buy, because every Apple silicon MacBook already has the sensor. It is free while we are in beta.",
  "It is live now. Try it on the laptop in front of you. Thank you.",
 ]
