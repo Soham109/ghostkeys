@@ -30,6 +30,13 @@ final class SoundSession {
     /// Called on the core queue for each calibration onset: the label and whether a usable window was found.
     var onCalibrationSample: (_ label: String, _ captured: Bool) -> Void = { _, _ in }
 
+    /// `sonar_debug` on the "debug" stream (~10 Hz while a sonar session runs), wired by the daemon: whether anyone
+    /// subscribed, and where to send. Called on the core queue.
+    static var debugWanted: () -> Bool = { false }
+    static var debugSink: ([String: Any]) -> Void = { _ in }
+    private var lastDebugAt = 0.0
+    private var loggedToneFormats = false
+
     var onGesture: (Gesture) -> Void = { _ in }
     /// Continuous SonarField values (hover_level, finger_slide), as `air` message fields.
     var onAir: ([String: Any]) -> Void = { _ in }
@@ -85,9 +92,12 @@ final class SoundSession {
         default: break
         }
         let s = makeAcousticSession()
+        if sonarField { s.probeFrequencies = [proc.field.pilotFrequencies.left, proc.field.pilotFrequencies.right] }
         do { try s.start() } catch {
             return "could not open the microphone: \(error)"
         }
+        Self.logAudioPath(s)
+        loggedToneFormats = false
         session = s
         processor = proc
         sonarOn = false
@@ -114,6 +124,15 @@ final class SoundSession {
         }
         Log.info("sound session started (microphone open\(sonarOn ? ", wave pilot tone on" : ""))")
         return nil
+    }
+
+    /// Once per session: which devices and formats are really in use.
+    private static func logAudioPath(_ s: AcousticSession) {
+        let i = s.inputPathInfo
+        Log.info("audio input: \(i.device?.description ?? "unknown device"); engine input format \(Int(i.hardwareSampleRate)) Hz, "
+                 + "\(i.hardwareChannels) ch\(i.resampled ? " (resampled to 48 kHz)" : ""); voice processing \(i.voiceProcessingEnabled ? "ON" : "off"), "
+                 + "AGC \(i.voiceProcessingAGCEnabled ? "on" : "off"), mic mode \(i.microphoneMode) (preferred \(i.preferredMicrophoneMode))")
+        Log.info("audio output: \(AudioDeviceSummary.defaultOutput()?.description ?? "unknown device"); route \(describe(OutputRoute.current()))")
     }
 
     private func makeAcousticSession() -> AcousticSession {
@@ -196,6 +215,11 @@ final class SoundSession {
             lastRenew = now
             let was = toneProblem
             toneProblem = nil
+            if !loggedToneFormats, let f = session.tonePlayerFormats {
+                loggedToneFormats = true
+                Log.info("sonar tones: source \(f.source); output device \(f.device); per-channel amplitude "
+                         + "\(String(format: "%.1f", 20 * log10(Double(g.leftAmplitude)))) dBFS")
+            }
             return was == nil ? "tones playing" : "sonar tones back on (built-in speakers)"
         } catch {
             toneRetryAt = now + SpeakerSafety.cooldown
@@ -300,6 +324,10 @@ final class SoundSession {
     private func process(_ chunk: AcousticSession.Chunk) {
         guard let processor, session != nil else { return }
         let events = processor.process(chunk.samples, time: chunk.time)
+        if fieldMode, chunk.time - lastDebugAt >= 0.1, Self.debugWanted() {
+            lastDebugAt = chunk.time
+            Self.debugSink(sonarDebugMessage(t: chunk.time))
+        }
         captureCalibrationWindows(ring: processor.ringBuffer)
         for event in events {
             switch event {
@@ -326,6 +354,52 @@ final class SoundSession {
                 break
             }
         }
+    }
+}
+
+// MARK: - sonar_debug
+
+extension SoundSession {
+    private static func r(_ v: Double, _ digits: Double = 10) -> Double { v.isFinite ? (v * digits).rounded() / digits : -999 }
+
+    /// One `sonar_debug` message: per-side levels and tracker state since the previous message, gate states, and the
+    /// real capture path. See the GhostkeysAcoustics README ("sonar_debug") for field meanings.
+    func sonarDebugMessage(t: Double) -> [String: Any] {
+        guard let processor, let session else { return ["type": "sonar_debug", "t": Clock.protocolMs(t), "running": false] }
+        let d = processor.field.debugSnapshot()
+        func side(_ s: SonarFieldDebug.Side) -> [String: Any] {
+            ["hz": s.frequencyHz, "pilotDbfs": Self.r(s.pilotDbfs), "noiseDbfsPerBin": Self.r(s.noiseDbfsPerBin),
+             "snrDb": Self.r(s.snrDb), "pilotPresent": s.pilotPresent,
+             "sidebandLowDbc": Self.r(s.sidebandLowDbc), "sidebandHighDbc": Self.r(s.sidebandHighDbc),
+             "dopplerShiftBins": [Self.r(s.dopplerLeftShiftBins), Self.r(s.dopplerRightShiftBins)],
+             "pathDeltaMm": Self.r(s.pathDeltaMm, 100), "pathStepVarMm2": Self.r(s.pathStepVarianceMm2, 1000),
+             "pathTotalMm": Self.r(s.pathTotalMm), "dynamicDb": Self.r(s.dynamicDb),
+             "gateOpenShare": Self.r(s.gateOpenShare, 100)]
+        }
+        let i = session.inputPathInfo
+        var input: [String: Any] = [
+            "hardwareSampleRate": i.hardwareSampleRate, "measuredSampleRate": Self.r(i.measuredSampleRate),
+            "channels": i.hardwareChannels, "format": i.hardwareFormat, "resampled": i.resampled,
+            "voiceProcessing": i.voiceProcessingEnabled, "agc": i.voiceProcessingAGCEnabled,
+            "voiceProcessingBypassed": i.voiceProcessingBypassed,
+            "micMode": i.microphoneMode, "preferredMicMode": i.preferredMicrophoneMode,
+            "bufferFrames": [i.minBufferFrames, i.maxBufferFrames], "maxTimestampGapMs": Self.r(i.maxTimestampGapMs, 100),
+            "highBandRolloffDb": Self.r(d.highBandRolloffDb),
+            // Rows: input channels, then the mono mix the detectors use. Columns: left pilot, right pilot (dBFS).
+            "channelPilotDbfs": i.channelProbeDbfs.map { $0.map { Self.r($0) } },
+            "channelRmsDbfs": i.channelRmsDbfs.map { Self.r($0) }]
+        if let dev = i.device { input["device"] = dev.dictionary }
+        var gates: [String: Any] = [
+            "ready": d.ready, "warmedUp": d.warmedUp, "tonesPlaying": sonarFieldOn,
+            "interference": d.interference, "suppressedByDaemon": d.suppressedByDaemon,
+            "guardPeakDbfs": Self.r(d.guardPeakDbfs), "guardMedianDbfs": Self.r(d.guardMedianDbfs),
+            "impulseBlocks": d.impulseBlocks, "restarts": d.restarts,
+            "episode": d.episodeActive, "hover": d.hoverActive, "slide": d.slideActive]
+        if let reason = d.interferenceReason { gates["interferenceReason"] = reason }
+        if let toneProblem { gates["toneProblem"] = toneProblem }
+        return ["type": "sonar_debug", "t": Clock.protocolMs(t), "windowS": Self.r(d.windowSeconds, 1000),
+                "basebandSamples": d.basebandSamples, "left": side(d.left), "right": side(d.right),
+                "gates": gates, "input": input]
     }
 }
 

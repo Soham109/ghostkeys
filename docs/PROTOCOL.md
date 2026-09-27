@@ -32,7 +32,7 @@ The daemon keeps every file it owns in one directory:
 - Override: `--config-dir <path>`, else the environment variable `GHOSTKEYS_CONFIG_DIR`. The lab tool follows the same
   rule for its lock.
 - Contents: `config.json` (+ `config.json.bak`, `config.json.bad`), `token`, `approved.json`, `diagnostics/`, and
-  `model/` (`zone-model.json`, `calibration-report.json`, `samples.json`, `tap-types.json`, `tap-type-samples.json`,
+  `model/` (`zone-model.json`, `calibration-report.json`, `samples.json`, `confirmed.json`, `raw/*.gkrec`, `tap-types.json`, `tap-type-samples.json`,
   `*.bak`).
 - Machine-wide, always in the default directory whatever `--config-dir` says (the sensors belong to the machine, not
   to a config): `daemon.lock` (one daemon or lab session on the sensors at a time) and `spu-originals.json` (sensor
@@ -188,6 +188,8 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 { "type": "feedback", "kind": "false", "zone": "left-grille", "t": 1234.5, "retrained": true, "counts": { }, "overall": 0.95 }
   // replies to feedback_missed / feedback_false, only to the requester. retrained false comes with "reason"
   // (not calibrated yet, zone not calibrated, no onset found, no recent tap).
+{ "type": "adaptation", "kept": true, "confirmed": 14, "accuracyBefore": 0.93, "accuracyAfter": 0.94 }
+  // learn-from-use retrain result (see "Feedback loop"); kept false comes with "reason" (confirmed taps discarded)
 { "type": "diagnostics", "path": "<config dir>/diagnostics/20260926-181500-123.gkrec", "samples": 7970, "seconds": 10 }
 { "type": "gesture", "t": 1234.5, "gesture": "double", "zone": "right-grille", "zones": ["right-grille"], "modifiers": ["shift"], "confidence": 0.91, "app": "com.microsoft.Excel" }
 { "type": "action", "t": 1234.5, "bindingId": "b1", "label": "Volume up", "ok": true, "error": null }
@@ -266,6 +268,7 @@ Modifiers held at gesture time: any of `shift`, `control`, `option`, `command`, 
 // Test-only, accepted only when the daemon runs with --no-hardware-sessions (simulated sessions):
 // { "type": "sim_tap", "zone": "right-grille" }  { "type": "sim_tap_type", "tapType": "knuckle" }
 // { "type": "sim_air", "phase": "began|changed|ended", "dx": 0.05, "dy": 0 }
+// { "type": "sim_undo" } (stands in for Cmd+Z)  { "type": "sim_adapt" } (runs the learn-from-use retrain without the 60 s idle wait)
 // { "type": "sim_sonar", "gesture": "push", "side": "left" }  { "type": "sim_sonar", "air": { "gesture": "hover_level", "phase": "changed", "displacementMm": 40 } }
 ```
 
@@ -290,6 +293,19 @@ decisions in memory only. Nothing is written to disk unless the app asks.
   strong was most likely intended: the report is accepted and logged, nothing is learned, and the reply says so
   (`retrained: false`, `peakG`). The action the tap triggered is never undone.
 - Every retrain keeps the previous `zone-model.json`, `calibration-report.json` and `samples.json` as `*.bak`.
+- Learn from use (`settings.learnFromUse`, default true): a tap is confirmed when it fired a bound action that
+  succeeded, its confidence was at least `minConfidence`, and nothing undid it within 5 s (no `feedback_missed` /
+  `feedback_false`, no Cmd+Z in the frontmost app). Taps at 0.97 confidence or more teach little, so only 1 in 3 of them
+  is kept. Confirmed taps go to `model/confirmed.json` (samples.json entries plus `"source": "confirmed"` and `ts`),
+  at most 20 per zone and at most half that zone's calibration samples (the oldest is replaced); never `none`.
+  Once 10 new confirmations exist and no tap came for 60 s, the model is retrained from calibration + confirmed samples.
+  Ship guard: the new model must label the calibration samples alone at least as well as the current one (within
+  0.02); otherwise it is thrown away, the confirmed set is discarded, and an `adaptation` message says so. A new
+  calibration discards the confirmed set. Cmd+Z is noticed by polling the key state (Command + Z, ANSI layout),
+  which needs no extra permission.
+- Raw calibration windows: during calibration capture, 0.1 s before to 0.25 s after each captured tap (zones and
+  negatives) is kept and written at the end of the session to `model/raw/<session>.gkrec` (lab format, one segment
+  per tap), for future model work. The folder is capped at 20 MB (oldest recordings dropped).
 - `diagnostics_export`: the last 10 s go to `diagnostics/<time>.gkrec`, the ghostkeys-lab recording format
   (`ghostkeys-lab info|replay <file>`), with the detector's decisions in the header's `notes`. The folder keeps the
   newest 50 recordings.
@@ -309,7 +325,7 @@ decisions in memory only. Nothing is written to disk unless the app asks.
       "action": { "kind": "volume", "step": 2 }, "label": "Volume knob",
       "knob": { "axis": "y", "stepPx": 24, "inverse": { "kind": "volume", "step": -2 } } }
   ],
-  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "followUpConfidence": 0.5, "lightTouch": false,
+  "settings": { "sensitivity": 0.5, "typingGateMs": 450, "doubleWindowMs": 350, "minConfidence": 0.8, "followUpConfidence": 0.5, "lightTouch": false, "learnFromUse": true,
     "hud": true, "haptics": false,
     "sound":  { "enabled": false, "sessionSeconds": 30, "autoApps": [] },
     "camera": { "enabled": false, "sessionSeconds": 30, "autoApps": [], "deskMode": false },
@@ -333,6 +349,8 @@ decisions in memory only. Nothing is written to disk unless the app asks.
   external or unknown device (tones off, mic stays open, retried every 10 s); system or display sleep, lid closed,
   Ghostkeys paused (mic closed too); daemon exit. A refused start waits a 10 s cooldown; renewals never do.
   Pets and some people can hear 19 to 20 kHz; say so in the UI.
+- `learnFromUse` (default true): refine the zone model from taps that fired an action and were not undone (see
+  "Feedback loop").
 - `lightTouch` (default false): lets much lighter taps (8 to 40 mg) trigger, with an onset floor learned from
   calibration. It also lets in more junk spikes, so only turn it on after a calibration done with light taps.
 - `followUpConfidence` (0 to `minConfidence`): in a zone with a double / triple binding, a tap at this confidence may

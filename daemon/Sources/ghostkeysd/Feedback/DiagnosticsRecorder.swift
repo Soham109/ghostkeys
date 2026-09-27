@@ -49,6 +49,11 @@ final class DiagnosticsRecorder {
         return out.filter { last - $0.t <= seconds }
     }
 
+    /// Samples with t in [from, to], oldest first.
+    func window(from: Double, to: Double) -> [Sample] {
+        samples().filter { $0.t >= from && $0.t <= to }
+    }
+
     /// Test hook (simulated sessions only): adds a tap-like transient to the buffered samples `ago` seconds back,
     /// so the offline analysis has something to find without anyone touching the laptop.
     func injectSyntheticTap(ago: Double = 0.5, scale: Double = 1, mouseNear: Bool = false) {
@@ -103,7 +108,13 @@ final class DiagnosticsRecorder {
     /// `segments` label parts of it (for a missed tap: one "capture" segment with the zone and the found onset).
     func export(to url: URL, seconds: Double, deviceModel: String, zones: [String],
                 segments: [GkrecSegment] = [], notes extra: [String] = []) throws -> Int {
-        let s = samples(lastSeconds: seconds)
+        try Self.write(samples(lastSeconds: seconds), events: events, to: url, deviceModel: deviceModel, zones: zones,
+                       segments: segments, notes: extra)
+    }
+
+    /// Writes any list of samples (it may have gaps, for example tap windows from a calibration) as a .gkrec.
+    static func write(_ s: [Sample], events: [Event] = [], to url: URL, deviceModel: String, zones: [String],
+                      segments: [GkrecSegment] = [], notes extra: [String] = []) throws -> Int {
         guard let t0 = s.first?.t else { throw ActionError("no sensor data buffered yet") }
         var imu: [[Float]] = Array(repeating: [], count: 7)
         var act: [[Float]] = Array(repeating: [], count: 4)

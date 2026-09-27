@@ -45,6 +45,14 @@ final class Daemon: @unchecked Sendable {
     private var lastAccepted: SeenCandidate?
     private var feedbackTimes: [Double] = []
     private var lastExport = -100.0
+    private lazy var learner = UseLearner(modelDirectory: store.modelDirectory)
+    private var lastTapAt = -1000.0
+    private var learnedTapTimes: [Double] = []
+    private var lastLearnTick = 0.0
+    private var lastUndoCheck = 0.0
+    private var adapting = false
+    /// Raw IMU windows around each captured calibration tap (written to model/raw/<session>.gkrec at the end).
+    private var calRaw: (session: String, samples: [DiagnosticsRecorder.Sample], segments: [GkrecSegment])?
     /// The recommendation from the last calibration, until applied or replaced.
     private var pendingRecommendation: ZoneRecommendation?
     private let lidDetector = LidGestureDetector()
@@ -95,6 +103,10 @@ final class Daemon: @unchecked Sendable {
     // MARK: Lifecycle
 
     func start() throws {
+        // sonar_debug (~10 Hz while a sonar session runs) goes to "debug" subscribers only.
+        let server = self.server
+        SoundSession.debugWanted = { server.hasSubscribers("debug") }
+        SoundSession.debugSink = { server.broadcast($0, stream: "debug") }
         input.onActivate = { [weak self] id in self?.core.async { self?.sessions.frontmostChanged(to: id) } }
         input.start()
         lastAccessibility = AXIsProcessTrusted()
@@ -184,6 +196,7 @@ final class Daemon: @unchecked Sendable {
                                    secondsSinceKeyUp: snap.keyUp, secondsSinceModifierChange: snap.modifierChange)
 
         diag.record(s, sinceKey: snap.key, sinceMouse: snap.mouse, modifiers: snap.modifiers)
+        learnFromUseTick(now: s.t)
         // SonarField: typing (the typing gate) and laptop motion or bumps (|a| away from 1 g, or any rotation) make
         // Doppler and phase noise; keep sonar detection off for 0.45 s after each.
         let aMag = (s.a * s.a).sum().squareRoot(), gMag = (s.g * s.g).sum().squareRoot()
@@ -223,6 +236,7 @@ final class Daemon: @unchecked Sendable {
                 diag.note(t, "rejected \(reason.rawValue)" + ((msg["zone"] as? String).map { " zone=\($0)" } ?? ""))
                 server.broadcast(msg, stream: "taps")
             case .tap(let tap):
+                lastTapAt = tap.t
                 if let i = shadowIndex(tap.t) {
                     fresh[i].outcome = "accepted"
                     lastAccepted = fresh[i]
@@ -324,8 +338,23 @@ final class Daemon: @unchecked Sendable {
             sendAction(t: g.t, bindingId: binding.id, label: label, ok: false, error: "rate limit: \(why); paused")
             return
         }
+        // Learn from use: the taps behind this gesture become confirmed if the action succeeds and nothing undoes it.
+        var pendingID: Int?
+        if config.settings.learnFromUse, engine.model != nil {
+            let zones = Set(g.zones + [g.zone].compactMap { $0 })
+            // A "tap" is exactly its own tap; double / triple / rhythm / sequence take the taps just before them.
+            // Taps already registered by an earlier gesture are never counted twice.
+            let taps = recentCandidates.filter { c in
+                guard c.outcome == "accepted", zones.contains(c.zone), !learnedTapTimes.contains(where: { abs($0 - c.t) < 0.005 }) else { return false }
+                return g.gesture == "tap" ? abs(c.t - g.t) < 0.02 : (c.t >= g.t - 1.2 && c.t <= g.t + 0.05)
+            }
+            learnedTapTimes = (learnedTapTimes + taps.map(\.t)).filter { g.t - $0 < 5 }
+            pendingID = learner.register(taps: taps.map { ($0.t, $0.zone, $0.confidence, $0.features) },
+                                         minConfidence: config.settings.minConfidence)
+        }
         // Gesture actions are dropped if they would start more than 1 s late (stale).
-        runAction(binding.action, bindingId: binding.id, label: label, t: g.t, maxAge: 1)
+        runAction(binding.action, bindingId: binding.id, label: label, t: g.t, maxAge: 1,
+                  onResult: pendingID.map { id in { [weak self] ok in self?.learner.actionFinished(id: id, ok: ok) } })
     }
 
     /// Continuous camera messages: forwarded to `air` subscribers and, for pinch_hold, drive an active knob.
@@ -431,8 +460,9 @@ final class Daemon: @unchecked Sendable {
 
     /// `replyTo`: for test_action, the result (and any error detail) goes only to the client that asked.
     private func runAction(_ action: JSONValue, bindingId: String?, label: String, t: Double, maxAge: TimeInterval? = nil,
-                           replyTo: WebSocketServer.Client? = nil) {
+                           replyTo: WebSocketServer.Client? = nil, onResult: ((Bool) -> Void)? = nil) {
         guard !paused else {
+            onResult?(false)
             if let bindingId { limiter.finished(bindingId: bindingId) }
             sendAction(t: t, bindingId: bindingId, label: label, ok: false, error: "paused", replyTo: replyTo)
             return
@@ -442,6 +472,7 @@ final class Daemon: @unchecked Sendable {
             self?.core.async {
                 guard let self else { return }
                 if let bindingId { self.limiter.finished(bindingId: bindingId) }
+                onResult?(ok)
                 if let error { Log.info("action \(label) failed: \(error)") }
                 let client = replyID.flatMap { self.server.clients[$0] }
                 if replyID != nil && client == nil { return }   // requester is gone
@@ -461,6 +492,14 @@ final class Daemon: @unchecked Sendable {
 
     private func captureCandidate(_ f: TapFeatures, now: Double) {
         guard let cal = calibration else { return }
+        // Which label this candidate gets (before capture changes the phase).
+        var rawLabel: String?
+        switch cal.phase {
+        case .capturing(let z) where (cal.counts[z] ?? 0) < cal.target: rawLabel = z
+        case .negatives(let until) where now < until: rawLabel = "none"
+        default: break
+        }
+        if let rawLabel { saveRawWindow(t: f.t, label: rawLabel) }
         guard let (zone, count) = cal.capture(f, now: now) else { return }
         server.broadcast(["type": "calibration", "phase": "capturing", "zone": zone, "count": count, "target": cal.target])
         if count >= cal.target { cal.endPhase() }
@@ -492,6 +531,9 @@ final class Daemon: @unchecked Sendable {
         cal.endPhase()
         guard !cal.samples.isEmpty else { return sendError("no samples captured yet", to: client) }
         calibration = nil
+        flushRawCalibration()
+        // A new calibration replaces what use had taught the old model.
+        learner.discardAll(reason: "new calibration")
         server.broadcast(["type": "calibration", "phase": "training"])
         let samples = cal.samples
         let disabled = disabledZones
@@ -564,8 +606,10 @@ final class Daemon: @unchecked Sendable {
             let zones = (m["zones"] as? [String]) ?? config.zones.map(\.id)
             let target = (m["target"] as? NSNumber)?.intValue ?? 20
             negativesTimer?.cancel(); negativesTimer = nil
+            flushRawCalibration()
             let cal = CalibrationSession(zones: zones, target: target)
             calibration = cal
+            calRaw = (Self.stamp(), [], [])
             server.broadcast(["type": "calibration", "phase": "started", "zones": cal.zones, "target": cal.target])
         case "calibration_zone":
             guard let cal = calibration else { return sendError("calibration_start first", to: c) }
@@ -589,6 +633,7 @@ final class Daemon: @unchecked Sendable {
         case "calibration_cancel":
             negativesTimer?.cancel(); negativesTimer = nil
             calibration = nil
+            flushRawCalibration()
             server.broadcast(["type": "calibration", "phase": "cancelled"])
         case "config_get":
             server.send(configMessage(), to: c)
@@ -662,16 +707,24 @@ final class Daemon: @unchecked Sendable {
                 var values = sample.features.values
                 if let k = (m["strengthScale"] as? NSNumber)?.doubleValue, k > 0 { values[FeatureIndex.strength.rawValue] += log10(k) }
                 lastAccepted = SeenCandidate(t: t, features: TapFeatures(values: values, t: t), zone: zone,
-                                             confidence: 0.95, outcome: "accepted")
+                                             confidence: (m["confidence"] as? NSNumber)?.doubleValue ?? 0.95, outcome: "accepted")
+                recentCandidates.append(lastAccepted!)
             }
+            lastTapAt = t
             let g = GestureEvent(t: t, gesture: "tap", zone: zone, zones: [zone], modifiers: [], confidence: 0.95)
             if !sessions.holdTapGesture(t: t, zone: zone, release: { [weak self] in self?.onGesture(g) }) { onGesture(g) }
+        case "sim_undo" where options.noHardwareSessions:
+            learner.cancelPending(reason: "Cmd+Z (simulated)")
+        case "sim_adapt" where options.noHardwareSessions:
+            // Test-only: run the idle retrain now (skips the 60 s idle wait, not the 10-confirmation minimum).
+            adaptIfDue(ignoreIdle: true)
         case "sim_tap_type" where options.noHardwareSessions:
             sessions.simulateTapType(m["tapType"] as? String)
         case "sim_air" where options.noHardwareSessions:
             sessions.simulateAir(phase: (m["phase"] as? String) ?? "changed", dx: (m["dx"] as? NSNumber)?.doubleValue ?? 0,
                                  dy: (m["dy"] as? NSNumber)?.doubleValue ?? 0)
         case "feedback_missed", "feedback_false":
+            learner.cancelPending(reason: type)
             guard admitFeedback() else { return sendError("\(type): at most one every 2 s and 20 per minute", to: c) }
             if type == "feedback_missed" { feedbackMissed(zone: m["zone"] as? String, client: c) } else { feedbackFalse(client: c) }
         case "diagnostics_export":
@@ -851,10 +904,11 @@ final class Daemon: @unchecked Sendable {
         samples.append(.init(label: label, features: TapFeatures(values: f.values, t: 0)))
         let replyID = c.id
         let disabled = disabledZones
+        let confirmedSamples = config.settings.learnFromUse ? learner.asSamples : []
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
             let trainer = Trainer()
-            for s in samples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
+            for s in samples + confirmedSamples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
             let (model, report) = trainer.train()
             var saveError: String?
             do {
@@ -896,9 +950,10 @@ final class Daemon: @unchecked Sendable {
         let samples = store.loadSamples()
         guard !samples.isEmpty else { done?(nil); return }
         let disabled = disabledZones
+        let confirmedSamples = config.settings.learnFromUse ? learner.asSamples : []
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let trainer = Trainer()
-            for s in samples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
+            for s in samples + confirmedSamples where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
             let (model, report) = trainer.train()
             guard let self else { return }
             do { try self.store.saveModel(model, report: report) } catch { Log.error("could not save model: \(error)") }
@@ -990,6 +1045,7 @@ final class Daemon: @unchecked Sendable {
         var samples = store.loadSamples()
         let relabeled = samples.indices.filter { samples[$0].label == a.id || samples[$0].label == b.id }
         for i in relabeled { samples[i].label = id }
+        learner.relabel([a.id, b.id], to: id)
         do {
             try store.save(new)
             if !relabeled.isEmpty { try store.saveSamples(samples) }
@@ -1012,6 +1068,131 @@ final class Daemon: @unchecked Sendable {
             if a.surface != b.surface { m["note"] = "the zones were on different surfaces; the merged zone is drawn on \(a.surface)" }
             if let report { m["overall"] = report.overall; m["accuracy"] = report.accuracy; m["labels"] = report.labels }
             self.server.broadcast(m)
+        }
+    }
+
+    // MARK: Learn from use
+
+    /// Every sample: Cmd+Z watch while taps are pending (polled every 10 ms: key state needs no extra permission),
+    /// then once a second promote confirmed taps and retrain when idle.
+    private func learnFromUseTick(now: Double) {
+        if learner.hasPending, now - lastUndoCheck >= 0.01 {
+            lastUndoCheck = now
+            // kVK_ANSI_Z = 6 with Command held: the frontmost app's Undo.
+            if CGEventSource.keyState(.combinedSessionState, key: 6),
+               CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) {
+                learner.cancelPending(reason: "Cmd+Z")
+            }
+        }
+        guard now - lastLearnTick >= 1 else { return }
+        lastLearnTick = now
+        guard config.settings.learnFromUse else { learner.cancelPending(reason: "learnFromUse is off"); return }
+        guard learner.hasPending || learner.newSinceTrain >= UseLearner.retrainAfter else { return }
+        let counts = store.loadSamples().reduce(into: [String: Int]()) { $0[$1.label, default: 0] += 1 }
+        learner.promoteDue(now: Clock.now(), calibrationCounts: counts, disabled: disabledZones)
+        adaptIfDue(ignoreIdle: false)
+    }
+
+    /// Retrains from calibration + confirmed samples once 10 new confirmations exist and no tap came for 60 s.
+    /// Ship guard: the new model must classify the calibration samples alone at least as well as the current one
+    /// (within 0.02), otherwise the confirmed set is discarded.
+    private func adaptIfDue(ignoreIdle: Bool) {
+        guard config.settings.learnFromUse, !adapting, learner.newSinceTrain >= UseLearner.retrainAfter,
+              calibration == nil, !sessions.tapCalibrating, let current = engine.model else { return }
+        guard ignoreIdle || Clock.now() - lastTapAt >= UseLearner.idleSeconds else { return }
+        let calib = store.loadSamples()
+        guard !calib.isEmpty else { return }
+        adapting = true
+        let disabled = disabledZones
+        let confirmed = learner.asSamples
+        let minConf = config.settings.minConfidence
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            let trainer = Trainer()
+            for s in calib + confirmed where !disabled.contains(s.label) { trainer.add(s.features, label: s.label) }
+            let (model, report) = trainer.train()
+            let evalSet = calib.filter { !disabled.contains($0.label) }
+            let accNew = Self.accuracy(model, on: evalSet, minConfidence: minConf)
+            let accCur = Self.accuracy(current, on: evalSet, minConfidence: minConf)
+            let keep = accNew >= accCur - 0.02
+            guard let self else { return }
+            if keep {
+                do { try self.store.saveModel(model, report: report) } catch { Log.error("could not save model: \(error)") }
+            }
+            self.core.async {
+                self.adapting = false
+                var msg: [String: Any] = ["type": "adaptation", "kept": keep, "confirmed": confirmed.count,
+                                          "accuracyBefore": Self.r4(accCur), "accuracyAfter": Self.r4(accNew)]
+                if keep {
+                    self.engine.model = model
+                    self.applyZoneCenters()
+                    self.learner.markTrained()
+                    Log.info("learn-from-use: model updated with \(confirmed.count) confirmed taps (calibration accuracy \(Self.r4(accCur)) -> \(Self.r4(accNew)))")
+                } else {
+                    self.learner.discardAll(reason: "ship guard: calibration accuracy would drop \(Self.r4(accCur)) -> \(Self.r4(accNew))")
+                    msg["reason"] = "the updated model did worse on the calibration taps; confirmed taps discarded"
+                }
+                self.server.broadcast(msg)
+                if keep { self.server.broadcast(self.status()) }
+            }
+        }
+    }
+
+    /// Share of samples the model labels correctly, counting low-confidence answers as "none" (as the engine does).
+    private static func accuracy(_ model: ZoneModel, on samples: [ConfigStore.LabeledSample], minConfidence: Double) -> Double {
+        guard !samples.isEmpty else { return 0 }
+        let right = samples.filter { s in
+            let r = model.classify(s.features)
+            let predicted = r.confidence >= minConfidence ? r.zone : ZoneModel.noneLabel
+            return predicted == s.label
+        }.count
+        return Double(right) / Double(samples.count)
+    }
+
+    // MARK: Raw calibration windows
+
+    /// Keeps 0.1 s before to 0.25 s after a captured calibration tap (cut once that much has been recorded).
+    private func saveRawWindow(t: Double, label: String) {
+        core.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self, self.calRaw != nil else { return }
+            let w = self.diag.window(from: t - 0.1, to: t + 0.25)
+            guard let first = w.first, let last = w.last else { return }
+            let lastT = self.calRaw!.samples.last?.t ?? -1
+            self.calRaw!.samples += w.filter { $0.t > lastT }          // overlapping windows: no duplicates
+            self.calRaw!.segments.append(GkrecSegment(phase: label == "none" ? "negatives" : "capture",
+                                                      zone: label == "none" ? nil : label, start: first.t, end: last.t,
+                                                      onsets: [t], discarded: false, endedBy: nil))
+        }
+    }
+
+    /// Writes the session's raw windows to model/raw/<session>.gkrec (total capped at 20 MB, oldest dropped).
+    private func flushRawCalibration() {
+        guard let raw = calRaw else { return }
+        calRaw = nil
+        guard !raw.samples.isEmpty else { return }
+        let dir = store.modelDirectory.appendingPathComponent("raw", isDirectory: true)
+        let url = dir.appendingPathComponent("\(raw.session).gkrec")
+        do {
+            let n = try DiagnosticsRecorder.write(raw.samples, to: url, deviceModel: device.model, zones: config.zones.map(\.id),
+                                                  segments: raw.segments, notes: ["calibration raw tap windows (0.1 s before to 0.25 s after)"])
+            Log.info("saved \(raw.segments.count) raw calibration tap windows (\(n) samples) to \(url.lastPathComponent)")
+        } catch {
+            Log.error("could not save raw calibration windows: \(error)")
+        }
+        Self.capDirectory(dir, maxBytes: 20 * 1024 * 1024)
+    }
+
+    private static func capDirectory(_ dir: URL, maxBytes: Int) {
+        let fm = FileManager.default
+        let keys: [URLResourceKey] = [.fileSizeKey, .contentModificationDateKey]
+        guard var files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: keys) else { return }
+        files.sort {
+            ((try? $0.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
+                < ((try? $1.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast)
+        }
+        var total = files.reduce(0) { $0 + ((try? $1.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0) }
+        for f in files where total > maxBytes {
+            total -= (try? f.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
+            try? fm.removeItem(at: f)
         }
     }
 
