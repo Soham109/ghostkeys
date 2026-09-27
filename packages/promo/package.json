@@ -6,11 +6,15 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "audio": "node scripts/make-audio.ts",
-    "render": "remotion render src/index.ts GhostkeysPromo out/ghostkeys-promo.mp4 --gl=angle",
+    "render": "remotion render src/index.ts GhostkeysPromo out/ghostkeys-promo-v2-vo.mp4 --gl=angle",
     "render:teaser": "remotion render src/index.ts GhostkeysTeaser out/ghostkeys-teaser-vertical.mp4 --gl=angle",
-    "render:all": "pnpm audio && pnpm render && pnpm render:teaser",
+    "render:all": "pnpm audio && pnpm voice && pnpm render && pnpm render:novo && pnpm render:teaser",
     "stills": "node scripts/stills.mjs",
-    "typecheck": "tsc -p ."
+    "typecheck": "tsc -p .",
+    "voice": "node scripts/make-voice.ts",
+    "voice:list": "node scripts/vo-list.ts",
+    "voice:samples": "node scripts/vo-samples.ts",
+    "render:novo": "remotion render src/index.ts GhostkeysPromoNoVO out/ghostkeys-promo-v2.mp4 --gl=angle"
   },
   "dependencies": {
     "@react-three/fiber": "8",

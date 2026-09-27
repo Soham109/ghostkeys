@@ -70,11 +70,6 @@ export const ColdOpenOverlay: React.FC<{ cam: (f: number) => Cam; k?: number; ve
           ghostkeys
         </span>
       </div>
-      <div style={{ position: "absolute", left: vertical ? 48 : 64, top: vertical ? 64 : 52, opacity: dotIn * (1 - prog(f, F(200), 12)) }}>
-        <Mono size={18} color={f >= tapAt && f < F(120) ? C.ink : C.ink3}>
-          {f < tapAt ? "Listening" : f < F(120) ? "Touch felt" : "Ghostkeys"}
-        </Mono>
-      </div>
     </AbsoluteFill>
   );
 };

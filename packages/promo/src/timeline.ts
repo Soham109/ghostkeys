@@ -6,7 +6,7 @@ export const BEAT = 15;
 export const BAR = 60;
 
 export type V3 = [number, number, number];
-export type ZoneId = "palmL" | "palmR" | "grilleL" | "grilleR" | "top" | "edgeL" | "edgeR" | "lid" | "sensor";
+export type ZoneId = "palmL" | "palmR" | "grilleL" | "grilleR" | "top" | "edgeL" | "edgeR" | "lid" | "sensor" | "air" | "sonar";
 
 // Laptop coordinates: deck top at y=0, hinge at z=-10.6, front edge at z=+10.6, width 30.4.
 export const LID_ANGLE = 1.86; // radians open (about 107 degrees)
@@ -24,8 +24,10 @@ export const ZONES: Record<ZoneId, { p: V3; name: string; deck?: [number, number
   top: { p: [0, 0, -9.8], name: "Top strip", deck: [0, -9.8] },
   edgeL: { p: [-15.2, -0.5, 2.5], name: "Left edge", deck: [-14.6, 2.5] },
   edgeR: { p: [15.2, -0.5, 2.5], name: "Right edge", deck: [14.6, 2.5] },
-  lid: { p: lidPoint(0, 0.5, 19.0), name: "Lid" },
+  lid: { p: lidPoint(0.8, -0.03, 20.7), name: "Lid" },
   sensor: { p: lidPoint(1.6, -0.02, 20.35), name: "Light sensor" },
+  air: { p: [1.5, 7.5, -3.5], name: "Air" },
+  sonar: { p: [0, 5, -4], name: "Sonar" },
 };
 export const lidPointWorld = lidPoint;
 
@@ -40,75 +42,66 @@ export const ZONE_RECTS: Array<{ id: ZoneId; r: [number, number, number, number]
   { id: "edgeR", r: [14.55, 6.0, 0.35, 3.9] },
 ];
 
-export type Tap = { f: number; zone: ZoneId; action: string; gesture?: string; quiet?: boolean };
+/** x, z: optional deck position overriding the zone centre; s: ripple strength. */
+export type Tap = { f: number; zone: ZoneId; action: string; gesture?: string; quiet?: boolean; x?: number; z?: number; s?: number };
 
-// ---- The 70 s film -------------------------------------------------------
+// ---- The 70 s film (v2) --------------------------------------------------
+// Every section starts on a beat (multiples of 15 frames) and is a different visual idea.
 export const FILM_LEN = 2100;
 export const S = {
-  open: 0, // cold open: dot, tap, particles -> logo -> laptop
-  headline: 240,
-  macro: 360, // tap montage
-  heroType: 780,
-  xray: 900,
-  zones: 1200,
-  features: 1560,
-  hero: 1860,
-  end: 1950,
+  open: 0, // dot, tap, particles into the logo
+  matter: 150, // logo shatters into a point-cloud laptop, then metal; "Hidden keys."
+  macro: 270, // macro lens: a fingertip taps the palm rest
+  split: 390, // split screen: a knuckle knocks the edge | the live app answers
+  grille: 510, // double tap on the grille, then a finger slides along it
+  xray: 630, // chassis turns to glass, the motion chip
+  calib: 780, // top-down: calibration heat map, numbered zones
+  cover: 870, // a palm covers the light sensor
+  lid: 930, // a finger nudges the lid
+  air: 990, // air: pinch and dial, then a palm swipe
+  sonar: 1140, // a palm hovers over the speaker as a volume slider; the field bends under it
+  app: 1260, // push into the screen (live view) ...
+  appCut: 1350, // ... match cut to the flat UI, macro pan over the gesture guide
+  type: 1440, // the bold typographic moment
+  typeCut: 1545,
+  hero: 1620, // final hero shot, one last tap
+  end: 1800, // end card
 };
 
+const slide = (f0: number, n: number): Tap[] =>
+  Array.from({ length: n }, (_, i) => ({ f: f0 + i * 5, zone: "grilleR" as ZoneId, action: "Brightness", gesture: "Slide", quiet: i > 0, x: 13.75, z: -8.2 + (i / (n - 1)) * 7.4, s: 0.35 }));
+
 export const FILM_TAPS: Tap[] = [
-  { f: 375, zone: "palmL", action: "Volume +6", gesture: "Tap" },
-  { f: 435, zone: "grilleR", action: "Next track", gesture: "Double tap" },
-  { f: 442, zone: "grilleR", action: "Next track", gesture: "Double tap", quiet: true },
-  { f: 495, zone: "top", action: "Paste values", gesture: "Tap" },
-  { f: 555, zone: "edgeL", action: "Snap left", gesture: "Knock" },
-  { f: 615, zone: "sensor", action: "Do not disturb", gesture: "Cover" },
-  // speed-ramped orbit: one tap per beat
-  { f: 675, zone: "palmR", action: "Play / pause", gesture: "Tap" },
-  { f: 690, zone: "grilleL", action: "Mute", gesture: "Tap" },
-  { f: 705, zone: "top", action: "Mission control", gesture: "Tap" },
-  { f: 720, zone: "edgeR", action: "Snap right", gesture: "Knock" },
-  { f: 735, zone: "palmL", action: "Undo", gesture: "Tap" },
-  { f: 750, zone: "grilleR", action: "Brightness +", gesture: "Tap" },
-  { f: 765, zone: "palmR", action: "Screenshot", gesture: "Triple" },
-  { f: 840, zone: "palmR", action: "Next tab", gesture: "Tap" },
-  // x-ray: taps seen from inside
-  { f: 1005, zone: "palmL", action: "Volume +6", quiet: false },
-  { f: 1065, zone: "grilleR", action: "Next track" },
-  { f: 1095, zone: "top", action: "Paste values" },
-  { f: 1125, zone: "palmR", action: "Play / pause" },
-  // zones light up (top-down)
-  { f: 1215, zone: "palmL", action: "Zone 01" , quiet: true },
-  { f: 1230, zone: "palmR", action: "Zone 02", quiet: true },
-  { f: 1245, zone: "grilleL", action: "Zone 03", quiet: true },
-  { f: 1260, zone: "grilleR", action: "Zone 04", quiet: true },
-  { f: 1275, zone: "top", action: "Zone 05", quiet: true },
-  { f: 1290, zone: "edgeL", action: "Zone 06", quiet: true },
-  { f: 1305, zone: "edgeR", action: "Zone 07", quiet: true },
-  // hero
-  { f: 1905, zone: "palmR", action: "Ready", gesture: "Tap" },
+  { f: 315, zone: "palmL", action: "Volume +6", gesture: "Tap" },
+  { f: 420, zone: "edgeR", action: "Snap right", gesture: "Knuckle" },
+  { f: 465, zone: "edgeR", action: "Snap right", gesture: "Knuckle", quiet: true },
+  { f: 528, zone: "grilleR", action: "Next track", gesture: "Double tap" },
+  { f: 536, zone: "grilleR", action: "Next track", gesture: "Double tap", quiet: true },
+  ...slide(577, 8),
+  // seen from inside
+  { f: 680, zone: "palmL", action: "Volume +6" },
+  { f: 720, zone: "grilleR", action: "Next track" },
+  { f: 750, zone: "top", action: "Paste values" },
+  { f: 896, zone: "sensor", action: "Do not disturb", gesture: "Cover" },
+  { f: 955, zone: "lid", action: "Show desktop", gesture: "Nudge" },
+  { f: 1032, zone: "air", action: "Volume", gesture: "Pinch and dial" },
+  { f: 1098, zone: "air", action: "Next desktop", gesture: "Swipe" },
+  { f: 1170, zone: "sonar", action: "Volume", gesture: "Hover" },
+  { f: 1695, zone: "palmR", action: "Ready", gesture: "Tap" },
 ];
 
-// Per-app layers (neutral glyphs, no product names or logos).
-export const LAYERS: Array<{ name: string; glyph: "grid" | "wave" | "brackets" | "globe"; map: Partial<Record<ZoneId, string>> }> = [
-  { name: "Spreadsheet", glyph: "grid", map: { palmL: "Paste values", palmR: "Sum column", top: "Freeze row", grilleL: "Prev sheet", grilleR: "Next sheet", edgeL: "Undo", edgeR: "Redo" } },
-  { name: "Music", glyph: "wave", map: { palmL: "Volume −", palmR: "Volume +", top: "Play / pause", grilleL: "Prev track", grilleR: "Next track", edgeL: "Like", edgeR: "Shuffle" } },
-  { name: "Code editor", glyph: "brackets", map: { palmL: "Run tests", palmR: "Go to def", top: "Command bar", grilleL: "Prev error", grilleR: "Next error", edgeL: "Fold", edgeR: "Format" } },
-  { name: "Browser", glyph: "globe", map: { palmL: "Back", palmR: "Forward", top: "New tab", grilleL: "Prev tab", grilleR: "Next tab", edgeL: "Snap left", edgeR: "Snap right" } },
-];
-export const LAYER_START = 1410;
-export const LAYER_EACH = 30; // one layer per two beats... cut on every other beat
+export const CALIB_START = 790;
 
-// Calibration taps for the heat map (deterministic pseudo-random).
-export const calibrationHits = () => {
+// Calibration taps for the heat map (deterministic pseudo-random), starting at `start`.
+export const calibrationHits = (start = CALIB_START) => {
   const out: Array<{ f: number; x: number; z: number; zone: ZoneId }> = [];
   let s = 12345;
   const r = () => ((s = (s * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff);
   ZONE_RECTS.forEach((z, zi) => {
-    for (let k = 0; k < 11; k++) {
+    for (let k = 0; k < 9; k++) {
       const [cx, cz, hw, hd] = z.r;
       out.push({
-        f: 1320 + zi * 11 + k * 7 + Math.floor(r() * 5),
+        f: start + zi * 6 + k * 5 + Math.floor(r() * 4),
         x: cx + (r() - 0.5) * hw * 1.1,
         z: cz + (r() - 0.5) * hd * 1.1,
         zone: z.id,

@@ -26,7 +26,7 @@ export const HeadlineAt: React.FC<{
         {kicker && (
           <div
             style={{
-              fontFamily: "'Geist Mono'",
+              fontFamily: "'Fragment Mono'",
               fontSize: 18,
               letterSpacing: "0.1em",
               textTransform: "uppercase",

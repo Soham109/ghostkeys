@@ -37,7 +37,7 @@ export const EndCard: React.FC<{ start: number; vertical?: boolean; speed?: numb
       {vertical ? (
         <div style={{ position: "absolute", left: 0, right: 0, top: markY + 100 * k + 70, display: "flex", flexDirection: "column", alignItems: "center" }}>
           <div style={{ overflow: "hidden" }}>
-            <div style={{ fontFamily: FONT.sans, fontWeight: 500, fontSize: 132, letterSpacing: "-0.03em", color: C.ink, transform: `translateY(${(1 - word) * 110}%)` }}>Ghostkeys</div>
+            <div style={{ fontFamily: FONT.sans, fontWeight: 500, fontSize: 132, letterSpacing: "-0.03em", color: C.ink, transform: `translateY(${(1 - word) * 110}%)` }}>ghostkeys</div>
           </div>
           <div style={{ marginTop: 30 }}>
             <SplitHeadline lines={[words("Your MacBook has"), words("*hidden* keys.")]} start={start + (speed > 1 ? 14 : 44)} size={66} align="center" color={C.ink2} />
@@ -49,15 +49,15 @@ export const EndCard: React.FC<{ start: number; vertical?: boolean; speed?: numb
       ) : (
         <>
           <div style={{ position: "absolute", left: markX + 100 * k + 64, top: markY + 64 * k - 92, overflow: "hidden" }}>
-            <div style={{ fontFamily: FONT.sans, fontWeight: 500, fontSize: 168, letterSpacing: "-0.035em", color: C.ink, lineHeight: 1.05, transform: `translateY(${(1 - word) * 110}%)` }}>
-              Ghostkeys
+            <div style={{ fontFamily: FONT.sans, fontWeight: 500, fontSize: 168, letterSpacing: "-0.03em", color: C.ink, lineHeight: 1.05, transform: `translateY(${(1 - word) * 110}%)` }}>
+              ghostkeys
             </div>
           </div>
           <div style={{ position: "absolute", left: 172, top: 590 }}>
-            <SplitHeadline lines={[words("Your MacBook has *hidden* keys.")]} start={start + 46} size={72} color={C.ink2} />
+            <SplitHeadline lines={[words("Your MacBook has *hidden* keys.")]} start={start + 46} size={84} color={C.ink} />
           </div>
           <div style={{ position: "absolute", left: 176, right: 128, bottom: 120, height: 1, background: C.hairline, transform: `scaleX(${url})`, transformOrigin: "left" }} />
-          <div style={{ position: "absolute", left: 176, bottom: 64, fontFamily: FONT.mono, fontSize: 26, letterSpacing: "0.06em", color: C.ink, opacity: url }}>
+          <div style={{ position: "absolute", left: 176, bottom: 64, fontFamily: FONT.mono, fontSize: 24, letterSpacing: "0.08em", color: C.ink, opacity: url }}>
             github.com/Soham109/ghostkeys
           </div>
           <div style={{ position: "absolute", right: 128, bottom: 66, fontFamily: FONT.mono, fontSize: 18, letterSpacing: "0.1em", textTransform: "uppercase", color: C.ink3, opacity: url }}>

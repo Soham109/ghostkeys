@@ -1,10 +1,12 @@
 import { interpolate, Easing } from "remotion";
 import type { Cam, WorldState } from "./three/World";
+import type { LaptopState } from "./three/Laptop";
 import { orbitShot, shot, orbit } from "./camera";
 import { logoToWorld } from "./three/Particles";
 import { CHIP } from "./three/Internals";
-import { FILM_TAPS, TEASER_TAPS, ZONES, ZONE_RECTS, S, LAYER_START, LAYER_EACH, LAYERS, V3, Tap } from "./timeline";
+import { FILM_TAPS, TEASER_TAPS, ZONES, ZONE_RECTS, S, V3, Tap, CALIB_START, lidPointWorld } from "./timeline";
 import { prog } from "./lib";
+import { filmHand, lidDeltaAt } from "./three/hand/scenes";
 import { easeOut, easeInOut } from "./theme";
 
 const FPS = 30;
@@ -18,7 +20,7 @@ const HERO_T: V3 = [0, 4, -3];
 const pulseFrom = (taps: Tap[], f: number, decay = 7) =>
   taps.reduce((m, t) => (f >= t.f ? Math.max(m, Math.exp(-(f - t.f) / decay)) : m), 0);
 
-const baseLaptop = () => ({
+const baseLaptop = (): LaptopState => ({
   opacity: 1,
   xray: 0,
   zoneGlow: new Array(7).fill(0),
@@ -58,12 +60,19 @@ const coldOpen = (f: number, k: number, vertical: boolean): Pick<WorldState, "ca
   };
   const lapOp = prog(f, F(212), F(30), easeInOut);
   const laptop = lapOp > 0 ? { ...baseLaptop(), opacity: lapOp, screenOn: lapOp } : null;
-  return { cam, particles: f >= F(34) ? particles : null, laptop, bloom: 0.55 + flash * 1.1 };
+  return { cam, particles: f >= F(34) ? particles : null, laptop, bloom: 0.55 + flash * 0.6 };
 };
+
+const K_OPEN = S.matter / 165; // v1 cold open compressed so the shatter lands on the beat at S.matter
+const HERO_END = orbit(HERO_T, 60, 32, 22);
+const SCREEN_C = lidPointWorld(0, -0.02, 10.8);
+const SCREEN_N: V3 = [0, 0.285, 0.958];
+void 0;
+const alongN = (d: number, dy = 0): V3 => [SCREEN_C[0], SCREEN_C[1] + SCREEN_N[1] * d + dy, SCREEN_C[2] + SCREEN_N[2] * d];
 
 export const filmState = (f: number): WorldState => {
   const base: WorldState = {
-    cam: { pos: orbit(HERO_T, 50, 30, 20), target: HERO_T, fov: 30, bokeh: 0 },
+    cam: { pos: HERO_END, target: HERO_T, fov: 30, bokeh: 0 },
     particles: null,
     laptop: baseLaptop(),
     bloom: 0.55,
@@ -71,92 +80,106 @@ export const filmState = (f: number): WorldState => {
     t: f / FPS,
     chipPulse: 0,
     rings: true,
+    air: null,
+    sonar: null,
   };
 
-  if (f < S.headline) {
-    return { ...base, ...coldOpen(f, 1, false), rings: false };
-  }
-
+  // 01 + 02: dot, tap, particles into the logo, shatter into the laptop
   if (f < S.macro) {
-    // B: headline over a soft-focus hero; rack focus onto the laptop before the cut
-    const T: V3 = [-8.5, 4.5, -3];
-    const cam = orbitShot(f, S.headline, S.macro, { target: T, r: 62, az: 32, el: 21, fov: 30, bokeh: 5 }, { target: T, r: 56, az: 22, el: 18, fov: 30, bokeh: 5 }, Easing.linear);
-    const rack = clampI(f, [325, 350], [0, 1], easeInOut);
-    const near: V3 = orbit(T, 30, 22, 18);
-    cam.focus = [near[0] + (0 - near[0]) * rack, near[1] + (4 - near[1]) * rack, near[2] + (-3 - near[2]) * rack];
-    return { ...base, cam, lightScale: 0.8 };
-  }
-
-  if (f < S.heroType) {
-    let cam: Cam;
-    const palm = ZONES.palmL.p, gr = ZONES.grilleR.p, top = ZONES.top.p, eL = ZONES.edgeL.p, sen = ZONES.sensor.p;
-    if (f < 420) {
-      cam = shot(f, 360, 420, { pos: [-0.5, 2.7, 15.5], target: [-9.2, 0, 6.4], fov: 28, focus: palm, bokeh: 7 }, { pos: [-6.2, 2.1, 14.8], target: [-10.4, 0, 5.8], fov: 26, focus: palm, bokeh: 7 }, Easing.bezier(0.3, 0, 0.2, 1));
-    } else if (f < 480) {
-      cam = shot(f, 420, 480, { pos: [19.5, 6.6, 1.8], target: [13.4, 0, -3.8], fov: 30, focus: gr, bokeh: 6 }, { pos: [18, 5.2, -2.8], target: [13.75, 0, -4.8], fov: 28, focus: gr, bokeh: 6 }, Easing.linear);
-    } else if (f < 540) {
-      cam = shot(f, 480, 540, { pos: [-7, 3.6, 0.8], target: [-0.5, 0.6, -9.8], fov: 32, focus: top, bokeh: 6 }, { pos: [5.5, 3.1, 0.2], target: [1.5, 0.6, -9.8], fov: 30, focus: top, bokeh: 6 }, Easing.linear);
-    } else if (f < 600) {
-      cam = shot(f, 540, 600, { pos: [-26, 4.2, 12], target: [-13.5, -0.2, 3.4], fov: 28, focus: eL, bokeh: 6 }, { pos: [-24.5, 3.4, 7.5], target: [-13.5, -0.2, 2.2], fov: 26, focus: eL, bokeh: 6 }, Easing.linear);
-    } else if (f < 660) {
-      const n: V3 = [0, 0.285, 0.958];
-      const d = 17;
-      cam = shot(
-        f, 600, 660,
-        { pos: [sen[0] + 5, sen[1] + n[1] * d - 1.5, sen[2] + n[2] * d], target: [sen[0] - 1.5, sen[1] - 2.2, sen[2]], fov: 30, focus: sen, bokeh: 6 },
-        { pos: [sen[0] + 1, sen[1] + n[1] * d - 1, sen[2] + n[2] * (d - 2)], target: [sen[0] - 0.5, sen[1] - 1.8, sen[2]], fov: 28, focus: sen, bokeh: 6 },
-        Easing.linear
-      );
-    } else {
-      // speed-ramped orbit, one tap per beat
-      cam = orbitShot(f, 660, 780, { target: [0, 1.5, -1.5], r: 50, az: -62, el: 44, fov: 30, bokeh: 1.5 }, { target: [0, 1.5, -1.5], r: 46, az: 74, el: 36, fov: 30, bokeh: 1.5 }, whip);
+    const co = coldOpen(f, K_OPEN, false);
+    if (f >= 218) {
+      co.cam = orbitShot(f, 218, S.macro, { target: HERO_T, r: 60, az: 32, el: 22, fov: 30, bokeh: 0 }, { target: [-7, 5, -3], r: 58, az: 22, el: 17, fov: 30, bokeh: 2.5, focus: HERO_T }, easeInOut);
     }
-    return { ...base, cam };
+    return { ...base, ...co, rings: false };
   }
 
+  const hand = { f, solve: filmHand };
+
+  // 03: macro lens across the palm rest; a fingertip taps, focus racks onto it
+  if (f < S.split) {
+    const palm = ZONES.palmL.p;
+    const cam = shot(f, S.macro, S.split, { pos: [-28, 12, 22], target: [-9.4, 1.6, 6.2], fov: 30, focus: [-14, 0, 10], bokeh: 4 }, { pos: [-25, 10, 19.5], target: [-9.6, 1.6, 6], fov: 28, focus: palm, bokeh: 4 }, Easing.bezier(0.3, 0, 0.15, 1));
+    const rack = clampI(f, [286, 306], [0, 1], easeInOut);
+    cam.focus = [-14 + (palm[0] + 14) * rack, 1, 10 + (palm[2] - 10) * rack];
+    return { ...base, cam, hand, lightScale: 0.65 };
+  }
+
+  // 04: split screen, left half: knuckles knock the right edge
+  if (f < S.grille) {
+    const eR = ZONES.edgeR.p;
+    const cam = shot(f, S.split, S.grille, { pos: [24, 8, 22], target: [15, 0.2, 2.6], fov: 34, focus: eR, bokeh: 4 }, { pos: [22.5, 6.5, 19], target: [15, 0.2, 2.6], fov: 32, focus: eR, bokeh: 4 }, Easing.linear);
+    return { ...base, cam, lightScale: 0.6, hand };
+  }
+
+  // 05: the grille: double tap, then a slow slide along it (speed ramp into the slide)
   if (f < S.xray) {
-    // hero with type; slow push; this framing is the match-cut into the x-ray
-    const T: V3 = [-9, 5, -3];
-    const cam = orbitShot(f, S.heroType, S.xray + 180, { target: T, r: 54, az: -14, el: 16, fov: 30, bokeh: 2, focus: HERO_T }, { target: [CHIP[0] - 7, CHIP[1], CHIP[2]], r: 21, az: 22, el: 44, fov: 30, bokeh: 3, focus: CHIP }, easeInOut);
-    return { ...base, cam };
+    const g = ZONES.grilleR.p;
+    const cam = shot(f, S.grille, S.xray, { pos: [22, 10, 5], target: [13.2, 0.5, -4], fov: 34, focus: g, bokeh: 5 }, { pos: [20.5, 8, -3], target: [13.4, 0.5, -5.5], fov: 32, focus: [13.75, 0, -4.5], bokeh: 5 }, whip);
+    return { ...base, cam, hand };
   }
 
-  if (f < S.zones) {
-    const T: V3 = [-9, 5, -3];
-    const cam = orbitShot(f, S.heroType, S.xray + 180, { target: T, r: 54, az: -14, el: 16, fov: 30, bokeh: 2, focus: HERO_T }, { target: [CHIP[0] - 7, CHIP[1], CHIP[2]], r: 21, az: 22, el: 44, fov: 30, bokeh: 3, focus: CHIP }, easeInOut);
-    if (f >= S.xray + 180) {
-      const c2 = orbitShot(f, S.xray + 180, S.zones, { target: [CHIP[0] - 7, CHIP[1], CHIP[2]], r: 21, az: 22, el: 44, fov: 30, bokeh: 3, focus: CHIP }, { target: [CHIP[0] - 7, CHIP[1], CHIP[2]], r: 18.5, az: 30, el: 46, fov: 30, bokeh: 3, focus: CHIP }, Easing.linear);
-      Object.assign(cam, c2);
-    }
-    const xr = prog(f, S.xray + 6, 36, easeInOut) * (1 - prog(f, S.zones - 16, 16, easeInOut));
-    const xTaps = FILM_TAPS.filter((t) => t.f >= S.xray && t.f < S.zones);
-    return { ...base, cam, laptop: { ...baseLaptop(), xray: xr }, chipPulse: pulseFrom(xTaps, f, 8), lightScale: 1 - xr * 0.45, bloom: 0.6 + xr * 0.4, rings: true };
+  // 06: x-ray, starting from the grille shot's end framing
+  if (f < S.calib) {
+    const from = { target: [13.4, 0.5, -5.5] as V3, r: 10.6, az: 70.6, el: 45, fov: 32, bokeh: 5 };
+    const chipT: V3 = [CHIP[0] - 6.5, CHIP[1], CHIP[2]];
+    let cam = orbitShot(f, S.xray, S.xray + 120, from, { target: chipT, r: 21, az: 22, el: 44, fov: 30, bokeh: 3, focus: CHIP }, easeInOut);
+    if (f >= S.xray + 120) cam = orbitShot(f, S.xray + 120, S.calib, { target: chipT, r: 21, az: 22, el: 44, fov: 30, bokeh: 3, focus: CHIP }, { target: chipT, r: 19.5, az: 27, el: 46, fov: 30, bokeh: 3, focus: CHIP }, Easing.linear);
+    const xr = prog(f, S.xray + 6, 30, easeInOut) * (1 - prog(f, S.calib - 14, 14, easeInOut));
+    const xTaps = FILM_TAPS.filter((t) => t.f >= S.xray && t.f < S.calib);
+    return { ...base, cam, laptop: { ...baseLaptop(), xray: xr }, chipPulse: pulseFrom(xTaps, f, 8), lightScale: 1 - xr * 0.45, bloom: 0.6 + xr * 0.4 };
   }
 
-  if (f < S.features) {
-    // E: top-down instrument view. zones light, calibration heat, app layers
-    const T: V3 = [-8.5, 0, 0.8];
-    const cam = shot(f, S.zones, S.features, { pos: [T[0], 60, T[2] + 9], target: T, fov: 30, bokeh: 0 }, { pos: [T[0], 56, T[2] + 7], target: T, fov: 30, bokeh: 0 }, Easing.linear);
+  // 07: top-down, calibration heat map over monochrome numbered zones
+  if (f < S.cover) {
+    const T: V3 = [-3.5, 0, 0.8];
+    const cam = shot(f, S.calib, S.cover, { pos: [T[0], 60, T[2] + 8], target: T, fov: 30, bokeh: 0 }, { pos: [T[0], 54, T[2] + 6], target: T, fov: 30, bokeh: 0 }, Easing.linear);
     const lap = baseLaptop();
-    ZONE_RECTS.forEach((z, i) => {
-      const tf = 1215 + i * 15;
-      lap.zoneGlow[i] = prog(f, tf, 12) * (f < LAYER_START ? (f > 1318 ? 0.45 : 1) : 0.8);
-      lap.zoneHot[i] = f >= tf ? Math.exp(-(f - tf) / 9) : 0;
-    });
-    lap.heat = prog(f, 1318, 12) * (1 - prog(f, LAYER_START - 6, 14));
-    if (f >= LAYER_START) {
-      const k = Math.floor((f - LAYER_START) / LAYER_EACH);
-      const lf = f - (LAYER_START + k * LAYER_EACH);
-      const hotZones = LAYERS[k % LAYERS.length];
-      void hotZones;
-      ZONE_RECTS.forEach((_, i) => (lap.zoneHot[i] = Math.max(lap.zoneHot[i], Math.exp(-lf / 6) * 0.55)));
-    }
+    ZONE_RECTS.forEach((_, i) => (lap.zoneGlow[i] = prog(f, S.calib + 4 + i * 2, 12) * 0.55));
+    lap.heat = prog(f, CALIB_START - 4, 10);
+    lap.heatFrame = f;
     return { ...base, cam, laptop: lap, lightScale: 0.5, rings: false };
   }
 
-  // G: hero shot before the end card (features section has no 3D)
+  // 07b: a palm covers the light sensor (seen from in front of the screen)
+  if (f < S.lid) {
+    const sp = ZONES.sensor.p;
+    const cam = shot(f, S.cover, S.lid, { pos: [sp[0] + 14, sp[1] + SCREEN_N[1] * 36 - 9, sp[2] + SCREEN_N[2] * 36], target: [sp[0] + 1.5, sp[1] + 1, sp[2]], fov: 32, focus: sp, bokeh: 2.5 }, { pos: [sp[0] + 11, sp[1] + SCREEN_N[1] * 33 - 8, sp[2] + SCREEN_N[2] * 33], target: [sp[0] + 1, sp[1] + 1, sp[2]], fov: 30, focus: sp, bokeh: 2.5 }, Easing.linear);
+    return { ...base, cam, laptop: { ...baseLaptop(), screenOn: 0.6 }, lightScale: 0.6, hand };
+  }
+
+  // 07c: a finger nudges the lid back (side view, so the lid visibly moves)
+  if (f < S.air) {
+    const cam = shot(f, S.lid, S.air, { pos: [27, 16, 2], target: [1, 12, -13], fov: 32, focus: [0.8, 19, -16], bokeh: 2.5 }, { pos: [25, 15, -1], target: [1, 12.5, -13], fov: 32, focus: [0.8, 19, -16], bokeh: 2.5 }, Easing.linear);
+    return { ...base, cam, laptop: { ...baseLaptop(), lidDelta: lidDeltaAt(f) }, lightScale: 0.7, hand };
+  }
+
+  // 08: air gestures: pinch and dial, then a palm swipe
+  if (f < S.sonar) {
+    const cam = orbitShot(f, S.air, S.sonar, { target: [3, 7, -4.5], r: 30, az: 58, el: 14, fov: 30, bokeh: 3, focus: [1.5, 7.5, -4] }, { target: [0, 7, -4.5], r: 29, az: 40, el: 11, fov: 30, bokeh: 3, focus: [0, 7.5, -4] }, Easing.linear);
+    const dial = clampI(f, [1036, 1054], [0, 1], easeInOut) * (1 - clampI(f, [1060, 1066], [0, 1]));
+    return { ...base, cam, laptop: { ...baseLaptop(), screenOn: 0.25 }, lightScale: 0.22, bloom: 0.8, hand, air: { pinchAge: f - 1032, dial } };
+  }
+
+  // 09: a palm over the right speaker is a volume slider; the field bends under it
+  if (f < S.app) {
+    const cam = orbitShot(f, S.sonar, S.app, { target: [10, 3.5, -4.5], r: 30, az: -24, el: 12, fov: 32, bokeh: 2.5, focus: [12, 3, -4.5] }, { target: [10, 3.5, -4.5], r: 27, az: -10, el: 15, fov: 32, bokeh: 2.5, focus: [12, 3, -4.5] }, Easing.linear);
+    const amount = prog(f, S.sonar, 14) * (1 - prog(f, S.app - 14, 14));
+    return { ...base, cam, laptop: { ...baseLaptop(), screenOn: 0.2 }, lightScale: 0.2, bloom: 0.8, hand, sonar: { amount } };
+  }
+
+  // 10: push into the screen showing the live view (ends framed for the match cut to the flat UI)
+  if (f < S.type) {
+    const d = interpolate(f, [S.app, S.appCut], [72, 29.5], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: Easing.bezier(0.7, 0, 0.3, 1) });
+    const side = interpolate(f, [S.app, S.appCut], [9, 0], { extrapolateLeft: "clamp", extrapolateRight: "clamp", easing: easeInOut });
+    const pos = alongN(d);
+    pos[0] += side;
+    const cam: Cam = { pos, target: SCREEN_C, fov: 30, bokeh: 0 };
+    return { ...base, cam, laptop: { ...baseLaptop(), screenImage: "live" }, lightScale: 0.28, bloom: 0.35, rings: false };
+  }
+
+  // 12: hero
   const cam = orbitShot(f, S.hero, S.end, { target: [0, 5.5, -3], r: 56, az: -34, el: 10, fov: 28, bokeh: 2.5, focus: ZONES.palmR.p }, { target: [0, 5.5, -3], r: 50, az: -22, el: 15, fov: 28, bokeh: 2.5, focus: ZONES.palmR.p }, Easing.linear);
-  return { ...base, cam };
+  return { ...base, cam, lightScale: 0.68, hand: { f, solve: filmHand } };
 };
 
 // ---- vertical teaser ----------------------------------------------------

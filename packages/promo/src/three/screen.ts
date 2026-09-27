@@ -1,4 +1,5 @@
 import { Tap, ZONES } from "../timeline";
+import { appImage, AppImage } from "./images";
 
 export type ScreenCanvas = { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D };
 
@@ -10,7 +11,7 @@ export const makeScreenCanvas = (): ScreenCanvas => {
 };
 
 /** The laptop's own screen: near-black desktop and the Ghostkeys HUD pill on each tap. */
-export const drawScreen = (s: ScreenCanvas, frame: number, fps: number, taps: Tap[], on: number) => {
+export const drawScreen = (s: ScreenCanvas, frame: number, fps: number, taps: Tap[], on: number, image?: AppImage | null) => {
   const { ctx, canvas } = s;
   const W = canvas.width;
   const H = canvas.height;
@@ -24,6 +25,12 @@ export const drawScreen = (s: ScreenCanvas, frame: number, fps: number, taps: Ta
   g.addColorStop(1, "rgba(0,0,0,0)");
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
+  const img = image ? appImage(image) : undefined;
+  if (img && img.complete && img.naturalWidth) {
+    ctx.globalAlpha = on;
+    ctx.drawImage(img, 0, 0, W, H);
+    ctx.globalAlpha = 1;
+  }
   // notch (drawn in the canvas so it lines up with the bezel)
   ctx.fillStyle = "#000";
   ctx.fillRect(W / 2 - 110, 0, 220, 34);
@@ -35,7 +42,7 @@ export const drawScreen = (s: ScreenCanvas, frame: number, fps: number, taps: Ta
   const exit = Math.max(0, Math.min(1, (age - fps * 1.2) / 7));
   const a = enter * (1 - exit) * on;
   const text = `${ZONES[live.zone].name}  ·  ${live.action}`;
-  ctx.font = "500 44px Geist, system-ui";
+  ctx.font = "400 44px Switzer, system-ui";
   const tw = ctx.measureText(text).width;
   const pw = tw + 130;
   const ph = 84;

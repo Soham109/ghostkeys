@@ -6,7 +6,6 @@ import { project } from "../camera";
 import type { Cam } from "../three/World";
 import { CHIP } from "../three/Internals";
 import { PointLabel } from "../components/Labels";
-import { SplitHeadline, words } from "../components/Type";
 
 const AX = ["Accel X", "Accel Y", "Accel Z", "Gyro"];
 
@@ -82,14 +81,14 @@ export const XrayOverlay: React.FC<{ cam: (f: number) => Cam; start: number; end
   return (
     <AbsoluteFill style={{ opacity: vis, pointerEvents: "none" }}>
       <div style={{ position: "absolute", left: 128, top: 96 }}>
-        <div style={{ overflow: "hidden", height: 250 }}>
+        <div style={{ overflow: "hidden", height: 290 }}>
           <div
             style={{
-              fontFamily: FONT.sans,
-              fontWeight: 500,
-              fontSize: 260,
+              fontFamily: FONT.display,
+              fontWeight: 200,
+              fontSize: 300,
               lineHeight: 0.92,
-              letterSpacing: "-0.05em",
+              letterSpacing: "-0.04em",
               color: C.ink,
               fontVariantNumeric: "tabular-nums",
               transform: `translateY(${(1 - big) * 105}%)`,
@@ -98,13 +97,10 @@ export const XrayOverlay: React.FC<{ cam: (f: number) => Cam; start: number; end
             800
           </div>
         </div>
-        <div style={{ marginTop: 14 }}>
-          <SplitHeadline lines={[words("readings per *second.*")]} start={start + 46} size={60} />
+        <div style={{ marginTop: 10, fontFamily: FONT.mono, fontSize: 20, letterSpacing: "0.08em", color: C.ink2, textTransform: "uppercase", opacity: big }}>
+          Readings per second
         </div>
-        <div style={{ marginTop: 26, fontFamily: FONT.mono, fontSize: 17, letterSpacing: "0.1em", color: C.ink3, textTransform: "uppercase", opacity: big }}>
-          Accelerometer + gyroscope. Already inside.
-        </div>
-        <div style={{ marginTop: 56, display: "flex", gap: 22, opacity: big }}>
+        <div style={{ marginTop: 260, display: "flex", gap: 22, opacity: big }}>
           <div style={{ display: "flex", flexDirection: "column", justifyContent: "space-around", height: H, width: 96 }}>
             {AX.map((a) => (
               <div key={a} style={{ fontFamily: FONT.mono, fontSize: 14, letterSpacing: "0.1em", color: C.ink3, textTransform: "uppercase" }}>
@@ -113,16 +109,6 @@ export const XrayOverlay: React.FC<{ cam: (f: number) => Cam; start: number; end
             ))}
           </div>
           <canvas ref={ref} width={W} height={H} style={{ display: "block" }} />
-        </div>
-        <div style={{ marginTop: 34, display: "flex", gap: 56, fontFamily: FONT.mono, fontSize: 17, letterSpacing: "0.1em", textTransform: "uppercase", opacity: big }}>
-          <div>
-            <div style={{ color: C.ink3 }}>Samples</div>
-            <div style={{ color: C.ink, fontSize: 28, marginTop: 8, fontVariantNumeric: "tabular-nums" }}>{String(Math.max(0, count)).padStart(6, "0")}</div>
-          </div>
-          <div>
-            <div style={{ color: C.ink3 }}>Classifier</div>
-            <div style={{ color: lastTap !== undefined ? C.signal : C.ink, fontSize: 28, marginTop: 8 }}>{lastTap !== undefined ? "Tap · accepted" : "Listening"}</div>
-          </div>
         </div>
       </div>
       {chip.visible && <PointLabel x={chip.x} y={chip.y} age={f - start - 40} life={9999} top="Motion sensor" main="Accel + gyro" />}

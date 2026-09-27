@@ -48,7 +48,7 @@ export const PointLabel: React.FC<{
       >
         <div style={{ transform: `translateY(${(1 - txt) * 100}%)`, textShadow: "0 0 18px rgba(10,10,11,0.85), 0 0 4px rgba(10,10,11,0.6)" }}>
           <div style={{ fontFamily: FONT.mono, fontSize: 17 * scale, letterSpacing: "0.1em", color: C.ink2, textTransform: "uppercase" }}>{top}</div>
-          <div style={{ fontFamily: FONT.mono, fontSize: 34 * scale, letterSpacing: "0.06em", color: C.ink, textTransform: "uppercase", marginTop: 6 * scale, fontWeight: 500 }}>
+          <div style={{ fontFamily: FONT.mono, fontSize: 34 * scale, letterSpacing: "0.06em", color: C.ink, textTransform: "uppercase", marginTop: 6 * scale, fontWeight: 400 }}>
             {main}
           </div>
         </div>

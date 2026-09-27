@@ -4,7 +4,7 @@
 // Run: node scripts/make-audio.ts
 import fs from "node:fs";
 import path from "node:path";
-import { FILM_TAPS, FILM_LEN, TEASER_TAPS, TEASER_LEN, TEASER_END, FPS, BEAT, S } from "../src/timeline.ts";
+import { FILM_TAPS, FILM_LEN, TEASER_TAPS, TEASER_LEN, TEASER_END, FPS, BEAT, S, CALIB_START } from "../src/timeline.ts";
 
 const SR = 44100;
 const root = path.dirname(path.dirname(new URL(import.meta.url).pathname));
@@ -147,28 +147,26 @@ const writeWav = (file: string, m: Mix) => {
 
 const panFor = (zone: string) => (zone.endsWith("L") ? -0.45 : zone.endsWith("R") ? 0.45 : 0);
 
-// ---- film
+// ---- film (v2 beat sheet)
 {
   const m = new Mix(FILM_LEN / FPS);
-  m.add(f2s(30), thump(1.15), 0.9); // the first tap
-  m.add(f2s(34), whoosh(1.6, 1.4, true), 0.35);
-  m.add(f2s(122) - 2.9, riser(3.0), 0.35);
-  m.add(f2s(122), impact(), 0.8);
-  m.add(f2s(165) - 0.35, whoosh(0.9, 0.35, false), 0.5);
-  m.add(f2s(240) - 0.6, whoosh(0.8, 0.6), 0.35);
-  // hard cuts on beats get a whoosh tail into them
-  for (const c of [360, 420, 480, 540, 600, 660, 780, 1200, 1560, 1860, 1950]) m.add(f2s(c) - 0.55, whoosh(0.75, 0.55), 0.3);
-  // beat ticks through the montage and the feature rows
-  for (let f = S.macro; f < S.xray; f += BEAT) m.add(f2s(f), tick(1), 0.12, ((f / BEAT) % 2) * 0.3 - 0.15);
-  for (let f = S.features; f < S.features + 180; f += BEAT) m.add(f2s(f), tick(1.3), 0.14);
-  for (let f = S.zones + 15; f <= S.zones + 105; f += BEAT) m.add(f2s(f), tick(0.8), 0.18);
-  // taps
-  for (const t of FILM_TAPS) m.add(f2s(t.f), thump(t.quiet ? 1.25 : 1), t.quiet ? 0.45 : 0.8, panFor(t.zone));
-  // calibration: soft ticks for every accepted sample
-  // (kept sparse so it reads as a counter, not noise)
-  for (let f = 1320; f < 1410; f += 5) m.add(f2s(f), tick(1.6), 0.05);
-  // beds
-  m.add(f2s(S.xray), bed((S.zones - S.xray) / FPS, 55), 0.28);
+  const k = S.matter / 165; // cold open timing compression (see director)
+  m.add(f2s(30 * k), thump(1.15), 0.9); // the first tap
+  m.add(f2s(34 * k), whoosh(1.6, 1.4, true), 0.35);
+  m.add(f2s(122 * k) - 2.9, riser(3.0), 0.35);
+  m.add(f2s(122 * k), impact(), 0.8);
+  m.add(f2s(S.matter) - 0.35, whoosh(0.9, 0.35, false), 0.5);
+  for (const c of [S.macro, S.split, S.grille, S.xray, S.calib, S.cover, S.lid, S.air, S.sonar, S.app, S.appCut + 30, S.type, S.typeCut, S.hero, S.end]) m.add(f2s(c) - 0.55, whoosh(0.75, 0.55), 0.28);
+  for (let f = S.type; f < S.hero; f += BEAT) m.add(f2s(f), tick(1.3), 0.1);
+  for (const t of FILM_TAPS) {
+    if (t.zone === "air" || t.zone === "sonar") m.add(f2s(t.f), tick(0.7), 0.35);
+    else if (t.gesture === "Slide") m.add(f2s(t.f), tick(1.8), t.quiet ? 0.1 : 0.2, 0.45);
+    else m.add(f2s(t.f), thump(t.quiet ? 1.25 : 1), t.quiet ? 0.45 : 0.8, panFor(t.zone));
+  }
+  for (let f = CALIB_START; f < S.cover - 4; f += 5) m.add(f2s(f), tick(1.6), 0.05);
+  m.add(f2s(S.xray), bed((S.calib - S.xray) / FPS, 55), 0.28);
+  m.add(f2s(S.air), bed((S.app - S.air) / FPS, 73.4), 0.18);
+  m.add(f2s(S.cover), bed((S.air - S.cover) / FPS, 61.7), 0.12);
   m.add(f2s(S.end), bed((FILM_LEN - S.end) / FPS, 41.2), 0.22);
   m.add(f2s(S.end + 42), thump(0.9), 0.85);
   writeWav(path.join(root, "public/sfx-film.wav"), m);

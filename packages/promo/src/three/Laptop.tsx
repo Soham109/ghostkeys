@@ -30,6 +30,9 @@ const drawHeat = (cv: HTMLCanvasElement, frame: number) => {
   }
 };
 import { makeScreenCanvas, drawScreen } from "./screen";
+import { preloadAppImages, AppImage } from "./images";
+
+preloadAppImages();
 
 export type LaptopState = {
   opacity: number;
@@ -39,6 +42,9 @@ export type LaptopState = {
   heat: number;
   screenOn: number;
   chipPulse: number;
+  screenImage?: AppImage | null;
+  heatFrame?: number;
+  lidDelta?: number;
 };
 
 const ALU = "#A7A9AC";
@@ -48,7 +54,7 @@ export const activeRipples = (taps: Tap[], frame: number, fps: number) =>
   taps
     .filter((t) => frame >= t.f && frame - t.f < fps * 2.6 && ZONES[t.zone].deck)
     .slice(-MAX_RIPPLES)
-    .map((t) => ({ x: ZONES[t.zone].deck![0], z: ZONES[t.zone].deck![1], age: (frame - t.f) / fps, s: t.zone.startsWith("edge") ? 0.8 : 1 }));
+    .map((t) => ({ x: t.x ?? ZONES[t.zone].deck![0], z: t.z ?? ZONES[t.zone].deck![1], age: (frame - t.f) / fps, s: t.s ?? (t.zone.startsWith("edge") ? 0.8 : 1) }));
 
 export const Laptop: React.FC<{ frame: number; fps: number; taps: Tap[]; st: LaptopState }> = ({ frame, fps, taps, st }) => {
   const geo = useMemo(() => {
@@ -130,7 +136,7 @@ export const Laptop: React.FC<{ frame: number; fps: number; taps: Tap[]; st: Lap
     });
     u.uHeatAmt.value = st.heat;
     if (st.heat > 0.001) {
-      drawHeat(mats.heatCv, frame);
+      drawHeat(mats.heatCv, st.heatFrame ?? frame);
       mats.heatTex.needsUpdate = true;
     }
     u.uXray.value = st.xray;
@@ -174,12 +180,17 @@ export const Laptop: React.FC<{ frame: number; fps: number; taps: Tap[]; st: Lap
     setT(mats.hinge, 0.1);
     mats.edge.opacity = st.xray * 0.55 * st.opacity;
 
+    // --- screen: matte when it shows the app (no softbox reflection over the UI)
+    const matte = !!st.screenImage;
+    mats.screen.clearcoat = matte ? 0 : 0.35;
+    mats.screen.roughness = matte ? 1 : 0.2;
+    mats.screen.envMapIntensity = matte ? 0 : 0.4;
     // --- screen HUD
-    drawScreen(mats.screenCv, frame, fps, taps, st.screenOn);
+    drawScreen(mats.screenCv, frame, fps, taps, st.screenOn, st.screenImage);
     mats.screenTex.needsUpdate = true;
   });
 
-  const lidRot = -LID_ANGLE;
+  const lidRot = -(LID_ANGLE + (st.lidDelta ?? 0));
 
   return (
     <group>

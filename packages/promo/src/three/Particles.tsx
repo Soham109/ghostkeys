@@ -200,7 +200,7 @@ export const Particles: React.FC<{ count: number; st: ParticleState }> = ({ coun
           float sz = (0.9 + aRnd.w * 1.2) * (1.0 + uFlash * 0.6);
           gl_PointSize = sz * uPx / max(0.1, -mv.z);
           float isDot = step(1.5, aKind) * (1.0 - step(0.0001, sh));
-          vCol = mix(uInk, uSignal * 1.6, isDot * q) * (1.0 + uFlash * 1.6);
+          vCol = mix(uInk, uSignal * 1.6, isDot * q) * (1.0 + uFlash * 1.1);
           float ghost = aKind > 0.5 && aKind < 1.5 ? mix(1.0, 0.4, q * (1.0 - sh)) : 1.0;
           vA = uAlpha * ghost * (0.3 + 0.7 * max(uBurst, q2)) * 0.42;
         }`,

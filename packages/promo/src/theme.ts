@@ -13,10 +13,12 @@ export const C = {
   signal: "#FF5B1F",
 };
 
+// Type system (matches web/app/globals.css): Switzer 200 display with a 300 italic accent, Fragment Mono captions.
 export const FONT = {
-  sans: "Geist, system-ui, sans-serif",
-  mono: "'Geist Mono', ui-monospace, monospace",
-  serif: "'Instrument Serif', Georgia, serif",
+  display: "Switzer, system-ui, sans-serif",
+  sans: "Switzer, system-ui, sans-serif",
+  mono: "'Fragment Mono', ui-monospace, monospace",
+  serif: "Switzer, system-ui, sans-serif",
 };
 
 // Brief motion tokens.
@@ -32,9 +34,10 @@ export const loadFonts = () => {
   fontsRequested = true;
   const f = (family: string, file: string, weight: string, style = "normal") =>
     loadFont({ family, url: staticFile(`fonts/${file}`), weight, style });
-  f("Geist", "Geist-Regular.woff2", "400");
-  f("Geist", "Geist-Medium.woff2", "500");
-  f("Geist Mono", "GeistMono-Regular.woff2", "400");
-  f("Geist Mono", "GeistMono-Medium.woff2", "500");
-  f("Instrument Serif", "InstrumentSerif-Italic.woff2", "400", "italic");
+  f("Switzer", "Switzer-200.woff2", "200");
+  f("Switzer", "Switzer-300.woff2", "300");
+  f("Switzer", "Switzer-300i.woff2", "300", "italic");
+  f("Switzer", "Switzer-400.woff2", "400");
+  f("Switzer", "Switzer-500.woff2", "500");
+  f("Fragment Mono", "FragmentMono-400.woff2", "400");
 };

@@ -11,6 +11,8 @@ import { Laptop, LaptopState } from "./Laptop";
 import { Particles, ParticleState } from "./Particles";
 import { Internals } from "./Internals";
 import { Tap, ZONES, LID_ANGLE, V3 } from "../timeline";
+import { HandLayer, AirFx, SonarField } from "./AirSonar";
+import type { Solved } from "./hand/scenes";
 
 export type Cam = { pos: V3; target: V3; fov: number; focus?: V3; bokeh: number; roll?: number };
 export type WorldState = {
@@ -22,6 +24,9 @@ export type WorldState = {
   t: number;
   chipPulse: number;
   rings: boolean;
+  hand?: { f: number; solve: (f: number) => Solved | null } | null;
+  air?: { pinchAge: number; dial: number } | null;
+  sonar?: { amount: number } | null;
 };
 
 let rectInit = false;
@@ -80,14 +85,14 @@ const ringGeo = new THREE.RingGeometry(0.95, 1, 128);
 
 /** Crisp shockwave rings in 3D, oriented to the tapped surface. */
 const Rings3D: React.FC<{ taps: Tap[]; frame: number }> = ({ taps, frame }) => {
-  const live = taps.filter((t) => frame >= t.f && frame - t.f < 26);
+  const live = taps.filter((t) => frame >= t.f && frame - t.f < 26 && t.zone !== "air" && t.zone !== "sonar");
   return (
     <>
       {live.map((t, i) => {
         const age = frame - t.f;
         const z = ZONES[t.zone];
         let rot: [number, number, number] = [-Math.PI / 2, 0, 0];
-        let pos: V3 = [z.p[0], z.p[1] + 0.03, z.p[2]];
+        let pos: V3 = [t.x ?? z.p[0], z.p[1] + 0.03, t.z ?? z.p[2]];
         if (t.zone === "edgeL" || t.zone === "edgeR") {
           rot = [0, (t.zone === "edgeL" ? -1 : 1) * (Math.PI / 2), 0];
           pos = [z.p[0] + (t.zone === "edgeL" ? -0.03 : 0.03), z.p[1], z.p[2]];
@@ -102,7 +107,7 @@ const Rings3D: React.FC<{ taps: Tap[]; frame: number }> = ({ taps, frame }) => {
           const a = age - d;
           if (a < 0) return null;
           const p = 1 - Math.pow(1 - Math.min(1, a / 20), 3);
-          const s = 0.3 + p * (t.zone === "sensor" ? 1.3 : t.zone.startsWith("edge") ? 1.5 : 3.0);
+          const s = (0.3 + p * (t.zone === "sensor" ? 1.3 : t.zone.startsWith("edge") ? 1.5 : 3.0)) * (t.s ?? 1);
           return (
             <mesh key={`${i}-${d}`} geometry={ringGeo} position={pos} rotation={rot} scale={[s, s, s]}>
               <meshBasicMaterial
@@ -145,13 +150,19 @@ const Effects: React.FC<{ st: WorldState }> = ({ st }) => {
   );
 };
 
-export const World: React.FC<{ state: (frame: number) => WorldState; taps: Tap[]; particleCount?: number }> = ({
+export const World: React.FC<{ state: (frame: number) => WorldState; taps: Tap[]; particleCount?: number; width?: number; height?: number; style?: React.CSSProperties }> = ({
   state,
   taps,
   particleCount = 100000,
+  width: wOverride,
+  height: hOverride,
+  style,
 }) => {
   const frame = useCurrentFrame();
-  const { width, height, fps } = useVideoConfig();
+  const cfg = useVideoConfig();
+  const width = wOverride ?? cfg.width;
+  const height = hOverride ?? cfg.height;
+  const fps = cfg.fps;
   const st = state(frame);
   return (
     <ThreeCanvas
@@ -160,7 +171,7 @@ export const World: React.FC<{ state: (frame: number) => WorldState; taps: Tap[]
       dpr={1}
       gl={{ antialias: false, preserveDrawingBuffer: true, powerPreference: "high-performance" }}
       camera={{ fov: st.cam.fov, position: st.cam.pos, near: 0.1, far: 400 }}
-      style={{ position: "absolute", inset: 0 }}
+      style={{ position: "absolute", left: 0, top: 0, width, height, ...style }}
     >
       <CameraRig cam={st.cam} />
       <Studio scale={st.lightScale} />
@@ -171,6 +182,16 @@ export const World: React.FC<{ state: (frame: number) => WorldState; taps: Tap[]
         </>
       )}
       {st.rings && <Rings3D taps={taps} frame={frame} />}
+      {st.hand && (
+        <HandLayer solve={st.hand.solve} f={st.hand.f} viewH={height} fov={st.cam.fov}>
+          {(joints) => (
+            <>
+              {st.air && <AirFx joints={joints} camPos={st.cam.pos} pinchAge={st.air.pinchAge} dial={st.air.dial} />}
+              {st.sonar && <SonarField joints={joints} t={st.t} amount={st.sonar.amount} />}
+            </>
+          )}
+        </HandLayer>
+      )}
       {st.particles && st.particles.alpha > 0.001 && <Particles count={particleCount} st={st.particles} />}
       <Effects st={st} />
     </ThreeCanvas>
