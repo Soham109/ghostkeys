@@ -83,7 +83,7 @@ const newClient = (extra = {}) => new GhostkeysClient({ url, token, webSocket: W
 const client = newClient()
 client.on('protocolError', (e) => { try { dropped.push(JSON.parse(e.raw)) } catch { dropped.push({ raw: e.raw }) } })
 const seen = [] // everything the SDK delivered, in order
-for (const t of ['gesture', 'action', 'tap', 'rejected', 'calibration', 'session', 'status', 'error', 'air', 'config']) {
+for (const t of ['gesture', 'action', 'tap', 'rejected', 'calibration', 'session', 'status', 'error', 'air', 'config', 'feedback', 'diagnostics']) {
   client.on(t, (m) => seen.push(m))
 }
 
